@@ -1,0 +1,5 @@
+google-genai>=0.8.0
+SpeechRecognition>=3.10.0
+python-dotenv>=1.0.0
+playsound==1.2.2
+pyaudio>=0.2.14

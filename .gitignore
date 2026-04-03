@@ -1,0 +1,18 @@
+# Windows
+desktop.ini
+Thumbs.db
+
+# Env / config
+*.ini
+.env
+
+# Node / build (if needed later)
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
