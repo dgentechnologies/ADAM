@@ -5,6 +5,7 @@ Thumbs.db
 # Env / config
 *.ini
 .env
+desktop.ini
 
 # Node / build (if needed later)
 node_modules/
