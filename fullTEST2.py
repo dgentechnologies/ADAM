@@ -1,10 +1,11 @@
 """
-ADAM — Autonomous Desktop AI Module (v14)
+ADAM — Autonomous Desktop AI Module (v15)
 ==========================================
 Fixes & new features:
-  - MOUTH BUG FIXED: mouth no longer drops during speech; sync is continuous
-  - IDLE WAKEUP: after configurable silence, ADAM speaks unprompted
-  - MULTILINGUAL: strict language-lock in system prompt + reminder injection
+  - IDLE WAKEUP FIX: uses send_realtime_input(text=...) — correct Live API method
+  - GOOGLE SEARCH GROUNDING: toggle ENABLE_GROUNDING = True/False at the top
+  - MOUTH BUG FIXED: mouth no longer drops during speech
+  - MULTILINGUAL: strict language-lock injected into system prompt
   - PERSISTENT MEMORY: saves/loads key facts to adam_memory.json on disk
 
 SETUP:
@@ -32,20 +33,31 @@ from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 import websockets.server
 from flask import Flask, send_from_directory
 
-load_dotenv()
+# Explicitly load .env from project root
+load_dotenv(dotenv_path=".env")
 
-API_KEY = (
-    os.environ.get("GOOGLE_API_KEY")
-    or os.environ.get("GEMINI_API_KEY")
-    or "PASTE_YOUR_KEY_HERE"
-)
+# Fetch API key safely
+API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
-MODEL              = "gemini-3.1-flash-live-preview"  # or gemini-3.1-flash-live-preview
+# Validate
+if not API_KEY:
+    raise ValueError(
+        "❌ API key not found. Please set GOOGLE_API_KEY or GEMINI_API_KEY in your .env file"
+    )
+
+print("✅ API Key loaded successfully")
+
+MODEL              = "gemini-3.1-flash-live-preview"   # swap to native-audio model if needed
 FLASK_PORT         = 5000
 WS_HOST            = "localhost"
 WS_PORT            = 8765
 POST_SPEECH_MUTE_S = 0.4
 VOICE              = "Charon"
+
+# ── Google Search Grounding ───────────────────────────────────────────────────
+# True  → ADAM can search the web for current info
+# False → no web search, fully offline (faster, no extra quota)
+ENABLE_GROUNDING = False
 
 # ── Idle wakeup config ────────────────────────────────────────────────────────
 # If no speech detected for this many seconds, ADAM will speak unprompted
@@ -324,8 +336,8 @@ async def run_session(
     system_prompt: str,
 ) -> str | None:
 
-    tools = [
-        types.Tool(function_declarations=[
+    # ── Build tools list ────────────────────────────────────────────────────
+    function_tool = types.Tool(function_declarations=[
             types.FunctionDeclaration(
                 name="get_current_datetime",
                 description="Returns current local date and time.",
@@ -406,7 +418,14 @@ async def run_session(
                 ),
             ),
         ])
-    ]
+
+    # Add Google Search grounding tool if enabled (separate Tool object)
+    tools = [function_tool]
+    if ENABLE_GROUNDING:
+        tools.append(types.Tool(google_search=types.GoogleSearch()))
+        print("  🔍  Google Search grounding: ENABLED")
+    else:
+        print("  🔍  Google Search grounding: DISABLED")
 
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
@@ -607,22 +626,15 @@ async def run_session(
                         print(f"  💤  Idle {elapsed:.0f}s — sending wakeup nudge")
                         last_user_speech_time[0] = time.time()   # reset timer
                         try:
-                            await session.send_client_content(
-                                turns=[
-                                    types.Content(
-                                        role="user",
-                                        parts=[types.Part(
-                                            text=(
-                                                f"[SYSTEM: The user has been silent for "
-                                                f"{elapsed:.0f} seconds. "
-                                                f"Break the silence with a short, in-character "
-                                                f"unprompted remark. Suggested nudge: {nudge}]"
-                                            )
-                                        )],
-                                    )
-                                ],
-                                turn_complete=True,
+                            # send_realtime_input(text=...) is the correct way to inject
+                            # a text turn into a live audio session (send_client_content
+                            # raises error 1007 when the session is in audio/VAD mode)
+                            nudge_text = (
+                                f"[SYSTEM: The user has been silent for {elapsed:.0f}s. "
+                                f"Break the silence with a short, in-character unprompted "
+                                f"remark. Suggestion: {nudge}]"
                             )
+                            await session.send_realtime_input(text=nudge_text)
                         except Exception as e:
                             print(f"  ⚠️  Idle nudge error: {e}")
 
@@ -700,7 +712,7 @@ def main_entry():
         sys.exit(1)
 
     print("=" * 52)
-    print("  ADAM — Autonomous Desktop AI Module  (v14)")
+    print("  ADAM — Autonomous Desktop AI Module  (v15)")
     print(f"  Built by DGEN Technologies Pvt. Ltd., Kolkata")
     print(f"  Model : {MODEL}  |  Voice: {VOICE}")
     print(f"  Idle wakeup: {IDLE_WAKEUP_SECONDS}s")
