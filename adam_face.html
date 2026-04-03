@@ -35,13 +35,11 @@ body::before{
   pointer-events:none;
 }
 
-/* ── SCENE ── */
 #scene{
   display:flex;flex-direction:column;align-items:center;
   animation:idle-float 4s ease-in-out infinite;
 }
 
-/* ── HEAD WRAPPER — perspective for rotateX (nod) and rotateY (spin only) ── */
 #head-wrapper{
   position:relative;z-index:2;
   transform-origin:bottom center;
@@ -72,7 +70,6 @@ body::before{
   border:1px solid rgba(255,255,255,0.1);
 }
 
-/* ── OLED OVAL ── */
 #face-oval{
   width:152px;height:110px;
   background:var(--oled);
@@ -92,14 +89,12 @@ body::before{
   pointer-events:none;
 }
 
-/* ── EYE ROW ── */
 .eyes{
   display:flex;gap:17px;align-items:center;
   position:relative;z-index:1;
   height:32px;
 }
 
-/* BASE EYE — always white */
 .eye{
   width:40px;height:7px;
   background:var(--W);
@@ -114,24 +109,22 @@ body::before{
   box-shadow:0 0 10px var(--GW),0 0 22px rgba(255,255,255,0.18);
 }
 
-/* ── MOUTH — audio-driven, always white ── */
+/* ── MOUTH: fast transitions for live sync ── */
 #mouth{
   width:0;height:4px;
   background:var(--W);
   border-radius:3px;
   opacity:0;
-  /* transitions for emotion shape changes */
   transition:
-    width 0.06s ease,     /* fast for sync */
-    height 0.06s ease,
-    opacity 0.15s ease,
-    border-radius 0.2s ease,
-    transform 0.2s ease;
+    width 0.05s linear,
+    height 0.05s linear,
+    opacity 0.08s ease,
+    border-radius 0.15s ease,
+    transform 0.15s ease;
   box-shadow:0 0 8px rgba(255,255,255,0.5);
   position:relative;z-index:1;
 }
 
-/* ── BLUSH CIRCLES — subtle, white-only glow (no pink on screen) ── */
 #blush-l,#blush-r{
   position:absolute;
   width:26px;height:12px;
@@ -145,7 +138,6 @@ body::before{
 #blush-l{left:10px;}
 #blush-r{right:10px;}
 
-/* ── NECK ── */
 #neck{
   width:34px;height:20px;
   background:linear-gradient(180deg,#1f1f1f 0%,#252525 100%);
@@ -154,7 +146,6 @@ body::before{
   z-index:1;
 }
 
-/* ── BODY ── */
 #body{
   width:224px;height:196px;
   background:var(--body-col);
@@ -179,7 +170,6 @@ body::before{
   border-radius:50%;filter:blur(8px);
 }
 
-/* ── STATUS ROW ── */
 #status-row{display:flex;align-items:center;gap:10px;margin-top:32px;}
 #ws-dot{
   width:7px;height:7px;border-radius:50%;
@@ -193,22 +183,15 @@ body::before{
   transition:color 0.4s;
 }
 
-/* ═══════════════════════════════════════════
-   KEYFRAMES
-═══════════════════════════════════════════ */
+/* ═══ KEYFRAMES ═══ */
 @keyframes idle-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @keyframes blink{0%,92%,100%{transform:scaleY(1)}94%{transform:scaleY(0.05)}}
 @keyframes listen-glow{
   0%,100%{box-shadow:0 0 10px var(--GW),0 0 22px rgba(255,255,255,0.18)}
   50%{box-shadow:0 0 22px #fff,0 0 48px rgba(255,255,255,0.55)}
 }
-
-/* Emotion eye animations — shape & motion only, no colour */
 @keyframes happy-bounce  {0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
-@keyframes excited-pulse {
-  0%,100% { transform: scale(1); }
-  50% { transform: scale(1.2); box-shadow: 0 0 28px #fff, 0 0 55px rgba(255,255,255,0.6); }
-}
+@keyframes excited-pulse {0%,100%{transform:scale(1)}50%{transform:scale(1.2);box-shadow:0 0 28px #fff,0 0 55px rgba(255,255,255,0.6)}}
 @keyframes angry-tremble {0%,100%{transform:translateX(0)}20%{transform:translateX(-2.5px)}70%{transform:translateX(2.5px)}}
 @keyframes confused-rock {0%,100%{transform:rotate(0)}30%{transform:rotate(7deg)}70%{transform:rotate(-7deg)}}
 @keyframes smug-drift    {0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
@@ -216,31 +199,19 @@ body::before{
 @keyframes think-scan    {0%,100%{transform:translateX(0)}30%{transform:translateX(-8px)}70%{transform:translateX(8px)}}
 @keyframes love-pulse    {0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
 @keyframes blush-flutter {0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
-
-/* ── HEAD: ONLY rotateX (nod) and rotateY (180° spin) ── */
 @keyframes nod-yes{
-  0%{transform:rotateX(0)}
-  20%{transform:rotateX(-22deg)}
-  45%{transform:rotateX(10deg)}
-  65%{transform:rotateX(-16deg)}
-  82%{transform:rotateX(5deg)}
-  100%{transform:rotateX(0)}
+  0%{transform:rotateX(0)}20%{transform:rotateX(-22deg)}45%{transform:rotateX(10deg)}
+  65%{transform:rotateX(-16deg)}82%{transform:rotateX(5deg)}100%{transform:rotateX(0)}
 }
 @keyframes nod-fast{
-  0%,100%{transform:rotateX(0)}
-  15%{transform:rotateX(-20deg)}
-  30%{transform:rotateX(6deg)}
-  50%{transform:rotateX(-18deg)}
-  65%{transform:rotateX(6deg)}
-  82%{transform:rotateX(-8deg)}
+  0%,100%{transform:rotateX(0)}15%{transform:rotateX(-20deg)}30%{transform:rotateX(6deg)}
+  50%{transform:rotateX(-18deg)}65%{transform:rotateX(6deg)}82%{transform:rotateX(-8deg)}
 }
 @keyframes rotate180{
-  0%{transform:rotateY(0)}
-  50%{transform:rotateY(180deg)}
-  100%{transform:rotateY(0)}
+  0%{transform:rotateY(0)}50%{transform:rotateY(180deg)}100%{transform:rotateY(0)}
 }
 
-/* face state base classes */
+/* face states — NOTE: speaking state does NOT reset eye/mouth styles */
 .s-listening .eye{animation:listen-glow 1.4s ease-in-out infinite}
 .s-listening #mouth{opacity:0.22;width:16px}
 .s-listening #status{color:rgba(180,210,255,0.55)}
@@ -276,104 +247,60 @@ body::before{
 </div>
 
 <script>
-/* ═══════════════════════════════════════════════════════════════
-   EYE SHAPES
-   Rules:
-   - background is ALWAYS #ffffff — never changes
-   - Shape (width/height/borderRadius/transform) conveys emotion
-   - Angry: heavy inward-angled brows via transform + sharp radius
-   - Love: tall rounded tops (heart silhouette)
-   - Blush: gentle squint, eyes nearly closed
-═══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════
+   EYE SHAPES — background always #ffffff
+══════════════════════════════════════════════════════════════════ */
 const SHAPES = {
-
   default:{
     L:{width:'40px',height:'7px',borderRadius:'4px',transform:'none',top:'0',opacity:'1'},
     R:{width:'40px',height:'7px',borderRadius:'4px',transform:'none',top:'0',opacity:'1'},
     M:{width:'0',height:'4px',opacity:'0',borderRadius:'3px',transform:'none'},
   },
-
   happy:{
-    // Eyes arched upward — thick curved top, tapers at base
     L:{width:'38px',height:'15px',borderRadius:'50% 50% 4px 4px',transform:'none',top:'-4px',opacity:'1'},
     R:{width:'38px',height:'15px',borderRadius:'50% 50% 4px 4px',transform:'none',top:'-4px',opacity:'1'},
     M:{width:'32px',height:'5px',opacity:'1',borderRadius:'0 0 12px 12px',transform:'none'},
   },
-
   excited:{
-    // Wide open tall ovals, max glow
     L:{width:'34px',height:'24px',borderRadius:'50%',transform:'none',top:'-10px',opacity:'1'},
     R:{width:'34px',height:'24px',borderRadius:'50%',transform:'none',top:'-10px',opacity:'1'},
     M:{width:'40px',height:'7px',opacity:'1',borderRadius:'50%',transform:'none'},
   },
-
-  // ── ANGRY ──────────────────────────────────────────────────────────────
-  // Sharp angular "V" brow shape using heavy rotation + asymmetric border-radius
-  // Left eye: inner corner UP (rotated +), outer corner flat
-  // Right eye: mirror of left
-  // Creates the classic "furrowed brow" angry look in 2D
   angry:{
-    L:{
-      width:'42px',height:'9px',
-      borderRadius:'0 14px 2px 0',   // sharp outer, rounded inner top
-      transform:'rotate(14deg) translateY(-2px)',
-      top:'-2px',opacity:'1',
-    },
-    R:{
-      width:'42px',height:'9px',
-      borderRadius:'14px 0 0 2px',   // mirror
-      transform:'rotate(-14deg) translateY(-2px)',
-      top:'-2px',opacity:'1',
-    },
-    // Tight flat frown — no curve, just a straight short line
+    L:{width:'42px',height:'9px',borderRadius:'0 14px 2px 0',transform:'rotate(14deg) translateY(-2px)',top:'-2px',opacity:'1'},
+    R:{width:'42px',height:'9px',borderRadius:'14px 0 0 2px',transform:'rotate(-14deg) translateY(-2px)',top:'-2px',opacity:'1'},
     M:{width:'20px',height:'4px',opacity:'1',borderRadius:'2px',transform:'translateY(2px)'},
   },
-
   confused:{
-    // Asymmetric: left small+tilted, right large+flat
     L:{width:'24px',height:'6px',borderRadius:'4px',transform:'rotate(12deg)',top:'2px',opacity:'1'},
     R:{width:'44px',height:'11px',borderRadius:'4px',transform:'rotate(-4deg)',top:'-1px',opacity:'1'},
     M:{width:'10px',height:'5px',opacity:'0.6',borderRadius:'50%',transform:'rotate(10deg) translateX(6px)'},
   },
-
   smug:{
-    // Left eye half-closed (squinting), right fully open
     L:{width:'42px',height:'3px',borderRadius:'0 0 4px 4px',transform:'none',top:'4px',opacity:'1'},
     R:{width:'38px',height:'9px',borderRadius:'4px',transform:'none',top:'0',opacity:'1'},
     M:{width:'18px',height:'4px',opacity:'0.85',borderRadius:'4px 10px 10px 4px',transform:'rotate(-5deg) translateX(10px)'},
   },
-
   sad:{
-    // Drooping arc — flat top, heavily curved bottom (tears pulling down)
     L:{width:'36px',height:'14px',borderRadius:'4px 4px 50% 50%',transform:'none',top:'0',opacity:'0.8'},
     R:{width:'36px',height:'14px',borderRadius:'4px 4px 50% 50%',transform:'none',top:'0',opacity:'0.8'},
     M:{width:'24px',height:'5px',opacity:'0.7',borderRadius:'10px 10px 0 0',transform:'none'},
   },
-
   surprised:{
-    // Very tall circles, maximum open
     L:{width:'28px',height:'30px',borderRadius:'50%',transform:'none',top:'-12px',opacity:'1'},
     R:{width:'28px',height:'30px',borderRadius:'50%',transform:'none',top:'-12px',opacity:'1'},
     M:{width:'14px',height:'14px',opacity:'1',borderRadius:'50%',transform:'none'},
   },
-
   thinking:{
-    // Narrow slits — scanning animation drives them
     L:{width:'36px',height:'3px',borderRadius:'2px',transform:'none',top:'2px',opacity:'0.85'},
     R:{width:'36px',height:'3px',borderRadius:'2px',transform:'none',top:'2px',opacity:'0.85'},
     M:{width:'6px',height:'3px',opacity:'0.25',borderRadius:'2px',transform:'none'},
   },
-
-  // ── LOVE ──────────────────────────────────────────────────────────────
-  // Tall rounded tops suggest heart silhouette — NO pink, all white shapes
   love:{
     L:{width:'32px',height:'22px',borderRadius:'50% 50% 38% 38%',transform:'none',top:'-8px',opacity:'1'},
     R:{width:'32px',height:'22px',borderRadius:'50% 50% 38% 38%',transform:'none',top:'-8px',opacity:'1'},
     M:{width:'34px',height:'6px',opacity:'1',borderRadius:'0 0 18px 18px',transform:'none'},
   },
-
-  // ── BLUSH ─────────────────────────────────────────────────────────────
-  // Shy squint — eyes partially closed, soft gentle smile
   blush:{
     L:{width:'38px',height:'8px',borderRadius:'50% 50% 4px 4px',transform:'none',top:'-1px',opacity:'0.9'},
     R:{width:'38px',height:'8px',borderRadius:'50% 50% 4px 4px',transform:'none',top:'-1px',opacity:'0.9'},
@@ -409,6 +336,14 @@ const LABELS = {
   love:'WARMTH', blush:'SHY',
 };
 
+/* ── MOUTH SYNC SHAPES ─────────────────────────────────────────── */
+const SYNC_SHAPES = {
+  closed: {width:'0px',  height:'4px', opacity:'0',    borderRadius:'3px'},
+  low:    {width:'16px', height:'4px', opacity:'0.75', borderRadius:'4px'},
+  medium: {width:'32px', height:'6px', opacity:'1',    borderRadius:'4px'},
+  high:   {width:'52px', height:'10px',opacity:'1',    borderRadius:'6px'},
+};
+
 const eyeL    = document.getElementById('eye-l');
 const eyeR    = document.getElementById('eye-r');
 const mouthEl = document.getElementById('mouth');
@@ -417,30 +352,35 @@ const blushL  = document.getElementById('blush-l');
 const blushR  = document.getElementById('blush-r');
 const statusEl= document.getElementById('status');
 
-// ── Apply eye shape ─────────────────────────────────────────────────────────
+/* ── State ────────────────────────────────────────────────────── */
+let currentFaceState  = 'idle';
+let currentEmotion    = 'default';
+let syncTimeout       = null;
+
+/* ── Apply eye + emotion-default mouth shape ──────────────────── */
 function applyShape(name) {
   const s = SHAPES[name] || SHAPES.default;
   eyeL.style.animation = 'none';
   eyeR.style.animation = 'none';
   void eyeL.offsetWidth;
-  // always force white
-  const base = {background:'#ffffff', boxShadow:'0 0 10px rgba(255,255,255,0.75),0 0 22px rgba(255,255,255,0.18)'};
+  const base = {
+    background: '#ffffff',
+    boxShadow:  '0 0 10px rgba(255,255,255,0.75),0 0 22px rgba(255,255,255,0.18)'
+  };
   Object.assign(eyeL.style, base, s.L);
   Object.assign(eyeR.style, base, s.R);
-  // mouth shape (emotion default, overridden by sync below)
-  Object.assign(mouthEl.style, {background:'#ffffff'}, s.M);
+  // Only update mouth from shape if NOT currently speaking
+  // (during speaking, mouth_sync messages drive it instead)
+  if (currentFaceState !== 'speaking') {
+    Object.assign(mouthEl.style, {background:'#ffffff'}, s.M);
+  }
 }
 
-// ── Blush — white glow only, no pink tint on OLED ──────────────────────────
 function setBlush(on) {
-  // Use a very faint white-ish glow, NOT pink — OLED is white display
   const col = on ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0)';
   blushL.style.background = col;
   blushR.style.background = col;
 }
-
-// ── Set emotion ─────────────────────────────────────────────────────────────
-let currentEmotion = 'default';
 
 function setEmotion(emotion) {
   currentEmotion = emotion;
@@ -452,36 +392,29 @@ function setEmotion(emotion) {
     eyeR.style.animation = anim;
   }
   setBlush(emotion === 'blush' || emotion === 'love');
-  statusEl.textContent  = LABELS[emotion] || emotion.toUpperCase();
-  statusEl.style.color  = EMOTION_COLOURS[emotion] || 'rgba(255,255,255,0.22)';
+  statusEl.textContent = LABELS[emotion] || emotion.toUpperCase();
+  statusEl.style.color = EMOTION_COLOURS[emotion] || 'rgba(255,255,255,0.22)';
 }
 
-// ── MOUTH SYNC — audio-driven, fast transition ──────────────────────────────
-// Intensity → mouth width/height. This overrides emotion mouth shape only when speaking.
-const SYNC_SHAPES = {
-  closed: {width:'0px',  height:'4px', opacity:'0',    borderRadius:'3px'},
-  low:    {width:'14px', height:'4px', opacity:'0.7',  borderRadius:'4px'},
-  medium: {width:'30px', height:'6px', opacity:'1',    borderRadius:'4px'},
-  high:   {width:'50px', height:'9px', opacity:'1',    borderRadius:'6px'},
-};
-
-let isSpeaking = false;
-let syncTimeout = null;
-
+/* ── MOUTH SYNC (FIX) ──────────────────────────────────────────
+   - No isSpeaking guard — Python only sends mouth_sync when speaking
+   - Auto-close only if no new sync arrives within 200ms
+   - 'closed' always works (end-of-turn cleanup)
+─────────────────────────────────────────────────────────────── */
 function applyMouthSync(intensity) {
-  if (!isSpeaking && intensity !== 'closed') return;
   const s = SYNC_SHAPES[intensity] || SYNC_SHAPES.medium;
   Object.assign(mouthEl.style, {background:'#ffffff'}, s);
-  // If no new sync arrives in 180ms, close mouth
+
   clearTimeout(syncTimeout);
   if (intensity !== 'closed') {
+    // If no next sync arrives within 200ms, close mouth (prevents stuck-open)
     syncTimeout = setTimeout(() => {
       Object.assign(mouthEl.style, SYNC_SHAPES.closed);
-    }, 180);
+    }, 200);
   }
 }
 
-// ── Head movements — ONLY rotateX (nod) and rotateY (spin) ─────────────────
+/* ── HEAD MOVEMENTS ─────────────────────────────────────────── */
 const HEAD_ANIMS = {
   nod_yes:  {css:'nod-yes 0.9s cubic-bezier(0.36,0.07,0.19,0.97) 1 forwards',  dur:960},
   nod_fast: {css:'nod-fast 0.65s ease-in-out 2 forwards',                       dur:1360},
@@ -500,32 +433,41 @@ function triggerHead(movement) {
   headTimer = setTimeout(() => { headW.style.animation = 'none'; }, cfg.dur + 60);
 }
 
-// ── Set base face state (from Python speaking/listening/idle) ───────────────
+/* ── FACE STATE ─────────────────────────────────────────────────
+   FIX: 'speaking' state no longer resets eye/mouth.
+   Only 'idle' and 'listening' reset to default.
+─────────────────────────────────────────────────────────────── */
 function setFaceState(state) {
-  document.body.classList.remove('s-idle','s-listening','s-speaking');
-  document.body.classList.add('s-'+state);
-  isSpeaking = (state === 'speaking');
-
-  if (!isSpeaking) {
-    // Reset eye shape to default when not speaking
-    applyShape('default');
-    setBlush(false);
-    currentEmotion = 'default';
-    Object.assign(mouthEl.style, SYNC_SHAPES.closed);
-  }
+  currentFaceState = state;
+  document.body.classList.remove('s-idle', 's-listening', 's-speaking');
+  document.body.classList.add('s-' + state);
 
   const colours = {
-    idle:'rgba(255,255,255,0.22)',
-    listening:'rgba(180,210,255,0.55)',
-    speaking:'rgba(255,255,255,0.85)',
+    idle:      'rgba(255,255,255,0.22)',
+    listening: 'rgba(180,210,255,0.55)',
+    speaking:  'rgba(255,255,255,0.85)',
   };
+
+  if (state === 'idle' || state === 'listening') {
+    // Reset eyes and emotion only when not speaking
+    if (currentEmotion !== 'default') {
+      applyShape('default');
+      setBlush(false);
+      currentEmotion = 'default';
+    }
+    // Reset mouth for idle/listening (CSS class will handle it)
+    clearTimeout(syncTimeout);
+    Object.assign(mouthEl.style, SYNC_SHAPES.closed);
+  }
+  // For 'speaking': DON'T reset anything — mouth_sync messages will drive the mouth
+
   if (LABELS[state]) {
     statusEl.textContent = LABELS[state];
     statusEl.style.color = colours[state] || 'rgba(255,255,255,0.22)';
   }
 }
 
-// ── WebSocket ────────────────────────────────────────────────────────────────
+/* ── WEBSOCKET ───────────────────────────────────────────────── */
 const wsDot  = document.getElementById('ws-dot');
 const WS_URL = `ws://${window.location.hostname}:8765`;
 let ws = null, retryMs = 1000;
@@ -541,39 +483,41 @@ function connect() {
   ws.onmessage = ({data}) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
-    if      (msg.type === 'face_state')   setFaceState(msg.state);
-    else if (msg.type === 'emotion')      { setEmotion(msg.emotion); if (msg.head && msg.head !== 'none') triggerHead(msg.head); }
-    else if (msg.type === 'head_movement') triggerHead(msg.movement);
-    else if (msg.type === 'mouth_sync')    applyMouthSync(msg.intensity);
+
+    if (msg.type === 'face_state') {
+      setFaceState(msg.state);
+    } else if (msg.type === 'emotion') {
+      setEmotion(msg.emotion);
+      if (msg.head && msg.head !== 'none') triggerHead(msg.head);
+    } else if (msg.type === 'head_movement') {
+      triggerHead(msg.movement);
+    } else if (msg.type === 'mouth_sync') {
+      applyMouthSync(msg.intensity);
+    }
   };
   ws.onclose = () => {
     wsDot.classList.remove('connected');
     statusEl.textContent = 'RECONNECTING...';
     setTimeout(connect, retryMs);
-    retryMs = Math.min(retryMs*1.5, 8000);
+    retryMs = Math.min(retryMs * 1.5, 8000);
   };
   ws.onerror = () => { wsDot.classList.add('error'); ws.close(); };
 }
 
 connect();
 
-// ── Keyboard shortcuts ───────────────────────────────────────────────────────
-// Face: 1=idle 2=listening 3=speaking
-// Emotion: h=happy x=excited a=angry c=confused g=smug d=sad
-//          u=surprised t=thinking l=love b=blush
-// Head: n=nod_yes f=nod_fast r=rotate
-// Mouth sync: m=medium M=high z=closed
+/* ── KEYBOARD SHORTCUTS ──────────────────────────────────────── */
 document.addEventListener('keydown', e => {
-  const sm={1:'idle',2:'listening',3:'speaking'};
-  const em={h:'happy',x:'excited',a:'angry',c:'confused',g:'smug',
-            d:'sad',u:'surprised',t:'thinking',l:'love',b:'blush'};
-  const hm={n:'nod_yes',f:'nod_fast',r:'rotate'};
+  const sm = {1:'idle', 2:'listening', 3:'speaking'};
+  const em = {h:'happy', x:'excited', a:'angry', c:'confused', g:'smug',
+              d:'sad', u:'surprised', t:'thinking', l:'love', b:'blush'};
+  const hm = {n:'nod_yes', f:'nod_fast', r:'rotate'};
   if (sm[e.key]) setFaceState(sm[e.key]);
   if (em[e.key]) setEmotion(em[e.key]);
   if (hm[e.key]) triggerHead(hm[e.key]);
-  if (e.key==='m') applyMouthSync('medium');
-  if (e.key==='M') applyMouthSync('high');
-  if (e.key==='z') applyMouthSync('closed');
+  if (e.key === 'm') applyMouthSync('medium');
+  if (e.key === 'M') applyMouthSync('high');
+  if (e.key === 'z') applyMouthSync('closed');
 });
 </script>
 </body>
