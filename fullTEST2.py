@@ -40,7 +40,7 @@ API_KEY = (
     or "PASTE_YOUR_KEY_HERE"
 )
 
-MODEL              = "gemini-2.5-flash-preview-native-audio-dialog"  # or gemini-3.1-flash-live-preview
+MODEL              = "gemini-3.1-flash-live-preview"  # or gemini-3.1-flash-live-preview
 FLASK_PORT         = 5000
 WS_HOST            = "localhost"
 WS_PORT            = 8765
