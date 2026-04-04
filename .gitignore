@@ -1,6 +1,11 @@
-# Windows
+# Windows junk
 desktop.ini
+*.ini
 Thumbs.db
+
+# Drive temp
+.tmp.drivedownload
+.tmp.driveupload
 
 # Env / config
 *.ini

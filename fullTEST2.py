@@ -1,15 +1,14 @@
 """
-ADAM — Autonomous Desktop AI Module (v15)
+ADAM — Autonomous Desktop AI Module (v16)
 ==========================================
-Fixes & new features:
-  - IDLE WAKEUP FIX: uses send_realtime_input(text=...) — correct Live API method
-  - GOOGLE SEARCH GROUNDING: toggle ENABLE_GROUNDING = True/False at the top
-  - MOUTH BUG FIXED: mouth no longer drops during speech
-  - MULTILINGUAL: strict language-lock injected into system prompt
-  - PERSISTENT MEMORY: saves/loads key facts to adam_memory.json on disk
+Changes from v15:
+  - REMOVED: Google Search grounding (quota-limited, breaks on free tier)
+  - ADDED:   web_search function tool backed by DuckDuckGo (free, no API key)
+             Returns top-5 results (title + snippet + url) to Gemini as context.
+             Handles RateLimitException + TimeoutException with graceful fallback.
 
 SETUP:
-    pip install --upgrade google-genai pyaudio python-dotenv websockets flask
+    pip install --upgrade google-genai pyaudio python-dotenv websockets flask duckduckgo-search
 
 RUN:
     python fullTEST2.py
@@ -33,13 +32,19 @@ from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 import websockets.server
 from flask import Flask, send_from_directory
 
-# Explicitly load .env from project root
-load_dotenv(dotenv_path=".env")
+# ── DuckDuckGo search (no API key required) ───────────────────────────────────
+try:
+    from duckduckgo_search import DDGS
+    from duckduckgo_search.exceptions import RatelimitException, TimeoutException
+    DDG_AVAILABLE = True
+except ImportError:
+    DDG_AVAILABLE = False
+    print("  ⚠️  duckduckgo-search not installed. Run: pip install duckduckgo-search")
 
-# Fetch API key safely
+# ── Load env ──────────────────────────────────────────────────────────────────
+load_dotenv(dotenv_path=".env")
 API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
-# Validate
 if not API_KEY:
     raise ValueError(
         "❌ API key not found. Please set GOOGLE_API_KEY or GEMINI_API_KEY in your .env file"
@@ -47,32 +52,29 @@ if not API_KEY:
 
 print("✅ API Key loaded successfully")
 
-MODEL              = "gemini-3.1-flash-live-preview"   # swap to native-audio model if needed
+# ── Constants ─────────────────────────────────────────────────────────────────
+MODEL              = "gemini-3.1-flash-live-preview"
 FLASK_PORT         = 5000
 WS_HOST            = "localhost"
 WS_PORT            = 8765
 POST_SPEECH_MUTE_S = 0.4
 VOICE              = "Charon"
+IDLE_WAKEUP_SECONDS = 45
 
-# ── Google Search Grounding ───────────────────────────────────────────────────
-# True  → ADAM can search the web for current info
-# False → no web search, fully offline (faster, no extra quota)
-ENABLE_GROUNDING = False
-
-# ── Idle wakeup config ────────────────────────────────────────────────────────
-# If no speech detected for this many seconds, ADAM will speak unprompted
-IDLE_WAKEUP_SECONDS = 45   # change to taste (e.g. 120 for 2 min)
-
-# ── Memory file ───────────────────────────────────────────────────────────────
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 MEMORY_FILE = Path(BASE_DIR) / "adam_memory.json"
+
+# ── Search config ─────────────────────────────────────────────────────────────
+SEARCH_MAX_RESULTS = 5    # number of DDG results to return to Gemini
+SEARCH_REGION      = "in-en"  # India-English results (change to wt-wt for global)
+_last_search_time  = 0.0
+SEARCH_MIN_GAP_S   = 1.5  # minimum seconds between searches (respect DDG rate limits)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PERSISTENT MEMORY
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_memory() -> dict:
-    """Load memory from disk. Returns empty dict if file not found."""
     if MEMORY_FILE.exists():
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
@@ -84,7 +86,6 @@ def load_memory() -> dict:
     return {}
 
 def save_memory(memory: dict):
-    """Persist memory to disk."""
     try:
         with open(MEMORY_FILE, "w", encoding="utf-8") as f:
             json.dump(memory, f, ensure_ascii=False, indent=2)
@@ -92,7 +93,6 @@ def save_memory(memory: dict):
         print(f"  ⚠️  Memory save error: {e}")
 
 def memory_to_prompt(memory: dict) -> str:
-    """Format memory dict into a compact context block for ADAM."""
     if not memory:
         return ""
     lines = ["━━━ WHAT YOU REMEMBER (persistent memory) ━━━"]
@@ -110,10 +110,8 @@ def load_system_prompt(memory: dict) -> str:
     if prompt_text.startswith('"""') and prompt_text.endswith('"""'):
         prompt_text = prompt_text[3:-3].strip()
 
-    # Inject memory block right after the opening
     memory_block = memory_to_prompt(memory)
 
-    # Inject a hard multilingual enforcement block
     multilingual_enforcement = """
 ━━━ LANGUAGE RULE — CRITICAL, NON-NEGOTIABLE ━━━
 You MUST reply in the EXACT SAME LANGUAGE the user just spoke.
@@ -125,14 +123,28 @@ You MUST reply in the EXACT SAME LANGUAGE the user just spoke.
 - This rule overrides everything else. No exceptions.
 """
 
+    search_guidance = """
+━━━ WEB SEARCH GUIDANCE ━━━
+You have a web_search tool. Use it when:
+- User asks about current events, news, prices, scores, weather, or recent facts.
+- You need to verify something time-sensitive or post-knowledge-cutoff.
+- User explicitly asks you to "search", "look up", or "check online".
+
+When you get search results back:
+- Synthesise them naturally into your answer — don't just read a list.
+- Cite "according to [source]" where relevant but keep it conversational.
+- If results don't help, say so in your own style and answer from memory.
+- Keep your ADAM personality — search results don't make you boring.
+"""
+
     final_prompt = prompt_text
     if memory_block:
         final_prompt = memory_block + "\n\n" + final_prompt
-    final_prompt = final_prompt + "\n" + multilingual_enforcement
+    final_prompt = final_prompt + "\n" + multilingual_enforcement + "\n" + search_guidance
     return final_prompt
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AUDIO CONSTANTS
+# AUDIO
 # ─────────────────────────────────────────────────────────────────────────────
 
 FORMAT           = pyaudio.paInt16
@@ -202,18 +214,13 @@ EMOTION_MAP = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MOUTH SYNC  (FIX: rate-limited, never drops during active speech)
+# MOUTH SYNC
 # ─────────────────────────────────────────────────────────────────────────────
 
 _last_sync_time = 0.0
-_sync_interval  = 0.06   # 60ms — slightly faster for smoother lip sync
+_sync_interval  = 0.06
 
 async def maybe_sync_mouth(audio_chunk: bytes, adam_speaking_event: asyncio.Event):
-    """
-    Compute RMS of audio chunk and broadcast mouth intensity.
-    Only broadcast if adam_speaking_event is still set (prevents
-    stale syncs from leaking into idle/listening states).
-    """
     global _last_sync_time
     if not adam_speaking_event.is_set():
         return
@@ -231,12 +238,94 @@ async def maybe_sync_mouth(audio_chunk: bytes, adam_speaking_event: asyncio.Even
     except Exception:
         return
 
-    if rms < 600:       intensity = "low"       # very quiet but mouth still visible
+    if rms < 600:       intensity = "low"
     elif rms < 4000:    intensity = "low"
     elif rms < 10000:   intensity = "medium"
     else:               intensity = "high"
 
     await ws_broadcast({"type": "mouth_sync", "intensity": intensity})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DUCKDUCKGO SEARCH  (runs in a thread to avoid blocking the event loop)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ddg_search_sync(query: str, max_results: int) -> list[dict]:
+    """
+    Blocking DuckDuckGo search — called via asyncio.to_thread().
+    Returns a list of {title, body, url} dicts, or [] on failure.
+    """
+    global _last_search_time
+
+    # Enforce minimum gap between searches
+    elapsed = time.time() - _last_search_time
+    if elapsed < SEARCH_MIN_GAP_S:
+        time.sleep(SEARCH_MIN_GAP_S - elapsed)
+
+    _last_search_time = time.time()
+
+    try:
+        results = DDGS().text(
+            keywords=query,
+            region=SEARCH_REGION,
+            safesearch="moderate",
+            max_results=max_results,
+        )
+        return results or []
+    except RatelimitException:
+        print("  🔍  [search] DDG rate limited — retrying in 3s...")
+        time.sleep(3)
+        try:
+            return DDGS().text(
+                keywords=query,
+                region="wt-wt",      # fallback to global region on retry
+                safesearch="moderate",
+                max_results=max_results,
+            ) or []
+        except Exception as e:
+            print(f"  🔍  [search] Retry failed: {e}")
+            return []
+    except TimeoutException:
+        print("  🔍  [search] DDG timeout")
+        return []
+    except Exception as e:
+        print(f"  🔍  [search] Error: {e}")
+        return []
+
+
+async def do_web_search(query: str) -> dict:
+    """
+    Async wrapper around _ddg_search_sync.
+    Returns a result dict suitable for the Gemini function response.
+    """
+    if not DDG_AVAILABLE:
+        return {
+            "error": "Web search library not installed.",
+            "results": [],
+        }
+
+    print(f"  🔍  [search] → \"{query}\"")
+    raw = await asyncio.to_thread(_ddg_search_sync, query, SEARCH_MAX_RESULTS)
+
+    if not raw:
+        return {
+            "query": query,
+            "results": [],
+            "note": "No results found or search failed.",
+        }
+
+    formatted = []
+    for r in raw:
+        formatted.append({
+            "title":   r.get("title", ""),
+            "snippet": r.get("body",  ""),
+            "url":     r.get("href",  ""),
+        })
+
+    print(f"  🔍  [search] Got {len(formatted)} results for \"{query}\"")
+    return {
+        "query":   query,
+        "results": formatted,
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL HANDLER
@@ -259,6 +348,10 @@ async def handle_tool_call(tool_call, memory: dict) -> list[dict]:
             }
             print(f"  🕐  [tool] datetime → {result['datetime']}")
 
+        elif name == "web_search":
+            query  = args.get("query", "").strip()
+            result = await do_web_search(query) if query else {"error": "Empty query"}
+
         elif name == "set_emotion":
             emotion = args.get("emotion", "happy")
             head    = EMOTION_MAP.get(emotion, "none")
@@ -272,7 +365,6 @@ async def handle_tool_call(tool_call, memory: dict) -> list[dict]:
             result = {"status": "ok"}
 
         elif name == "save_memory":
-            # ADAM can call this to persist a fact
             key   = args.get("key", "").strip()
             value = args.get("value", "").strip()
             if key:
@@ -294,7 +386,7 @@ async def handle_tool_call(tool_call, memory: dict) -> list[dict]:
                 result = {"status": "not_found", "key": key}
 
         elif name == "get_memory":
-            key = args.get("key", "").strip()
+            key    = args.get("key", "").strip()
             result = {"value": memory.get(key, None), "all": memory}
 
         else:
@@ -304,7 +396,7 @@ async def handle_tool_call(tool_call, memory: dict) -> list[dict]:
     return responses
 
 # ─────────────────────────────────────────────────────────────────────────────
-# IDLE WAKEUP NUDGES
+# IDLE NUDGES
 # ─────────────────────────────────────────────────────────────────────────────
 
 IDLE_NUDGES = [
@@ -314,7 +406,6 @@ IDLE_NUDGES = [
     "My sensors are running. My brain is running. You are... not running apparently.",
     "I've calculated seventeen ways this silence is inefficient. Your move.",
 ]
-
 _nudge_index = 0
 
 def next_nudge() -> str:
@@ -336,101 +427,107 @@ async def run_session(
     system_prompt: str,
 ) -> str | None:
 
-    # ── Build tools list ────────────────────────────────────────────────────
     function_tool = types.Tool(function_declarations=[
-            types.FunctionDeclaration(
-                name="get_current_datetime",
-                description="Returns current local date and time.",
-                parameters=types.Schema(type=types.Type.OBJECT, properties={}),
+        types.FunctionDeclaration(
+            name="get_current_datetime",
+            description="Returns current local date and time.",
+            parameters=types.Schema(type=types.Type.OBJECT, properties={}),
+        ),
+        types.FunctionDeclaration(
+            name="web_search",
+            description=(
+                "Search the web using DuckDuckGo. Use this for current events, news, "
+                "prices, scores, weather, recent releases, or any fact that might have "
+                "changed after your training cutoff. Returns top search results with "
+                "title, snippet, and URL."
             ),
-            types.FunctionDeclaration(
-                name="set_emotion",
-                description=(
-                    "Show ADAM's emotion on his OLED face. "
-                    "Emotions: happy, excited, angry, confused, smug, sad, surprised, "
-                    "thinking, love, blush."
-                ),
-                parameters=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "emotion": types.Schema(
-                            type=types.Type.STRING,
-                            enum=["happy","excited","angry","confused","smug",
-                                  "sad","surprised","thinking","love","blush"],
-                        )
-                    },
-                    required=["emotion"],
-                ),
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "query": types.Schema(
+                        type=types.Type.STRING,
+                        description="The search query string (concise, 3–8 words works best).",
+                    )
+                },
+                required=["query"],
             ),
-            types.FunctionDeclaration(
-                name="set_mouth_sync",
-                description=(
-                    "Sync mouth animation to speech intensity. "
-                    "closed=silent, low=quiet, medium=normal, high=loud/excited."
-                ),
-                parameters=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "intensity": types.Schema(
-                            type=types.Type.STRING,
-                            enum=["closed", "low", "medium", "high"],
-                        )
-                    },
-                    required=["intensity"],
-                ),
+        ),
+        types.FunctionDeclaration(
+            name="set_emotion",
+            description=(
+                "Show ADAM's emotion on his OLED face. "
+                "Emotions: happy, excited, angry, confused, smug, sad, surprised, "
+                "thinking, love, blush."
             ),
-            types.FunctionDeclaration(
-                name="save_memory",
-                description=(
-                    "Permanently save a key fact about the user or context to persistent storage. "
-                    "Use this whenever the user tells you their name, preferences, or any info "
-                    "worth remembering across sessions. key = short label, value = the info."
-                ),
-                parameters=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "key":   types.Schema(type=types.Type.STRING),
-                        "value": types.Schema(type=types.Type.STRING),
-                    },
-                    required=["key", "value"],
-                ),
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "emotion": types.Schema(
+                        type=types.Type.STRING,
+                        enum=["happy","excited","angry","confused","smug",
+                              "sad","surprised","thinking","love","blush"],
+                    )
+                },
+                required=["emotion"],
             ),
-            types.FunctionDeclaration(
-                name="delete_memory",
-                description="Delete a previously saved memory entry by key.",
-                parameters=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "key": types.Schema(type=types.Type.STRING),
-                    },
-                    required=["key"],
-                ),
+        ),
+        types.FunctionDeclaration(
+            name="set_mouth_sync",
+            description=(
+                "Sync mouth animation to speech intensity. "
+                "closed=silent, low=quiet, medium=normal, high=loud/excited."
             ),
-            types.FunctionDeclaration(
-                name="get_memory",
-                description="Retrieve a specific memory entry or all stored memories.",
-                parameters=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "key": types.Schema(type=types.Type.STRING),
-                    },
-                    required=[],
-                ),
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "intensity": types.Schema(
+                        type=types.Type.STRING,
+                        enum=["closed", "low", "medium", "high"],
+                    )
+                },
+                required=["intensity"],
             ),
-        ])
-
-    # Add Google Search grounding tool if enabled (separate Tool object)
-    tools = [function_tool]
-    if ENABLE_GROUNDING:
-        tools.append(types.Tool(google_search=types.GoogleSearch()))
-        print("  🔍  Google Search grounding: ENABLED")
-    else:
-        print("  🔍  Google Search grounding: DISABLED")
+        ),
+        types.FunctionDeclaration(
+            name="save_memory",
+            description=(
+                "Permanently save a key fact about the user or context. "
+                "Use when the user tells you their name, preferences, or any info "
+                "worth remembering across sessions."
+            ),
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "key":   types.Schema(type=types.Type.STRING),
+                    "value": types.Schema(type=types.Type.STRING),
+                },
+                required=["key", "value"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="delete_memory",
+            description="Delete a previously saved memory entry by key.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={"key": types.Schema(type=types.Type.STRING)},
+                required=["key"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="get_memory",
+            description="Retrieve a specific memory entry or all stored memories.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={"key": types.Schema(type=types.Type.STRING)},
+                required=[],
+            ),
+        ),
+    ])
 
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=system_prompt,
-        tools=tools,
+        tools=[function_tool],
         session_resumption=types.SessionResumptionConfig(handle=resume_handle),
         context_window_compression=types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow(),
@@ -455,9 +552,7 @@ async def run_session(
 
             mic_q         = asyncio.Queue(maxsize=60)
             adam_speaking = asyncio.Event()
-
-            # ── Shared idle tracker ──────────────────────────────────────
-            last_user_speech_time = [time.time()]   # list so closures can mutate
+            last_user_speech_time = [time.time()]
 
             # ── listen ───────────────────────────────────────────────────
             async def listen():
@@ -480,27 +575,24 @@ async def run_session(
                     stream.stop_stream()
                     stream.close()
 
-            # ── send (with idle detection) ───────────────────────────────
+            # ── send ─────────────────────────────────────────────────────
             async def send():
                 try:
                     while not stop.is_set():
                         chunk = await mic_q.get()
                         if adam_speaking.is_set():
                             continue
-                        # Detect user voice activity to reset idle timer
                         try:
                             n = len(chunk) // 2
                             samples = struct.unpack(f"{n}h", chunk)
                             rms = (sum(s * s for s in samples) / n) ** 0.5
-                            if rms > 800:   # user is speaking
+                            if rms > 800:
                                 last_user_speech_time[0] = time.time()
                         except Exception:
                             pass
                         try:
                             await session.send_realtime_input(
-                                audio=types.Blob(
-                                    data=chunk,
-                                    mime_type="audio/pcm;rate=16000"))
+                                audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
                         except (ConnectionClosedError, ConnectionClosedOK):
                             return
                         except Exception:
@@ -545,23 +637,19 @@ async def run_session(
                                 continue
 
                             if sc.model_turn:
-                                # ── FIX: set speaking FIRST, broadcast face state,
-                                #         then stream audio — mouth sync fires correctly ──
                                 if not adam_speaking.is_set():
                                     adam_speaking.set()
                                     await ws_broadcast({"type": "face_state", "state": "speaking"})
-
                                 for part in sc.model_turn.parts:
                                     if part.inline_data and part.inline_data.data:
                                         audio_data = part.inline_data.data
                                         await out_q.put(audio_data)
-                                        # Sync mouth with each chunk — event passed to guard stale syncs
                                         await maybe_sync_mouth(audio_data, adam_speaking)
                                     if hasattr(part, "text") and part.text:
                                         print(f"🤖  ADAM: {part.text}")
 
                             if sc.turn_complete:
-                                await out_q.put(None)   # sentinel
+                                await out_q.put(None)
                                 print("─" * 40)
 
                 except (ConnectionClosedError, ConnectionClosedOK):
@@ -582,18 +670,15 @@ async def run_session(
                         try:
                             chunk = await asyncio.wait_for(out_q.get(), timeout=0.3)
                             if chunk is None:
-                                # End of ADAM's turn — close mouth, unmute mic
                                 await ws_broadcast({"type": "mouth_sync", "intensity": "closed"})
                                 await asyncio.sleep(0.15)
                                 await asyncio.sleep(POST_SPEECH_MUTE_S)
-                                # Flush stale mic chunks accumulated during speech
                                 while not mic_q.empty():
                                     try:
                                         mic_q.get_nowait()
                                     except asyncio.QueueEmpty:
                                         break
                                 adam_speaking.clear()
-                                # Reset idle timer so ADAM doesn't immediately nudge
                                 last_user_speech_time[0] = time.time()
                                 print("🎤  Your turn...")
                                 await ws_broadcast({"type": "face_state", "state": "listening"})
@@ -607,15 +692,10 @@ async def run_session(
                     stream.stop_stream()
                     stream.close()
 
-            # ── idle wakeup task ─────────────────────────────────────────
+            # ── idle watcher ─────────────────────────────────────────────
             async def idle_watcher():
-                """
-                If the user has been silent for IDLE_WAKEUP_SECONDS and
-                ADAM is not already speaking, send a text nudge to Gemini
-                so it speaks unprompted — as the system prompt intends.
-                """
                 while not stop.is_set():
-                    await asyncio.sleep(5)   # check every 5 seconds
+                    await asyncio.sleep(5)
                     if stop.is_set():
                         break
                     if adam_speaking.is_set():
@@ -624,11 +704,8 @@ async def run_session(
                     if elapsed >= IDLE_WAKEUP_SECONDS:
                         nudge = next_nudge()
                         print(f"  💤  Idle {elapsed:.0f}s — sending wakeup nudge")
-                        last_user_speech_time[0] = time.time()   # reset timer
+                        last_user_speech_time[0] = time.time()
                         try:
-                            # send_realtime_input(text=...) is the correct way to inject
-                            # a text turn into a live audio session (send_client_content
-                            # raises error 1007 when the session is in audio/VAD mode)
                             nudge_text = (
                                 f"[SYSTEM: The user has been silent for {elapsed:.0f}s. "
                                 f"Break the silence with a short, in-character unprompted "
@@ -695,7 +772,6 @@ async def main():
 
         resume_handle = result
         attempt += 1
-        # Reload system prompt on reconnect (memory may have grown)
         system_prompt = load_system_prompt(memory)
         print(f"\n🔄  {'Resuming...' if resume_handle else 'Reconnecting...'}")
 
@@ -707,16 +783,17 @@ async def main():
 
 
 def main_entry():
-    if API_KEY == "PASTE_YOUR_KEY_HERE":
-        print("❌  No API key.  Set $env:GOOGLE_API_KEY = 'your_key'")
-        sys.exit(1)
-
     print("=" * 52)
-    print("  ADAM — Autonomous Desktop AI Module  (v15)")
+    print("  ADAM — Autonomous Desktop AI Module  (v16)")
     print(f"  Built by DGEN Technologies Pvt. Ltd., Kolkata")
     print(f"  Model : {MODEL}  |  Voice: {VOICE}")
+    print(f"  Search: DuckDuckGo ({'available' if DDG_AVAILABLE else 'NOT INSTALLED'})")
     print(f"  Idle wakeup: {IDLE_WAKEUP_SECONDS}s")
     print("=" * 52)
+
+    if not DDG_AVAILABLE:
+        print("\n  ⚠️  Install search: pip install duckduckgo-search")
+        print("  ADAM will run without web search until installed.\n")
 
     threading.Thread(target=run_flask, daemon=True).start()
     print(f"  🌍  Flask      → http://localhost:{FLASK_PORT}")
