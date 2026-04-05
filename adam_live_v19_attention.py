@@ -44,7 +44,7 @@ OPTIONAL (for better wake word, highly recommended):
     Place in same folder as: vosk-model-small-en-in-0.4/
 
 RUN:
-    python adam_v19.py
+    python adam_live_v19_attention.py
 """
 
 import asyncio
@@ -373,7 +373,7 @@ def face_memory_to_prompt(faces: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_system_prompt(memory: dict, faces: dict) -> str:
-    prompt_path = Path(BASE_DIR) / "SYSTEM_PROMPT.txt"
+    prompt_path = Path(BASE_DIR) / "system_prompt.txt"
     if prompt_path.exists():
         prompt_text = prompt_path.read_text(encoding="utf-8")
         if prompt_text.startswith('"""') and prompt_text.endswith('"""'):
