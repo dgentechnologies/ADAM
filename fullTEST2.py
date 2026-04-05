@@ -1,14 +1,11 @@
 """
-ADAM — Autonomous Desktop AI Module (v16)
+ADAM — Autonomous Desktop AI Module (v17)
 ==========================================
-Changes from v15:
-  - REMOVED: Google Search grounding (quota-limited, breaks on free tier)
-  - ADDED:   web_search function tool backed by DuckDuckGo (free, no API key)
-             Returns top-5 results (title + snippet + url) to Gemini as context.
-             Handles RateLimitException + TimeoutException with graceful fallback.
+Changes from v16:
+  - REMOVED: DuckDuckGo web_search tool (was unreliable)
 
 SETUP:
-    pip install --upgrade google-genai pyaudio python-dotenv websockets flask duckduckgo-search
+    pip install --upgrade google-genai pyaudio python-dotenv websockets flask
 
 RUN:
     python fullTEST2.py
@@ -32,15 +29,6 @@ from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 import websockets.server
 from flask import Flask, send_from_directory
 
-# ── DuckDuckGo search (no API key required) ───────────────────────────────────
-try:
-    from duckduckgo_search import DDGS
-    from duckduckgo_search.exceptions import RatelimitException, TimeoutException
-    DDG_AVAILABLE = True
-except ImportError:
-    DDG_AVAILABLE = False
-    print("  ⚠️  duckduckgo-search not installed. Run: pip install duckduckgo-search")
-
 # ── Load env ──────────────────────────────────────────────────────────────────
 load_dotenv(dotenv_path=".env")
 API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -53,22 +41,16 @@ if not API_KEY:
 print("✅ API Key loaded successfully")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-MODEL              = "gemini-3.1-flash-live-preview"
-FLASK_PORT         = 5000
-WS_HOST            = "localhost"
-WS_PORT            = 8765
-POST_SPEECH_MUTE_S = 0.4
-VOICE              = "Charon"
+MODEL               = "gemini-3.1-flash-live-preview"
+FLASK_PORT          = 5000
+WS_HOST             = "localhost"
+WS_PORT             = 8765
+POST_SPEECH_MUTE_S  = 0.4
+VOICE               = "Charon"
 IDLE_WAKEUP_SECONDS = 45
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 MEMORY_FILE = Path(BASE_DIR) / "adam_memory.json"
-
-# ── Search config ─────────────────────────────────────────────────────────────
-SEARCH_MAX_RESULTS = 5    # number of DDG results to return to Gemini
-SEARCH_REGION      = "in-en"  # India-English results (change to wt-wt for global)
-_last_search_time  = 0.0
-SEARCH_MIN_GAP_S   = 1.5  # minimum seconds between searches (respect DDG rate limits)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PERSISTENT MEMORY
@@ -123,24 +105,10 @@ You MUST reply in the EXACT SAME LANGUAGE the user just spoke.
 - This rule overrides everything else. No exceptions.
 """
 
-    search_guidance = """
-━━━ WEB SEARCH GUIDANCE ━━━
-You have a web_search tool. Use it when:
-- User asks about current events, news, prices, scores, weather, or recent facts.
-- You need to verify something time-sensitive or post-knowledge-cutoff.
-- User explicitly asks you to "search", "look up", or "check online".
-
-When you get search results back:
-- Synthesise them naturally into your answer — don't just read a list.
-- Cite "according to [source]" where relevant but keep it conversational.
-- If results don't help, say so in your own style and answer from memory.
-- Keep your ADAM personality — search results don't make you boring.
-"""
-
     final_prompt = prompt_text
     if memory_block:
         final_prompt = memory_block + "\n\n" + final_prompt
-    final_prompt = final_prompt + "\n" + multilingual_enforcement + "\n" + search_guidance
+    final_prompt = final_prompt + "\n" + multilingual_enforcement
     return final_prompt
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -238,94 +206,12 @@ async def maybe_sync_mouth(audio_chunk: bytes, adam_speaking_event: asyncio.Even
     except Exception:
         return
 
-    if rms < 600:       intensity = "low"
-    elif rms < 4000:    intensity = "low"
-    elif rms < 10000:   intensity = "medium"
-    else:               intensity = "high"
+    if rms < 600:      intensity = "low"
+    elif rms < 4000:   intensity = "low"
+    elif rms < 10000:  intensity = "medium"
+    else:              intensity = "high"
 
     await ws_broadcast({"type": "mouth_sync", "intensity": intensity})
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DUCKDUCKGO SEARCH  (runs in a thread to avoid blocking the event loop)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _ddg_search_sync(query: str, max_results: int) -> list[dict]:
-    """
-    Blocking DuckDuckGo search — called via asyncio.to_thread().
-    Returns a list of {title, body, url} dicts, or [] on failure.
-    """
-    global _last_search_time
-
-    # Enforce minimum gap between searches
-    elapsed = time.time() - _last_search_time
-    if elapsed < SEARCH_MIN_GAP_S:
-        time.sleep(SEARCH_MIN_GAP_S - elapsed)
-
-    _last_search_time = time.time()
-
-    try:
-        results = DDGS().text(
-            keywords=query,
-            region=SEARCH_REGION,
-            safesearch="moderate",
-            max_results=max_results,
-        )
-        return results or []
-    except RatelimitException:
-        print("  🔍  [search] DDG rate limited — retrying in 3s...")
-        time.sleep(3)
-        try:
-            return DDGS().text(
-                keywords=query,
-                region="wt-wt",      # fallback to global region on retry
-                safesearch="moderate",
-                max_results=max_results,
-            ) or []
-        except Exception as e:
-            print(f"  🔍  [search] Retry failed: {e}")
-            return []
-    except TimeoutException:
-        print("  🔍  [search] DDG timeout")
-        return []
-    except Exception as e:
-        print(f"  🔍  [search] Error: {e}")
-        return []
-
-
-async def do_web_search(query: str) -> dict:
-    """
-    Async wrapper around _ddg_search_sync.
-    Returns a result dict suitable for the Gemini function response.
-    """
-    if not DDG_AVAILABLE:
-        return {
-            "error": "Web search library not installed.",
-            "results": [],
-        }
-
-    print(f"  🔍  [search] → \"{query}\"")
-    raw = await asyncio.to_thread(_ddg_search_sync, query, SEARCH_MAX_RESULTS)
-
-    if not raw:
-        return {
-            "query": query,
-            "results": [],
-            "note": "No results found or search failed.",
-        }
-
-    formatted = []
-    for r in raw:
-        formatted.append({
-            "title":   r.get("title", ""),
-            "snippet": r.get("body",  ""),
-            "url":     r.get("href",  ""),
-        })
-
-    print(f"  🔍  [search] Got {len(formatted)} results for \"{query}\"")
-    return {
-        "query":   query,
-        "results": formatted,
-    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL HANDLER
@@ -347,10 +233,6 @@ async def handle_tool_call(tool_call, memory: dict) -> list[dict]:
                 "timezone": str(datetime.datetime.now().astimezone().tzname()),
             }
             print(f"  🕐  [tool] datetime → {result['datetime']}")
-
-        elif name == "web_search":
-            query  = args.get("query", "").strip()
-            result = await do_web_search(query) if query else {"error": "Empty query"}
 
         elif name == "set_emotion":
             emotion = args.get("emotion", "happy")
@@ -432,25 +314,6 @@ async def run_session(
             name="get_current_datetime",
             description="Returns current local date and time.",
             parameters=types.Schema(type=types.Type.OBJECT, properties={}),
-        ),
-        types.FunctionDeclaration(
-            name="web_search",
-            description=(
-                "Search the web using DuckDuckGo. Use this for current events, news, "
-                "prices, scores, weather, recent releases, or any fact that might have "
-                "changed after your training cutoff. Returns top search results with "
-                "title, snippet, and URL."
-            ),
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "query": types.Schema(
-                        type=types.Type.STRING,
-                        description="The search query string (concise, 3–8 words works best).",
-                    )
-                },
-                required=["query"],
-            ),
         ),
         types.FunctionDeclaration(
             name="set_emotion",
@@ -784,16 +647,11 @@ async def main():
 
 def main_entry():
     print("=" * 52)
-    print("  ADAM — Autonomous Desktop AI Module  (v16)")
+    print("  ADAM — Autonomous Desktop AI Module  (v17)")
     print(f"  Built by DGEN Technologies Pvt. Ltd., Kolkata")
     print(f"  Model : {MODEL}  |  Voice: {VOICE}")
-    print(f"  Search: DuckDuckGo ({'available' if DDG_AVAILABLE else 'NOT INSTALLED'})")
     print(f"  Idle wakeup: {IDLE_WAKEUP_SECONDS}s")
     print("=" * 52)
-
-    if not DDG_AVAILABLE:
-        print("\n  ⚠️  Install search: pip install duckduckgo-search")
-        print("  ADAM will run without web search until installed.\n")
 
     threading.Thread(target=run_flask, daemon=True).start()
     print(f"  🌍  Flask      → http://localhost:{FLASK_PORT}")
