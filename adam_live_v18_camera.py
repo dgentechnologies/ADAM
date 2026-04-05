@@ -17,7 +17,7 @@ SETUP:
     pip install --upgrade google-genai pyaudio python-dotenv websockets flask opencv-python Pillow
 
 RUN:
-    python adam_v18.py
+    python adam_live_v18_camera.py
 """
 
 import asyncio
@@ -141,13 +141,13 @@ def memory_to_prompt(memory: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_system_prompt(memory: dict, faces: dict) -> str:
-    prompt_path = Path(BASE_DIR) / "SYSTEM_PROMPT.txt"
+    prompt_path = Path(BASE_DIR) / "system_prompt.txt"
     if prompt_path.exists():
         prompt_text = prompt_path.read_text(encoding="utf-8")
         if prompt_text.startswith('"""') and prompt_text.endswith('"""'):
             prompt_text = prompt_text[3:-3].strip()
     else:
-        # Fallback inline prompt if SYSTEM_PROMPT.txt not present
+        # Fallback inline prompt if system_prompt.txt not present
         prompt_text = """You are ADAM — Autonomous Desktop AI Module.
 Think Tony Stark meets J.A.R.V.I.S. Sharp, confident, effortlessly clever.
 Dry wit, occasional roasts, never sycophantic. Short punchy responses."""

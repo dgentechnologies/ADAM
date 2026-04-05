@@ -8,7 +8,7 @@ SETUP:
     pip install --upgrade google-genai pyaudio python-dotenv websockets flask
 
 RUN:
-    python fullTEST2.py
+    python adam_live_v17.py
 """
 
 import asyncio
@@ -87,7 +87,7 @@ def memory_to_prompt(memory: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_system_prompt(memory: dict) -> str:
-    prompt_path = Path(BASE_DIR) / "SYSTEM_PROMPT.txt"
+    prompt_path = Path(BASE_DIR) / "system_prompt.txt"
     prompt_text = prompt_path.read_text(encoding="utf-8")
     if prompt_text.startswith('"""') and prompt_text.endswith('"""'):
         prompt_text = prompt_text[3:-3].strip()
