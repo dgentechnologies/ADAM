@@ -917,6 +917,7 @@ async def run_session(
             mic_q          = asyncio.Queue(maxsize=120)
             adam_speaking  = asyncio.Event()
             last_idle_nudge= [time.time()]
+            latest_frame   = [None]   # shared frame buffer; avoids dual camera open
 
             async def on_attention_change(state: str):
                 if state == AttentionState.ATTENTIVE:
@@ -930,6 +931,8 @@ async def run_session(
             async def camera():
                 cap  = None
                 gaze = FaceGazeDetector()
+                consecutive_failures = 0
+                MAX_CONSECUTIVE_FAILURES = 10
                 try:
                     cap = cv2.VideoCapture(CAMERA_INDEX)
                     if not cap.isOpened():
@@ -945,7 +948,25 @@ async def run_session(
 
                         raw = await asyncio.to_thread(capture_raw_frame, cap)
                         if raw is None:
+                            consecutive_failures += 1
+                            await asyncio.sleep(0.5)  # always back off before retrying
+                            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                                print(
+                                    f"  ⚠️  Camera: {consecutive_failures} consecutive "
+                                    "read failures — attempting reconnect..."
+                                )
+                                cap.release()
+                                await asyncio.sleep(2.0)
+                                cap = cv2.VideoCapture(CAMERA_INDEX)
+                                if not cap.isOpened():
+                                    print("  ⚠️  Camera reconnect failed — vision disabled")
+                                    return
+                                print(f"  📷  Camera reconnected (index {CAMERA_INDEX})")
+                                consecutive_failures = 0
                             continue
+
+                        consecutive_failures = 0
+                        latest_frame[0] = raw
 
                         user_facing = await asyncio.to_thread(gaze.is_user_facing, raw)
 
@@ -1154,13 +1175,6 @@ async def run_session(
             async def idle_watcher():
                 if not ENABLE_IDLE:
                     return
-                _idle_cap = None
-                try:
-                    _idle_cap = cv2.VideoCapture(CAMERA_INDEX)
-                    if not _idle_cap.isOpened():
-                        _idle_cap = None
-                except Exception:
-                    _idle_cap = None
                 try:
                     while not stop.is_set():
                         await asyncio.sleep(5)
@@ -1176,29 +1190,31 @@ async def run_session(
                         print(f"  💤  Idle nudge ({elapsed:.0f}s passive)")
                         try:
                             await attention.activate("idle-nudge")
+                            # Grab the latest camera frame so ADAM can see + comment on it
                             frame_jpeg = None
-                            if _idle_cap is not None:
-                                raw = await asyncio.to_thread(capture_raw_frame, _idle_cap)
-                                if raw is not None:
-                                    frame_jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
+                            raw = latest_frame[0]
+                            if raw is not None:
+                                frame_jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
+                            # Send camera frame first (gives ADAM visual context)
                             if frame_jpeg is not None:
                                 await session.send_realtime_input(
                                     video=types.Blob(data=frame_jpeg, mime_type="image/jpeg")
                                 )
+                            # Then send the nudge instruction
                             await session.send_realtime_input(
                                 text=(
-                                    f"[SYSTEM: User passive {elapsed:.0f}s. "
-                                    f"Break silence in-character, 1-2 sentences. "
-                                    f"Suggestion: {nudge}]"
+                                    f"[SYSTEM: User has been passive/away for {elapsed:.0f}s. "
+                                    f"A camera frame has just been sent so you can see their "
+                                    f"current state. React to what you see — are they there? "
+                                    f"Busy? Staring into space? Asleep? Break the silence "
+                                    f"in-character, very briefly (1-2 sentences max). "
+                                    f"Suggestion if nothing visible: {nudge}]"
                                 )
                             )
                         except Exception as e:
                             print(f"  ⚠️  Idle nudge error: {e}")
                 except asyncio.CancelledError:
                     pass
-                finally:
-                    if _idle_cap is not None:
-                        _idle_cap.release()
 
             # ── Launch ───────────────────────────────────────────────────────
             t_cam = asyncio.create_task(camera())
