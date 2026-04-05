@@ -1,5 +1,5 @@
 """
-ADAM — Autonomous Desktop AI Module (v19)
+ADAM — Autonomous Desktop AI Module (v19.1)
 ==========================================
 NEW: SMART ATTENTION SYSTEM — ADAM knows when you're talking to IT vs others
 
@@ -93,10 +93,13 @@ WS_HOST             = "localhost"
 WS_PORT             = 8765
 POST_SPEECH_MUTE_S  = 0.4
 VOICE               = "Charon"
-IDLE_WAKEUP_SECONDS = 60
 CAMERA_INDEX        = 0
 FRAME_SIZE          = (768, 768)
 CAMERA_FPS_INTERVAL = 1.0           # 1 FPS to Gemini (API limit)
+
+# ── Idle nudge config (edit these freely) ────────────────────────────────────
+ENABLE_IDLE      = True    # True = ADAM breaks silence with nudges, False = stays quiet
+IDLE_TIMEOUT_S   = 60      # seconds of passiveness before sending an idle nudge
 
 # ── Attention system config ───────────────────────────────────────────────────
 ATTENTION_TIMEOUT_S       = 30      # stay attentive this long after last interaction
@@ -947,29 +950,57 @@ async def run_session(
                     format=FORMAT, channels=CHANNELS,
                     rate=RECV_SAMPLE_RATE, output=True,
                 )
+                last_audio_time = [time.time()]
+                STUCK_WATCHDOG_S = 2.5   # if no audio/sentinel for this long while
+                                          # adam_speaking is set → force-clear
+
+                async def end_of_turn():
+                    """Shared cleanup called both from sentinel and watchdog."""
+                    await ws_broadcast({"type": "mouth_sync", "intensity": "closed"})
+                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(POST_SPEECH_MUTE_S)
+                    # Drain any leftover audio chunks that arrived after sentinel
+                    drained = 0
+                    while not out_q.empty():
+                        try:
+                            out_q.get_nowait()
+                            drained += 1
+                        except asyncio.QueueEmpty:
+                            break
+                    if drained:
+                        print(f"  🧹  Drained {drained} leftover audio chunks")
+                    # Flush stale mic buffer (prevents echo)
+                    while not mic_q.empty():
+                        try:
+                            mic_q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    adam_speaking.clear()
+                    await attention.set_responding(False)
+                    print("  🎤  Your turn...")
+                    await ws_broadcast({"type": "face_state", "state": "listening"})
+
                 try:
                     while not stop.is_set():
                         try:
                             chunk = await asyncio.wait_for(out_q.get(), timeout=0.3)
+                            last_audio_time[0] = time.time()
+
                             if chunk is None:
-                                await ws_broadcast({"type": "mouth_sync",
-                                                    "intensity": "closed"})
-                                await asyncio.sleep(0.15)
-                                await asyncio.sleep(POST_SPEECH_MUTE_S)
-                                while not mic_q.empty():
-                                    try:
-                                        mic_q.get_nowait()
-                                    except asyncio.QueueEmpty:
-                                        break
-                                adam_speaking.clear()
-                                await attention.set_responding(False)
-                                print("  🎤  Your turn...")
-                                await ws_broadcast({"type": "face_state",
-                                                    "state": "listening"})
+                                # Normal end-of-turn sentinel from receiver
+                                await end_of_turn()
                                 continue
+
                             await asyncio.to_thread(stream.write, chunk)
+
                         except asyncio.TimeoutError:
+                            # Watchdog: ADAM was speaking but nothing arrived for too long
+                            if (adam_speaking.is_set() and
+                                    time.time() - last_audio_time[0] > STUCK_WATCHDOG_S):
+                                print("  ⚠️  Speaker watchdog — force-clearing stuck state")
+                                await end_of_turn()
                             continue
+
                 except asyncio.CancelledError:
                     pass
                 finally:
@@ -978,29 +1009,68 @@ async def run_session(
 
             # ── Idle watcher ─────────────────────────────────────────────
             async def idle_watcher():
-                while not stop.is_set():
-                    await asyncio.sleep(5)
-                    if stop.is_set() or adam_speaking.is_set():
-                        continue
-                    if attention.state != AttentionState.PASSIVE:
-                        continue
-                    elapsed = time.time() - last_idle_nudge[0]
-                    if elapsed >= IDLE_WAKEUP_SECONDS:
+                if not ENABLE_IDLE:
+                    return   # feature disabled — exit task immediately
+
+                # Keep a reference to the camera cap for frame grabs
+                # We open a separate cap here so camera() task owns its own
+                _idle_cap = None
+                try:
+                    _idle_cap = cv2.VideoCapture(CAMERA_INDEX)
+                    if not _idle_cap.isOpened():
+                        _idle_cap = None
+                except Exception:
+                    _idle_cap = None
+
+                try:
+                    while not stop.is_set():
+                        await asyncio.sleep(5)
+                        if stop.is_set() or adam_speaking.is_set():
+                            continue
+                        if attention.state != AttentionState.PASSIVE:
+                            continue
+                        elapsed = time.time() - last_idle_nudge[0]
+                        if elapsed < IDLE_TIMEOUT_S:
+                            continue
+
                         last_idle_nudge[0] = time.time()
                         nudge = next_nudge()
-                        print(f"  💤  Idle nudge")
+                        print(f"  💤  Idle nudge ({elapsed:.0f}s passive)")
+
                         try:
-                            # Briefly activate to send nudge
                             await attention.activate("idle-nudge")
+
+                            # Grab a camera frame so ADAM can see + comment on it
+                            frame_jpeg = None
+                            if _idle_cap is not None:
+                                raw = await asyncio.to_thread(capture_raw_frame, _idle_cap)
+                                if raw is not None:
+                                    frame_jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
+
+                            # Send camera frame first (gives ADAM visual context)
+                            if frame_jpeg is not None:
+                                await session.send_realtime_input(
+                                    video=types.Blob(data=frame_jpeg, mime_type="image/jpeg")
+                                )
+
+                            # Then send the nudge instruction
                             await session.send_realtime_input(
                                 text=(
-                                    f"[SYSTEM: User has been away/passive for "
-                                    f"{elapsed:.0f}s. Break silence in-character, "
-                                    f"briefly. Suggestion: {nudge}]"
+                                    f"[SYSTEM: User has been passive/away for {elapsed:.0f}s. "
+                                    f"A camera frame has just been sent so you can see their "
+                                    f"current state. React to what you see — are they there? "
+                                    f"Busy? Staring into space? Asleep? Break the silence "
+                                    f"in-character, very briefly (1-2 sentences max). "
+                                    f"Suggestion if nothing visible: {nudge}]"
                                 )
                             )
                         except Exception as e:
                             print(f"  ⚠️  Idle nudge error: {e}")
+                except asyncio.CancelledError:
+                    pass
+                finally:
+                    if _idle_cap is not None:
+                        _idle_cap.release()
 
             # ── Launch all tasks ──────────────────────────────────────────
             t_cam = asyncio.create_task(camera())
@@ -1081,11 +1151,12 @@ async def main():
 
 def main_entry():
     print("=" * 60)
-    print("  ADAM — Autonomous Desktop AI Module  (v19)")
+    print("  ADAM — Autonomous Desktop AI Module  (v19.1)")
     print(f"  Built by DGEN Technologies Pvt. Ltd., Kolkata")
     print(f"  Model  : {MODEL}  |  Voice: {VOICE}")
     print(f"  Vision : OpenCV camera {CAMERA_INDEX} + Haar face gaze detection")
     print(f"  Vosk   : {'ready (' + VOSK_MODEL_PATH + ')' if VOSK_AVAILABLE else 'not installed (transcript fallback)'}")
+    print(f"  Idle nudge : {'ENABLED' if ENABLE_IDLE else 'DISABLED'}  |  Timeout: {IDLE_TIMEOUT_S}s")
     print(f"  Attention timeout: {ATTENTION_TIMEOUT_S}s")
     print("=" * 60)
     print()
