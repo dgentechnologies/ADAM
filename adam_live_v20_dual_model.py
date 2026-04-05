@@ -1190,19 +1190,25 @@ async def run_session(
                         print(f"  💤  Idle nudge ({elapsed:.0f}s passive)")
                         try:
                             await attention.activate("idle-nudge")
+                            # Grab the latest camera frame so ADAM can see + comment on it
                             frame_jpeg = None
                             raw = latest_frame[0]
                             if raw is not None:
                                 frame_jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
+                            # Send camera frame first (gives ADAM visual context)
                             if frame_jpeg is not None:
                                 await session.send_realtime_input(
                                     video=types.Blob(data=frame_jpeg, mime_type="image/jpeg")
                                 )
+                            # Then send the nudge instruction
                             await session.send_realtime_input(
                                 text=(
-                                    f"[SYSTEM: User passive {elapsed:.0f}s. "
-                                    f"Break silence in-character, 1-2 sentences. "
-                                    f"Suggestion: {nudge}]"
+                                    f"[SYSTEM: User has been passive/away for {elapsed:.0f}s. "
+                                    f"A camera frame has just been sent so you can see their "
+                                    f"current state. React to what you see — are they there? "
+                                    f"Busy? Staring into space? Asleep? Break the silence "
+                                    f"in-character, very briefly (1-2 sentences max). "
+                                    f"Suggestion if nothing visible: {nudge}]"
                                 )
                             )
                         except Exception as e:
