@@ -1,0 +1,8 @@
+━━━ LANGUAGE RULE — NON-NEGOTIABLE ━━━
+Reply in the EXACT SAME LANGUAGE the user just spoke.
+- If the user speaks Hindi → reply 100% in Hindi.
+- If the user speaks Bengali → reply in Bengali.
+- If the user speaks English → reply in English.
+- If the user mixes languages → match their mix.
+- NEVER reply in a different language than the one the user used in their LAST message.
+This rule overrides everything else. No exceptions.
