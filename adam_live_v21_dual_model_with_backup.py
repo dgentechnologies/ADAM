@@ -132,6 +132,11 @@ GESTURE_MOTION_THRESHOLD  = 0.018   # fraction of frame area changed to trigger 
 MOUTH_MOVEMENT_SENSITIVITY = 8.0    # brightness delta in mouth ROI to count as "speaking"
 SPEAKER_INERTIA_FRAMES     = 8      # frames before switching active speaker
 
+# Camera preview window
+SHOW_PREVIEW     = True                   # Set False to run headless
+PREVIEW_WIN_NAME = "ADAM — Camera Preview"
+PREVIEW_SIZE     = (640, 480)             # (width, height) of the preview window
+
 CLIPBOARD_ACK_LINES = [
     "On it. Give me two seconds.",
     "Already generating. Have Ctrl+V ready.",
@@ -153,6 +158,12 @@ CLIPBOARD_DONE_LINES = [
     "Generated and copied. You're welcome.",
     "Your clipboard has been updated. Paste away.",
 ]
+
+# Queue used to ship preview data from the camera coroutine to the display
+# thread.  maxsize=1 ensures the thread always shows the freshest frame.
+_preview_queue: queue.Queue = queue.Queue(maxsize=1)
+# Set by main_entry() to stop the preview thread cleanly.
+_preview_stop  = threading.Event()
 
 # ═════════════════════════════════════════════════════════════════════════════
 # MULTI-PERSON TRACKER
@@ -825,6 +836,171 @@ def frame_to_jpeg(frame: np.ndarray, size=FRAME_SIZE) -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# CAMERA PREVIEW — live debug window
+# ═════════════════════════════════════════════════════════════════════════════
+
+def draw_preview_frame(data: dict) -> np.ndarray:
+    """
+    Render face-tracking annotations onto a copy of the camera frame.
+
+    Draws:
+      • Face bounding boxes  (green + thick for active speaker, grey for others)
+      • Person label P1 / P2 … with '◉ SPEAKING' badge on the active speaker
+      • Mouth-ROI rectangle per face (cyan/blue outline)
+      • Semi-transparent status bar at the bottom (ADAM state + face count)
+      • Gesture badge top-right corner — fades after 3 seconds
+      • Header label 'ADAM  Camera Monitor'
+    """
+    raw           = data["frame"]
+    tr            = data["tracker_result"]
+    attn_state    = data["attention_state"]
+    adam_speaking = data["adam_speaking"]
+    gesture       = data.get("gesture")
+    gesture_ts    = data.get("gesture_ts", 0.0)
+
+    pw, ph = PREVIEW_SIZE
+    frame  = cv2.resize(raw, (pw, ph))
+
+    raw_h, raw_w = raw.shape[:2]
+    sx = pw / raw_w
+    sy = ph / raw_h
+
+    speaker_idx = tr.get("active_speaker_idx")
+
+    # ── Per-face annotations ──────────────────────────────────────────────────
+    for i, f in enumerate(tr.get("faces", [])):
+        is_spk = (i == speaker_idx)
+
+        # Scale bounding box to preview size
+        fx = int(f["x"] * sx)
+        fy = int(f["y"] * sy)
+        fw = int(f["w"] * sx)
+        fh = int(f["h"] * sy)
+
+        # Active speaker → bright green / thick; others → cool grey / thin
+        box_color = (0, 230, 80)  if is_spk else (160, 160, 160)
+        box_thick = 3             if is_spk else 1
+        cv2.rectangle(frame, (fx, fy), (fx + fw, fy + fh), box_color, box_thick)
+
+        # Person label
+        label   = f"P{i + 1}"
+        if is_spk:
+            label += " ◉ SPEAKING"
+        lbl_y = fy - 8 if fy > 20 else fy + fh + 18
+        cv2.putText(frame, label, (fx + 4, lbl_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.58, box_color, 2, cv2.LINE_AA)
+
+        # Mouth ROI — lower 35 % of face, inner 60 % width
+        my = fy + int(fh * 0.6)
+        mh = int(fh * 0.35)
+        mx = fx + int(fw * 0.2)
+        mw = int(fw * 0.6)
+        my = max(0, min(my, ph - 1))
+        mx = max(0, min(mx, pw - 1))
+        mh = min(mh, ph - my)
+        mw = min(mw, pw - mx)
+        if mh > 0 and mw > 0:
+            mouth_color = (0, 200, 255) if is_spk else (100, 100, 200)
+            cv2.rectangle(frame, (mx, my), (mx + mw, my + mh), mouth_color, 1)
+            cv2.putText(frame, "mouth", (mx, my - 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.32, mouth_color, 1, cv2.LINE_AA)
+
+    # ── Semi-transparent status bar at bottom ────────────────────────────────
+    bar_h   = 36
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, ph - bar_h), (pw, ph), (20, 20, 20), -1)
+    cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
+
+    if adam_speaking:
+        state_txt   = "ADAM SPEAKING"
+        state_color = (0, 220, 255)
+    elif attn_state == AttentionState.RESPONDING:
+        state_txt   = "RESPONDING"
+        state_color = (0, 180, 255)
+    elif attn_state == AttentionState.ATTENTIVE:
+        state_txt   = "ATTENTIVE"
+        state_color = (0, 230, 80)
+    else:
+        state_txt   = "PASSIVE"
+        state_color = (120, 120, 120)
+
+    cv2.putText(frame, state_txt, (10, ph - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.58, state_color, 2, cv2.LINE_AA)
+
+    face_txt = f"Faces: {tr.get('face_count', 0)}"
+    cv2.putText(frame, face_txt, (pw - 110, ph - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1, cv2.LINE_AA)
+
+    # ── Gesture badge — top-right, fades out over 3 s ────────────────────────
+    age = time.time() - gesture_ts
+    if gesture and age < 3.0:
+        badge_map = {
+            "thumbs_up":    "THUMBS UP",
+            "thumbs_down":  "THUMBS DOWN",
+            "namaste":      "NAMASTE",
+            "wave":         "WAVE",
+            "object_shown": "OBJECT SHOWN",
+        }
+        badge_txt = badge_map.get(gesture, gesture.upper())
+        alpha     = max(0.0, 1.0 - age / 3.0)
+        b_color   = (int(50 * alpha), int(255 * alpha), int(120 * alpha))
+        (tw, th), _ = cv2.getTextSize(badge_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+        bx = pw - tw - 14
+        by = 14
+        cv2.rectangle(frame, (bx - 6, by - 4), (bx + tw + 6, by + th + 6),
+                      (20, 20, 20), -1)
+        cv2.putText(frame, badge_txt, (bx, by + th),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, b_color, 2, cv2.LINE_AA)
+
+    # ── Header label ──────────────────────────────────────────────────────────
+    cv2.putText(frame, "ADAM  Camera Monitor  [Q = close]", (8, 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 220, 220), 1, cv2.LINE_AA)
+
+    return frame
+
+
+def run_preview_thread():
+    """
+    Dedicated daemon thread for cv2.imshow().
+    Reads packed data dicts from _preview_queue and renders the preview window.
+    Press 'Q' inside the window to close the preview (stops ADAM too).
+    """
+    if not SHOW_PREVIEW:
+        return
+
+    window_open = False
+    while not _preview_stop.is_set():
+        try:
+            data = _preview_queue.get(timeout=0.3)
+        except queue.Empty:
+            if window_open:
+                key = cv2.waitKey(1) & 0xFF
+                if key in (ord('q'), ord('Q')):
+                    _preview_stop.set()
+                    break
+            continue
+
+        annotated = draw_preview_frame(data)
+
+        if not window_open:
+            cv2.namedWindow(PREVIEW_WIN_NAME, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(PREVIEW_WIN_NAME, *PREVIEW_SIZE)
+            window_open = True
+
+        cv2.imshow(PREVIEW_WIN_NAME, annotated)
+        key = cv2.waitKey(1) & 0xFF
+        if key in (ord('q'), ord('Q')):
+            _preview_stop.set()
+            break
+
+    if window_open:
+        try:
+            cv2.destroyWindow(PREVIEW_WIN_NAME)
+        except Exception:
+            pass
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # TOOL HANDLER
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -1251,6 +1427,28 @@ async def run_session(
                             except Exception:
                                 pass
 
+                        # ── Push to live preview window ───────────────────────
+                        if SHOW_PREVIEW:
+                            preview_data = {
+                                "frame":           raw,
+                                "tracker_result":  tracker_result,
+                                "attention_state": attention.state,
+                                "adam_speaking":   adam_speaking.is_set(),
+                                "gesture":         last_gesture_sent,
+                                "gesture_ts":      last_gesture_sent_time,
+                            }
+                            # Drop the stale frame (if any) then put the fresh one.
+                            # With maxsize=1 this guarantees the display thread
+                            # always sees the most recent data.
+                            try:
+                                _preview_queue.get_nowait()
+                            except queue.Empty:
+                                pass
+                            try:
+                                _preview_queue.put_nowait(preview_data)
+                            except queue.Full:
+                                pass
+
                 except asyncio.CancelledError:
                     pass
                 finally:
@@ -1644,10 +1842,16 @@ def main_entry():
     print(f"  🌍  Flask → http://localhost:{FLASK_PORT}")
     threading.Timer(1.2, lambda: webbrowser.open(f"http://localhost:{FLASK_PORT}")).start()
 
+    if SHOW_PREVIEW:
+        threading.Thread(target=run_preview_thread, daemon=True, name="preview").start()
+        print(f"  📺  Preview → window '{PREVIEW_WIN_NAME}'  (press Q to close)")
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋  Goodbye.")
+    finally:
+        _preview_stop.set()
 
 
 if __name__ == "__main__":
