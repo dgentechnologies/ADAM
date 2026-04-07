@@ -123,7 +123,7 @@ FRAME_SIZE          = (768, 768)
 CAMERA_FPS_INTERVAL = 1.0
 
 ENABLE_IDLE         = True
-IDLE_TIMEOUT_S      = 60              # seconds of silence before idle nudge
+IDLE_TIMEOUT_S      = 90              # seconds of silence before idle nudge
 
 ATTENTION_TIMEOUT_S    = 30
 FACE_CENTRE_TOLERANCE  = 0.45
