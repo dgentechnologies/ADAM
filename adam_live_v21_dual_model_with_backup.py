@@ -126,11 +126,16 @@ VOSK_MODEL_PATH        = "vosk-model-small-en-in-0.4"
 BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
 MEMORY_FILE      = Path(BASE_DIR) / "adam_memory.json"
 FACE_MEMORY_FILE = Path(BASE_DIR) / "adam_faces.json"
+FACES_DIR        = Path(BASE_DIR) / "faces"          # saved face crop photos
 
 # Gesture detection sensitivity
-GESTURE_MOTION_THRESHOLD  = 0.018   # fraction of frame area changed to trigger gesture notice
-MOUTH_MOVEMENT_SENSITIVITY = 8.0    # brightness delta in mouth ROI to count as "speaking"
-SPEAKER_INERTIA_FRAMES     = 8      # frames before switching active speaker
+GESTURE_MOTION_THRESHOLD  = 0.025   # fraction of frame area changed to trigger gesture notice
+MOUTH_MOVEMENT_SENSITIVITY = 6.0    # brightness delta in mouth ROI to count as "speaking"
+SPEAKER_INERTIA_FRAMES     = 10     # frames before switching active speaker
+WAVE_MIN_LATERAL_MOVEMENT  = 0.22   # min horizontal blob travel (fraction of frame) for wave
+WAVE_MOTION_THRESHOLD      = 0.07   # motion fraction required specifically for wave
+WAVE_SKIN_THRESHOLD        = 0.10   # skin fraction in upper half required for wave
+FACE_DETECT_MIN_NEIGHBORS  = 4      # lower = fewer missed faces (was 5)
 
 # Camera preview window
 SHOW_PREVIEW     = True                   # Set False to run headless
@@ -201,6 +206,10 @@ class PersonTracker:
         self._prev_frame_small: np.ndarray | None = None
         self._last_gesture_time: float = 0.0
         self._gesture_cooldown: float = 3.0   # seconds between gesture triggers
+        # Wave tracking: persistent blob-cx history for lateral movement detection
+        self._blob_cx_history: deque = deque(maxlen=8)
+        # ADAM-speaking flag — suppresses speaker-id updates while ADAM is talking
+        self._adam_speaking: bool = False
 
     @property
     def available(self):
@@ -249,7 +258,7 @@ class PersonTracker:
         # ── Detect faces ─────────────────────────────────────────────────────
         min_face_px = int(min(w_frame, h_frame) * FACE_MIN_SIZE_FRACTION)
         faces_raw = self._face_cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=5,
+            gray, scaleFactor=1.1, minNeighbors=FACE_DETECT_MIN_NEIGHBORS,
             minSize=(min_face_px, min_face_px)
         )
 
@@ -310,7 +319,8 @@ class PersonTracker:
             mouth_deltas.append(delta)
 
         # ── Determine active speaker ──────────────────────────────────────────
-        if mouth_deltas:
+        # Frozen while ADAM is talking to prevent false speaker switches.
+        if not self._adam_speaking and mouth_deltas:
             max_delta = max(mouth_deltas)
             if max_delta >= MOUTH_MOVEMENT_SENSITIVITY:
                 candidate = mouth_deltas.index(max_delta)
@@ -337,21 +347,49 @@ class PersonTracker:
 
     def _detect_gesture(self, frame: np.ndarray) -> str | None:
         """
-        Lightweight gesture detection using frame differencing + skin tone analysis.
-        Detects: thumbs_up, thumbs_down, namaste, wave, object_shown, nod
-        Returns gesture name string or None.
+        Gesture detection using frame differencing + skin tone analysis.
+        Detects: thumbs_up, namaste, wave, object_shown.
+
+        Wave fix: requires sustained lateral hand movement (blob cx range >=
+        WAVE_MIN_LATERAL_MOVEMENT) so hair-fixing / head-scratching motions
+        that stay near the centre are NOT mis-classified as waves.
         """
         now = time.time()
-        if now - self._last_gesture_time < self._gesture_cooldown:
-            return None
-
         h, w = frame.shape[:2]
 
         # Downsample for speed
         small = cv2.resize(frame, (160, 120))
 
+        # Define skin range once (used in both tracking and classification)
+        lower_skin = np.array([0, 20, 70],  dtype=np.uint8)
+        upper_skin = np.array([25, 255, 255], dtype=np.uint8)
+
+        # ── Always track blob-cx for wave detection (even during cooldown) ────
+        upper_track = small[:60, :]
+        skin_track  = cv2.inRange(
+            cv2.cvtColor(upper_track, cv2.COLOR_BGR2HSV), lower_skin, upper_skin)
+        skin_frac_t = np.sum(skin_track > 0) / skin_track.size
+
+        if skin_frac_t >= 0.06:
+            ctrs_t, _ = cv2.findContours(skin_track, cv2.RETR_EXTERNAL,
+                                          cv2.CHAIN_APPROX_SIMPLE)
+            if ctrs_t:
+                lg_t = max(ctrs_t, key=cv2.contourArea)
+                if cv2.contourArea(lg_t) >= 60:
+                    bxt, _, bwt, _ = cv2.boundingRect(lg_t)
+                    self._blob_cx_history.append((bxt + bwt / 2) / 160)
+        else:
+            # No skin visible — clear stale history
+            if self._blob_cx_history:
+                self._blob_cx_history.clear()
+
         if self._prev_frame_small is None:
             self._prev_frame_small = small
+            return None
+
+        # ── Gesture cooldown ──────────────────────────────────────────────────
+        if now - self._last_gesture_time < self._gesture_cooldown:
+            self._prev_frame_small = small.copy()
             return None
 
         # ── Motion detection ──────────────────────────────────────────────────
@@ -362,31 +400,38 @@ class PersonTracker:
         _, thresh = cv2.threshold(gray_diff, 25, 255, cv2.THRESH_BINARY)
         motion_fraction = np.sum(thresh > 0) / thresh.size
 
+        # ── Wave: check with its OWN stricter threshold + lateral-movement proof ──
+        # Hair-fixing stays near the centre and produces a small cx range.
+        # A real wave travels from one side (cx<0.28 or cx>0.72) across the frame.
+        if (len(self._blob_cx_history) >= 4 and
+                motion_fraction > WAVE_MOTION_THRESHOLD and
+                skin_frac_t > WAVE_SKIN_THRESHOLD):
+            cx_range    = max(self._blob_cx_history) - min(self._blob_cx_history)
+            has_side    = any(cx < 0.28 or cx > 0.72 for cx in self._blob_cx_history)
+            if cx_range >= WAVE_MIN_LATERAL_MOVEMENT and has_side:
+                self._last_gesture_time = now
+                self._blob_cx_history.clear()
+                return "wave"
+
         if motion_fraction < GESTURE_MOTION_THRESHOLD:
-            return None  # Not enough motion
+            return None  # Not enough global motion for other gestures
 
-        # ── Skin tone detection in upper half (gestures near face) ───────────
+        # ── Skin tone check for remaining gestures ────────────────────────────
         upper_half = small[:60, :]
-        hsv = cv2.cvtColor(upper_half, cv2.COLOR_BGR2HSV)
-
-        # Skin tone range (works across skin tones)
-        lower_skin = np.array([0, 20, 70],  dtype=np.uint8)
-        upper_skin = np.array([25, 255, 255], dtype=np.uint8)
+        hsv        = cv2.cvtColor(upper_half, cv2.COLOR_BGR2HSV)
         skin_mask  = cv2.inRange(hsv, lower_skin, upper_skin)
         skin_frac  = np.sum(skin_mask > 0) / skin_mask.size
 
         if skin_frac < 0.08:
-            return None  # No significant skin area in upper region
+            return None
 
-        # ── Classify gesture by skin blob position + shape ────────────────────
-
-        # Find the bounding rect of the skin blob
-        contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL,
+                                        cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
 
         largest = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(largest)
+        area    = cv2.contourArea(largest)
         if area < 100:
             return None
 
@@ -400,20 +445,13 @@ class PersonTracker:
             self._last_gesture_time = now
             return "namaste"
 
-        # Thumbs up: tall narrow blob in upper-center/right, low on y
+        # Thumbs up: tall narrow blob in upper half
         if bh > bw * 0.8 and blob_cy_norm < 0.5 and skin_frac > 0.10:
-            # Check if blob is vertically oriented (thumb up = tall)
             if aspect_ratio < 0.8:
                 self._last_gesture_time = now
                 return "thumbs_up"
 
-        # Wave: wide motion, skin to the side
-        side_motion = (blob_cx_norm < 0.25 or blob_cx_norm > 0.75)
-        if side_motion and motion_fraction > 0.05 and skin_frac > 0.08:
-            self._last_gesture_time = now
-            return "wave"
-
-        # Showing object: large motion in center of frame + no dominant skin on edges
+        # Showing object: large motion in centre of frame
         center_motion = 0.2 < blob_cx_norm < 0.8 and 0.2 < blob_cy_norm < 0.8
         if center_motion and motion_fraction > 0.08:
             self._last_gesture_time = now
@@ -470,6 +508,35 @@ class PersonTracker:
             ctx += f" [GESTURE DETECTED: {gesture_descs.get(gesture, gesture)}]"
 
         return ctx
+
+    # ── Speaker state management ──────────────────────────────────────────────
+
+    def set_adam_speaking(self, flag: bool):
+        """
+        Call with True when ADAM starts speaking, False when ADAM finishes.
+        Freezes active_speaker detection so the tracker does NOT flip the
+        current speaker based on mouth movement during ADAM's playback.
+        When switching back to False the inertia is reset so the next human
+        speaker is detected cleanly.
+        """
+        if flag == self._adam_speaking:
+            return
+        self._adam_speaking = flag
+        if not flag:
+            # ADAM just finished — clear stale speaker so the next person
+            # who moves their mouth becomes the new detected speaker.
+            self._speaker_inertia   = 0
+            self._active_speaker_id = None
+            self._mouth_history.clear()
+
+    def reset_for_new_turn(self):
+        """
+        Reset all mouth and speaker tracking at the end of a conversation turn.
+        Called after ADAM's turn_complete so the next voice onset gets a fresh start.
+        """
+        self._speaker_inertia   = 0
+        self._active_speaker_id = None
+        self._mouth_history.clear()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -714,8 +781,9 @@ def face_memory_to_prompt(faces: dict) -> str:
     if not faces: return ""
     lines = ["━━━ PEOPLE YOU KNOW ━━━"]
     for pid, info in faces.items():
+        photo_note = f" [Photo: {info['photo_path']}]" if info.get('photo_path') else ""
         lines.append(
-            f"- {info.get('name','?')} (ID:{pid}): "
+            f"- {info.get('name','?')} (ID:{pid}){photo_note}: "
             f"Appearance: {info.get('appearance','?')}. "
             f"Voice: {info.get('voice_cues','?')}. "
             f"Relationship: {info.get('relationship','?')}. "
@@ -727,6 +795,24 @@ def face_memory_to_prompt(faces: dict) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 # SYSTEM PROMPT
 # ═════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Memory-saving behaviour injected into every session prompt.
+# ─────────────────────────────────────────────────────────────────────────────
+_MEMORY_SAVE_GUIDE = """\
+━━━ AUTOMATIC MEMORY RULES ━━━
+- When a user tells you a story or shares a memorable event → IMMEDIATELY call
+  save_story(topic="<short topic>", content="<full story>") to record it.
+- When user says “remember [X]” / “don’t forget [X]” / “keep in mind” →
+  call save_memory(key="<topic>", value="<what to remember>") right away and
+  confirm: “Got it, I’ll remember that.”
+- When user gives you a commitment / task (“you will do X”, “make sure you X”) →
+  save_memory(key="commitment_<topic>", value="<commitment>").
+- When meeting / recognising someone: use remember_person() for appearance and
+  voice cues; optionally call save_person_photo() while you can see their face.
+- Save ANYTHING that the user explicitly asks you to remember — no exceptions.
+"""
+
 
 def load_system_prompt(memory: dict, faces: dict) -> str:
     prompt_path = Path(BASE_DIR) / "system_prompt.txt"
@@ -745,6 +831,7 @@ def load_system_prompt(memory: dict, faces: dict) -> str:
         memory_to_prompt(memory),
         face_memory_to_prompt(faces),
         prompt_text,
+        _MEMORY_SAVE_GUIDE,
         _load_prompt_file("prompt_search.txt"),
         _load_prompt_file("prompt_clipboard.txt"),
         _load_prompt_file("prompt_attention.txt"),
@@ -1004,7 +1091,8 @@ def run_preview_thread():
 # TOOL HANDLER
 # ═════════════════════════════════════════════════════════════════════════════
 
-async def handle_tool_call(tool_call, memory: dict, faces: dict) -> list[dict]:
+async def handle_tool_call(tool_call, memory: dict, faces: dict,
+                           current_frame=None) -> list[dict]:
     responses = []
     for fc in tool_call.function_calls:
         name    = fc.name
@@ -1099,6 +1187,59 @@ async def handle_tool_call(tool_call, memory: dict, faces: dict) -> list[dict]:
         elif name == "get_memory":
             result = {"value": memory.get(args.get("key", ""), None), "all": memory}
 
+        elif name == "save_story":
+            topic   = args.get("topic", "untitled").strip().replace(" ", "_")
+            content = args.get("content", "").strip()
+            if content:
+                date_key = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+                key      = f"story_{topic}_{date_key}"
+                memory[key] = content
+                save_memory(memory)
+                print(f"  📖  Story saved: '{key}' ({len(content)} chars)")
+                result = {"status": "saved", "key": key}
+            else:
+                result = {"status": "error", "reason": "content cannot be empty"}
+
+        elif name == "save_person_photo":
+            pid = args.get("person_id", "").strip()
+            if not pid:
+                result = {"status": "error", "reason": "person_id required"}
+            elif current_frame is None:
+                result = {"status": "error", "reason": "no camera frame available"}
+            else:
+                try:
+                    FACES_DIR.mkdir(exist_ok=True)
+                    # Try to find and crop the face from the frame
+                    gray_c = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+                    gray_c = cv2.equalizeHist(gray_c)
+                    face_cas = cv2.CascadeClassifier(
+                        cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+                    detected = face_cas.detectMultiScale(
+                        gray_c, 1.1, FACE_DETECT_MIN_NEIGHBORS, minSize=(60, 60))
+                    if len(detected) > 0:
+                        fx, fy, fw, fh = max(detected, key=lambda f: f[2] * f[3])
+                        pad = int(fw * 0.3)
+                        ch, cw = current_frame.shape[:2]
+                        x1 = max(0, fx - pad); y1 = max(0, fy - pad)
+                        x2 = min(cw, fx + fw + pad); y2 = min(ch, fy + fh + pad)
+                        crop = current_frame[y1:y2, x1:x2]
+                        photo_path = str(FACES_DIR / f"{pid}.jpg")
+                        cv2.imwrite(photo_path, crop)
+                        msg = "face crop saved"
+                    else:
+                        # No face detected — save full frame as fallback
+                        photo_path = str(FACES_DIR / f"{pid}_full.jpg")
+                        cv2.imwrite(photo_path, current_frame)
+                        msg = "full frame saved (no face detected)"
+                    # Update face memory record
+                    if pid in faces:
+                        faces[pid]["photo_path"] = photo_path
+                        save_face_memory(faces)
+                    print(f"  📸  Photo [{msg}]: {photo_path}")
+                    result = {"status": "saved", "path": photo_path, "note": msg}
+                except Exception as e:
+                    result = {"status": "error", "reason": str(e)}
+
         else:
             result = {"error": f"Unknown: {name}"}
 
@@ -1163,7 +1304,11 @@ def build_tools() -> list[types.Tool]:
             }, required=["intensity"])),
 
         types.FunctionDeclaration(name="save_memory",
-            description="Save a persistent key-value memory.",
+            description=(
+                "Save a persistent key-value memory. Use this when the user says "
+                "'remember [X]', 'don't forget [X]', or gives you a commitment/task. "
+                "Also use for any important fact you learn about the user."
+            ),
             parameters=S(type=T.OBJECT, properties={
                 "key":   S(type=T.STRING),
                 "value": S(type=T.STRING),
@@ -1180,6 +1325,30 @@ def build_tools() -> list[types.Tool]:
             parameters=S(type=T.OBJECT, properties={
                 "key": S(type=T.STRING)
             })),
+
+        types.FunctionDeclaration(name="save_story",
+            description=(
+                "Save a story, anecdote, or memorable event told by the user. "
+                "Call this IMMEDIATELY whenever a user shares a story or narrative. "
+                "Stores it with a timestamped key so it is never forgotten."
+            ),
+            parameters=S(type=T.OBJECT, properties={
+                "topic":   S(type=T.STRING,
+                    description="Short slug for the story topic, e.g. 'trip_to_goa'"),
+                "content": S(type=T.STRING,
+                    description="Full story or event description to remember"),
+            }, required=["topic","content"])),
+
+        types.FunctionDeclaration(name="save_person_photo",
+            description=(
+                "Capture and save a face-crop photo of a person from the current camera frame. "
+                "Call this after remember_person() to associate a visual reference. "
+                "Requires person_id matching the one used in remember_person()."
+            ),
+            parameters=S(type=T.OBJECT, properties={
+                "person_id": S(type=T.STRING,
+                    description="Same person_id used in remember_person()"),
+            }, required=["person_id"])),
     ])
 
     search_tool = types.Tool(function_declarations=[
@@ -1246,6 +1415,9 @@ async def run_session(
         context_window_compression=types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow(),
         ),
+        # temperature=1.2 — higher than default so ADAM doesn't fall into
+        # repetitive response patterns; still coherent but more varied/natural.
+        generation_config=types.GenerationConfig(temperature=1.2),
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
@@ -1342,6 +1514,9 @@ async def run_session(
                         latest_frame[0] = raw
 
                         # ── Run multi-person tracker ──────────────────────────
+                        # Tell tracker whether ADAM is currently speaking so it
+                        # suppresses speaker-id updates during ADAM's response.
+                        tracker.set_adam_speaking(adam_speaking.is_set())
                         tracker_result = await asyncio.to_thread(tracker.process_frame, raw)
 
                         # ── Build camera context string for injections ─────────
@@ -1350,13 +1525,14 @@ async def run_session(
                         last_tracker_result[0] = tracker_result
 
                         # ── Attention from face gaze ───────────────────────────
-                        has_centred_face = any(f["is_centre"] for f in tracker_result["faces"])
-                        if has_centred_face:
+                        # ANY visible face (not just centred) keeps ADAM attentive.
+                        has_face = tracker_result["face_count"] > 0
+                        if has_face:
                             await attention.activate("face-detected")
                         else:
                             elapsed = time.time() - attention._last_active_time
-                            if (attention.state == AttentionState.ATTENTIVE and elapsed > 5.0):
-                                await attention.deactivate("face-lost")
+                            if (attention.state == AttentionState.ATTENTIVE and elapsed > 8.0):
+                                await attention.deactivate("no-face-in-frame")
 
                         # ── GESTURE → camera-first trigger ────────────────────
                         gesture = tracker_result.get("gesture")
@@ -1587,7 +1763,8 @@ async def run_session(
                                 return
 
                             if msg.tool_call:
-                                responses = await handle_tool_call(msg.tool_call, memory, faces)
+                                responses = await handle_tool_call(
+                                    msg.tool_call, memory, faces, latest_frame[0])
                                 await session.send_tool_response(
                                     function_responses=[
                                         types.FunctionResponse(
@@ -1643,10 +1820,17 @@ async def run_session(
 
                             if sc.turn_complete:
                                 await out_q.put(None)
+                                # Cleanly reset speaker tracking so the next voice
+                                # turn detects the active speaker from scratch.
+                                tracker.reset_for_new_turn()
+                                last_confirmed_speaker_idx[0] = None
                                 print("─" * 40)
 
-                except (ConnectionClosedError, ConnectionClosedOK):
-                    pass
+                except (ConnectionClosedError, ConnectionClosedOK) as e:
+                    code = getattr(e, "code", None)
+                    if code == 1004:
+                        print(f"\n  ⚠️  Server closed connection (code 1004) — will resume")
+                    # Return cleanly so the outer loop can reconnect/resume.
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
@@ -1659,7 +1843,7 @@ async def run_session(
                     rate=RECV_SAMPLE_RATE, output=True,
                 )
                 last_audio_time = [time.time()]
-                STUCK_WATCHDOG_S = 2.5
+                STUCK_WATCHDOG_S = 1.5   # was 2.5 — quicker unstick on error-1004
 
                 async def end_of_turn():
                     await ws_broadcast({"type": "mouth_sync", "intensity": "closed"})
@@ -1679,6 +1863,7 @@ async def run_session(
                         except asyncio.QueueEmpty:
                             break
                     adam_speaking.clear()
+                    tracker.set_adam_speaking(False)   # unfreeze speaker detection
                     await attention.set_responding(False)
                     last_interaction_time[0] = time.time()
                     print("  🎤  Your turn...")
@@ -1800,6 +1985,12 @@ async def main():
             delay = min(2 ** attempt, 15)
             print(f"  Reconnecting in {delay}s...")
             await asyncio.sleep(delay)
+            # Flush stale audio from previous session before reconnecting
+            while not out_q.empty():
+                try:
+                    out_q.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
 
         result = await run_session(
             client, resume_handle, stop, out_q,
