@@ -253,6 +253,12 @@ class PersonTracker:
         faces_sorted = sorted(faces_raw, key=lambda f: f[0])
         result["face_count"] = len(faces_sorted)
 
+        # Remove stale mouth-history entries for faces that are no longer present
+        valid_ids = set(range(len(faces_sorted)))
+        for stale_id in list(self._mouth_history.keys()):
+            if stale_id not in valid_ids:
+                del self._mouth_history[stale_id]
+
         mouth_deltas = []
 
         for idx, (fx, fy, fw, fh) in enumerate(faces_sorted):
@@ -282,8 +288,11 @@ class PersonTracker:
             self._mouth_history[idx].append(mouth_mean)
 
             hist = self._mouth_history[idx]
-            if len(hist) >= 3:
-                delta = max(hist) - min(hist)
+            if len(hist) >= 2:
+                # Frame-to-frame average change is more robust than overall range
+                # (less affected by slow lighting drift)
+                frame_deltas = [abs(hist[i] - hist[i - 1]) for i in range(1, len(hist))]
+                delta = sum(frame_deltas) / len(frame_deltas)
             else:
                 delta = 0.0
 
@@ -427,9 +436,17 @@ class PersonTracker:
                 pos = "left" if cx < 0.4 else ("right" if cx > 0.6 else "centre")
                 label = f"Person {i+1} ({pos})"
                 if i == speaker_idx:
-                    label += " ← SPEAKING"
+                    label += " ← SPEAKING NOW"
                 positions.append(label)
-            ctx = f"[CAMERA: {count} people in frame: {', '.join(positions)}.]"
+            ctx = f"[CAMERA: {count} people in frame: {', '.join(positions)}."
+            if speaker_idx is not None and speaker_idx < len(faces):
+                spk_cx  = faces[speaker_idx]["cx_norm"]
+                spk_pos = "left" if spk_cx < 0.4 else ("right" if spk_cx > 0.6 else "centre")
+                ctx += (
+                    f" Person {speaker_idx + 1} ({spk_pos}) is the active speaker"
+                    f" — address them directly."
+                )
+            ctx += "]"
 
         if gesture:
             gesture_descs = {
@@ -1092,6 +1109,15 @@ async def run_session(
             # ── Last known camera context (injected with audio turns) ──────────
             last_camera_context = [""]
 
+            # ── Shared tracker state (readable from send / receive) ────────────
+            last_tracker_result = [{
+                "faces": [], "active_speaker_idx": None,
+                "gesture": None, "face_count": 0,
+            }]
+            # Face-index of the speaker in the last completed user turn.
+            # Used to detect when a *different* person starts speaking.
+            last_confirmed_speaker_idx = [None]
+
             async def on_attention_change(state: str):
                 if state == AttentionState.ATTENTIVE:
                     await ws_broadcast({"type": "face_state", "state": "listening"})
@@ -1145,6 +1171,7 @@ async def run_session(
                         # ── Build camera context string for injections ─────────
                         ctx_str = tracker.build_context_string(tracker_result)
                         last_camera_context[0] = ctx_str
+                        last_tracker_result[0] = tracker_result
 
                         # ── Attention from face gaze ───────────────────────────
                         has_centred_face = any(f["is_centre"] for f in tracker_result["faces"])
@@ -1252,23 +1279,87 @@ async def run_session(
                     stream.stop_stream()
                     stream.close()
 
-            # ── SEND (voice is secondary, but still injected with camera context) ──
+            # ── SEND (camera context + speaker ID injected at every voice onset) ──
             async def send():
+                # ctx_injected: ensures we inject once per user voice-turn, not
+                # on every audio chunk.  Reset whenever ADAM finishes speaking.
+                ctx_injected = False
                 try:
                     while not stop.is_set():
                         chunk = await mic_q.get()
                         if adam_speaking.is_set():
+                            # ADAM is replying — reset so the NEXT user turn
+                            # gets a fresh camera-context injection.
+                            ctx_injected = False
                             continue
                         if not attention.is_active():
+                            ctx_injected = False
                             continue
+
+                        is_speech = False
                         try:
                             n = len(chunk) // 2
                             samples = struct.unpack(f"{n}h", chunk)
                             rms = (sum(s * s for s in samples) / n) ** 0.5
                             if rms > 800:
                                 attention.touch()
+                                is_speech = True
                         except Exception:
                             pass
+
+                        # ── Voice-onset: inject camera snapshot + speaker ID ──
+                        # This runs once at the start of each user voice turn so
+                        # the model knows WHO is speaking BEFORE it processes audio.
+                        if is_speech and not ctx_injected:
+                            ctx_injected = True
+                            raw = latest_frame[0]
+                            ctx = last_camera_context[0]
+                            tr  = last_tracker_result[0]
+                            try:
+                                # 1. Send current camera frame for visual context
+                                if raw is not None:
+                                    jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
+                                    await session.send_realtime_input(
+                                        video=types.Blob(data=jpeg, mime_type="image/jpeg"))
+
+                                # 2. Build a "who is speaking" notice
+                                speaker_count = tr.get("face_count", 0)
+                                speaker_idx   = tr.get("active_speaker_idx")
+                                prev_idx      = last_confirmed_speaker_idx[0]
+
+                                if speaker_count > 1:
+                                    if (prev_idx is not None and
+                                            speaker_idx is not None and
+                                            speaker_idx != prev_idx):
+                                        notice = (
+                                            f"[SPEAKER CHANGED — a different person is now talking: "
+                                            f"{ctx}  Look at the camera frame and address the NEW "
+                                            f"speaker (← SPEAKING NOW) directly.]"
+                                        )
+                                    elif ctx:
+                                        notice = (
+                                            f"[WHO IS SPEAKING: {ctx}  "
+                                            f"Address the person marked ← SPEAKING NOW directly.]"
+                                        )
+                                    else:
+                                        notice = (
+                                            "[WHO IS SPEAKING: Multiple people in frame. "
+                                            "Check the camera frame to identify the active speaker "
+                                            "and address them directly.]"
+                                        )
+                                elif ctx:
+                                    notice = f"[CAMERA CONTEXT: {ctx}]"
+                                else:
+                                    notice = ""
+
+                                if notice:
+                                    await session.send_realtime_input(text=notice)
+
+                            except (ConnectionClosedError, ConnectionClosedOK):
+                                return
+                            except Exception:
+                                pass
+
                         try:
                             await session.send_realtime_input(
                                 audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
@@ -1321,7 +1412,15 @@ async def run_session(
                                         wake_word.check_transcript(transcript)):
                                     await attention.activate("transcript-wake-word")
 
-                                # Inject camera context alongside the voice turn
+                                # Record which camera face-index was speaking in
+                                # this turn (used for speaker-change detection).
+                                tr = last_tracker_result[0]
+                                cur_spk = tr.get("active_speaker_idx")
+                                if cur_spk is not None:
+                                    last_confirmed_speaker_idx[0] = cur_spk
+
+                                # Reinforce camera context (arrives after audio,
+                                # but still useful for the model's response).
                                 ctx = last_camera_context[0]
                                 if ctx:
                                     try:
