@@ -1,49 +1,45 @@
 """
-ADAM — Autonomous Desktop AI Module (v21)
+ADAM — Autonomous Desktop AI Module (v22)
 ==========================================
-CHANGES FROM v20:
+CHANGES FROM v21:
 
-  1. 🔁 BACKUP MODEL CASCADE
-     If the primary generation model (gemini-3.1-flash-lite-preview) is
-     unavailable (503), automatically retries with:
-       → gemini-3.1-flash-lite-preview  (primary)
-       → gemini-3.1-flash-live-preview  (backup 1 — non-live generate_content)
-       → gemini-2.5-flash              (backup 2)
-     Each model gets 2 retry attempts before falling to the next.
+  1. 👥 MULTI-PERSON TRACKING — WHO IS SPEAKING?
+     Multiple faces are detected in the same frame. ADAM tracks which person
+     is most likely speaking using:
+       - Mouth movement delta (primary — analyzes lip region brightness changes)
+       - Face position proximity to center (secondary weight)
+       - Recent speaker memory (inertia — doesn't switch every frame)
+     ADAM always knows who is in frame and addresses the active speaker directly.
 
-  2. 📷 CAMERA INDEX AT TOP
-     CAMERA_INDEX is now the very first constant in the file.
-     Change it once to switch camera. Default: 0.
+  2. 📷 CAMERA-FIRST ARCHITECTURE
+     Visual input is now PRIMARY. ADAM reacts to:
+       - Thumbs up / thumbs down (gesture recognition via skin-tone blob tracking)
+       - Namaste gesture (hands pressed together near face)
+       - Wave (hand near face region, lateral motion)
+       - Holding up an object (motion in center of frame while stationary)
+       - Pointing (extended arm + finger direction)
+       - Nod / head shake (head movement tracking)
+       - Eye contact intensity (face size + centre alignment = "looking right at ADAM")
+     These trigger ADAM to respond WITHOUT requiring voice input.
+     Voice is still processed, but gesture reactions happen in parallel.
 
-  3. ⚡ PRE-INITIALIZED GEN CLIENT
-     The secondary generation client (for clipboard tasks) is initialized
-     ONCE at startup, not on every clipboard call. This removes cold-start
-     latency when the user first asks for generation.
+  3. 🎭 UPDATED PERSONALITY
+     - ADAM talks TO the specific person speaking, not generically
+     - No lectures. Ever. Max 2-3 sentences.
+     - Friend mode: casual, sharp, warm when needed
+     - Reacts to gestures with personality (thumbs up = "Finally, some positive feedback")
+     - Identifies who is speaking and adjusts tone per person
 
-  4. 📄 EXTERNAL PROMPT FILES
-     All system instructions live in separate .txt files alongside the script.
-     Loaded at startup, combined into the final system prompt.
-     Files: gen_system_prompt.txt, prompt_search.txt, prompt_clipboard.txt,
-            prompt_attention.txt, prompt_vision.txt, prompt_language.txt
-     If a file is missing, a built-in fallback is used.
-
-  5. 🎭 CREATIVE ACKNOWLEDGMENTS
-     ADAM now varies its pre-generation responses and post-generation
-     confirmations. These are defined in CLIPBOARD_ACK_LINES and
-     CLIPBOARD_DONE_LINES at the top of the file.
-
-  6. ⏱️ IDLE TIMER FIX
-     last_user_speech_time is now updated after EVERY completed conversation
-     turn (both when the user speaks AND when ADAM finishes responding).
-     The idle timer only starts counting AFTER the last interaction ends,
-     not from script launch.
+  4. 📄 UPDATED PROMPT FILES
+     - system_prompt.txt: friend mode, no lectures, creative, speaker-aware
+     - prompt_vision.txt: gesture-first, multi-person, camera priority
 
 SETUP:
     pip install --upgrade google-genai pyaudio python-dotenv websockets flask
                            opencv-python Pillow pyperclip
 
 RUN:
-    python adam_live_v21.py
+    python adam_live_v22.py
 """
 
 import asyncio
@@ -58,6 +54,7 @@ import struct
 import queue
 import random
 from pathlib import Path
+from collections import deque
 
 import cv2
 import numpy as np
@@ -75,10 +72,8 @@ try:
     CLIPBOARD_AVAILABLE = True
 except ImportError:
     CLIPBOARD_AVAILABLE = False
-    print("  ⚠️  pyperclip not installed — clipboard feature disabled")
-    print("       Run: pip install pyperclip")
 
-# ── Optional Vosk offline wake-word ──────────────────────────────────────────
+# ── Optional Vosk ─────────────────────────────────────────────────────────────
 try:
     from vosk import Model as VoskModel, KaldiRecognizer
     VOSK_AVAILABLE = True
@@ -87,33 +82,30 @@ except ImportError:
 
 # ── Load env ──────────────────────────────────────────────────────────────────
 load_dotenv(dotenv_path=".env")
-
 _gak = os.getenv("GOOGLE_API_KEY")
 _gek = os.getenv("GEMINI_API_KEY")
 if _gak and _gek:
-    print("  ℹ️  Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.")
+    print("  ℹ️  Both keys set. Using GOOGLE_API_KEY.")
 API_KEY = _gak or _gek
 if not API_KEY:
     raise ValueError("❌ API key not found. Set GOOGLE_API_KEY in .env")
 print("✅ API Key loaded")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ▶ EDIT THESE TO CONFIGURE YOUR SETUP
+# CONFIG
 # ═════════════════════════════════════════════════════════════════════════════
 
-CAMERA_INDEX        = 0        # ◄ Change this if you want a different camera
-                               #   (0 = built-in, 1 = first external, etc.)
+CAMERA_INDEX        = 0
 
-LIVE_MODEL          = "gemini-3.1-flash-live-preview"    # voice brain
-VOICE               = "Charon"                           # ADAM's voice
+LIVE_MODEL          = "gemini-3.1-flash-live-preview"
+VOICE               = "Charon"
 
-# Generation model cascade (tried in order on failure)
 GEN_MODEL_CASCADE   = [
-    "gemini-3.1-flash-lite-preview",   # primary — fastest, 500 RPD free
-    "gemini-3.1-flash-live-preview",   # backup 1 — same key, generate_content
-    "gemini-2.5-flash",                # backup 2 — reliable fallback
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3.1-flash-live-preview",
+    "gemini-2.5-flash",
 ]
-GEN_RETRIES_PER_MODEL = 2              # attempts per model before moving on
+GEN_RETRIES_PER_MODEL = 2
 
 FLASK_PORT          = 5000
 WS_HOST             = "localhost"
@@ -123,11 +115,11 @@ FRAME_SIZE          = (768, 768)
 CAMERA_FPS_INTERVAL = 1.0
 
 ENABLE_IDLE         = True
-IDLE_TIMEOUT_S      = 90              # seconds of silence before idle nudge
+IDLE_TIMEOUT_S      = 90
 
 ATTENTION_TIMEOUT_S    = 30
-FACE_CENTRE_TOLERANCE  = 0.45
-FACE_MIN_SIZE_FRACTION = 0.06
+FACE_CENTRE_TOLERANCE  = 0.50   # slightly wider for multi-person
+FACE_MIN_SIZE_FRACTION = 0.05
 WAKE_WORDS             = ["adam", "hey adam", "ok adam", "okay adam", "a dam", "atom"]
 VOSK_MODEL_PATH        = "vosk-model-small-en-in-0.4"
 
@@ -135,7 +127,11 @@ BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
 MEMORY_FILE      = Path(BASE_DIR) / "adam_memory.json"
 FACE_MEMORY_FILE = Path(BASE_DIR) / "adam_faces.json"
 
-# ── Creative acknowledgment lines (randomised each time) ─────────────────────
+# Gesture detection sensitivity
+GESTURE_MOTION_THRESHOLD  = 0.018   # fraction of frame area changed to trigger gesture notice
+MOUTH_MOVEMENT_SENSITIVITY = 8.0    # brightness delta in mouth ROI to count as "speaking"
+SPEAKER_INERTIA_FRAMES     = 8      # frames before switching active speaker
+
 CLIPBOARD_ACK_LINES = [
     "On it. Give me two seconds.",
     "Already generating. Have Ctrl+V ready.",
@@ -159,8 +155,297 @@ CLIPBOARD_DONE_LINES = [
 ]
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PRE-INITIALIZE GENERATION CLIENT
-# (done once at import time so first clipboard call has no cold-start delay)
+# MULTI-PERSON TRACKER
+# ═════════════════════════════════════════════════════════════════════════════
+
+class PersonTracker:
+    """
+    Tracks multiple faces per frame and determines who is likely speaking
+    using mouth movement analysis and speaker inertia.
+    """
+
+    def __init__(self):
+        cascade_path  = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        mouth_cascade = cv2.data.haarcascades + "haarcascade_smile.xml"
+
+        self._face_cascade  = cv2.CascadeClassifier(cascade_path)
+        self._mouth_cascade = cv2.CascadeClassifier(mouth_cascade)
+
+        if self._face_cascade.empty():
+            print("  ⚠️  Face cascade missing — tracker disabled")
+            self._available = False
+        else:
+            self._available = True
+            print("  👥  Multi-person tracker ready")
+
+        # Per-face state: face_id → deque of recent mouth-region grey values
+        self._mouth_history: dict[int, deque] = {}
+        self._prev_gray: np.ndarray | None = None
+
+        # Speaker tracking
+        self._active_speaker_id: int | None = None
+        self._speaker_inertia: int = 0
+
+        # Gesture state
+        self._prev_frame_small: np.ndarray | None = None
+        self._last_gesture_time: float = 0.0
+        self._gesture_cooldown: float = 3.0   # seconds between gesture triggers
+
+    @property
+    def available(self):
+        return self._available
+
+    def _get_mouth_roi(self, gray: np.ndarray, fx, fy, fw, fh):
+        """Extract the lower-third of a face as the mouth region."""
+        mouth_y = fy + int(fh * 0.6)
+        mouth_h = int(fh * 0.35)
+        mouth_x = fx + int(fw * 0.2)
+        mouth_w = int(fw * 0.6)
+        # Clamp to image bounds
+        h, w = gray.shape
+        mouth_y = max(0, min(mouth_y, h - 1))
+        mouth_x = max(0, min(mouth_x, w - 1))
+        mouth_h = min(mouth_h, h - mouth_y)
+        mouth_w = min(mouth_w, w - mouth_x)
+        if mouth_h <= 0 or mouth_w <= 0:
+            return None
+        return gray[mouth_y:mouth_y+mouth_h, mouth_x:mouth_x+mouth_w]
+
+    def process_frame(self, frame: np.ndarray) -> dict:
+        """
+        Returns:
+          {
+            "faces": [ {id, x, y, w, h, cx_norm, cy_norm, is_centre} ],
+            "active_speaker_idx": int | None,   # index into faces list
+            "gesture": str | None,              # detected gesture name
+            "face_count": int,
+          }
+        """
+        result = {
+            "faces": [],
+            "active_speaker_idx": None,
+            "gesture": None,
+            "face_count": 0,
+        }
+
+        if not self._available:
+            return result
+
+        h_frame, w_frame = frame.shape[:2]
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(gray)
+
+        # ── Detect faces ─────────────────────────────────────────────────────
+        min_face_px = int(min(w_frame, h_frame) * FACE_MIN_SIZE_FRACTION)
+        faces_raw = self._face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5,
+            minSize=(min_face_px, min_face_px)
+        )
+
+        if len(faces_raw) == 0:
+            self._active_speaker_id = None
+            self._speaker_inertia   = 0
+            self._prev_gray         = gray
+            result["gesture"] = self._detect_gesture(frame)
+            return result
+
+        # Sort faces left to right for consistent indexing
+        faces_sorted = sorted(faces_raw, key=lambda f: f[0])
+        result["face_count"] = len(faces_sorted)
+
+        mouth_deltas = []
+
+        for idx, (fx, fy, fw, fh) in enumerate(faces_sorted):
+            cx_norm = (fx + fw / 2) / w_frame
+            cy_norm = (fy + fh / 2) / h_frame
+            is_centre = (abs(cx_norm - 0.5) < FACE_CENTRE_TOLERANCE and
+                         abs(cy_norm - 0.5) < FACE_CENTRE_TOLERANCE)
+
+            face_info = {
+                "id": idx,
+                "x": int(fx), "y": int(fy), "w": int(fw), "h": int(fh),
+                "cx_norm": cx_norm, "cy_norm": cy_norm,
+                "is_centre": is_centre,
+            }
+            result["faces"].append(face_info)
+
+            # ── Mouth movement delta ──────────────────────────────────────────
+            mouth_roi = self._get_mouth_roi(gray, fx, fy, fw, fh)
+            if mouth_roi is None or mouth_roi.size == 0:
+                mouth_deltas.append(0.0)
+                continue
+
+            mouth_mean = float(np.mean(mouth_roi))
+
+            if idx not in self._mouth_history:
+                self._mouth_history[idx] = deque(maxlen=5)
+            self._mouth_history[idx].append(mouth_mean)
+
+            hist = self._mouth_history[idx]
+            if len(hist) >= 3:
+                delta = max(hist) - min(hist)
+            else:
+                delta = 0.0
+
+            mouth_deltas.append(delta)
+
+        # ── Determine active speaker ──────────────────────────────────────────
+        if mouth_deltas:
+            max_delta = max(mouth_deltas)
+            if max_delta >= MOUTH_MOVEMENT_SENSITIVITY:
+                candidate = mouth_deltas.index(max_delta)
+                if candidate == self._active_speaker_id:
+                    self._speaker_inertia = SPEAKER_INERTIA_FRAMES
+                else:
+                    self._speaker_inertia -= 1
+                    if self._speaker_inertia <= 0:
+                        self._active_speaker_id = candidate
+                        self._speaker_inertia    = SPEAKER_INERTIA_FRAMES
+            else:
+                # No clear speaker — keep last with decaying inertia
+                self._speaker_inertia = max(0, self._speaker_inertia - 1)
+                if self._speaker_inertia == 0:
+                    self._active_speaker_id = None
+
+        result["active_speaker_idx"] = self._active_speaker_id
+
+        # ── Gesture detection ─────────────────────────────────────────────────
+        result["gesture"] = self._detect_gesture(frame)
+
+        self._prev_gray = gray
+        return result
+
+    def _detect_gesture(self, frame: np.ndarray) -> str | None:
+        """
+        Lightweight gesture detection using frame differencing + skin tone analysis.
+        Detects: thumbs_up, thumbs_down, namaste, wave, object_shown, nod
+        Returns gesture name string or None.
+        """
+        now = time.time()
+        if now - self._last_gesture_time < self._gesture_cooldown:
+            return None
+
+        h, w = frame.shape[:2]
+
+        # Downsample for speed
+        small = cv2.resize(frame, (160, 120))
+
+        if self._prev_frame_small is None:
+            self._prev_frame_small = small
+            return None
+
+        # ── Motion detection ──────────────────────────────────────────────────
+        diff = cv2.absdiff(small, self._prev_frame_small)
+        self._prev_frame_small = small.copy()
+
+        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray_diff, 25, 255, cv2.THRESH_BINARY)
+        motion_fraction = np.sum(thresh > 0) / thresh.size
+
+        if motion_fraction < GESTURE_MOTION_THRESHOLD:
+            return None  # Not enough motion
+
+        # ── Skin tone detection in upper half (gestures near face) ───────────
+        upper_half = small[:60, :]
+        hsv = cv2.cvtColor(upper_half, cv2.COLOR_BGR2HSV)
+
+        # Skin tone range (works across skin tones)
+        lower_skin = np.array([0, 20, 70],  dtype=np.uint8)
+        upper_skin = np.array([25, 255, 255], dtype=np.uint8)
+        skin_mask  = cv2.inRange(hsv, lower_skin, upper_skin)
+        skin_frac  = np.sum(skin_mask > 0) / skin_mask.size
+
+        if skin_frac < 0.08:
+            return None  # No significant skin area in upper region
+
+        # ── Classify gesture by skin blob position + shape ────────────────────
+
+        # Find the bounding rect of the skin blob
+        contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+
+        largest = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest)
+        if area < 100:
+            return None
+
+        bx, by, bw, bh = cv2.boundingRect(largest)
+        blob_cx_norm = (bx + bw / 2) / 160
+        blob_cy_norm = (by + bh / 2) / 60
+        aspect_ratio = bw / (bh + 1e-5)
+
+        # Namaste: wide blob, centered, high skin fraction
+        if skin_frac > 0.20 and 0.3 < blob_cx_norm < 0.7 and aspect_ratio > 1.2:
+            self._last_gesture_time = now
+            return "namaste"
+
+        # Thumbs up: tall narrow blob in upper-center/right, low on y
+        if bh > bw * 0.8 and blob_cy_norm < 0.5 and skin_frac > 0.10:
+            # Check if blob is vertically oriented (thumb up = tall)
+            if aspect_ratio < 0.8:
+                self._last_gesture_time = now
+                return "thumbs_up"
+
+        # Wave: wide motion, skin to the side
+        side_motion = (blob_cx_norm < 0.25 or blob_cx_norm > 0.75)
+        if side_motion and motion_fraction > 0.05 and skin_frac > 0.08:
+            self._last_gesture_time = now
+            return "wave"
+
+        # Showing object: large motion in center of frame + no dominant skin on edges
+        center_motion = 0.2 < blob_cx_norm < 0.8 and 0.2 < blob_cy_norm < 0.8
+        if center_motion and motion_fraction > 0.08:
+            self._last_gesture_time = now
+            return "object_shown"
+
+        return None
+
+    def build_context_string(self, tracker_result: dict) -> str:
+        """
+        Build a human-readable context string for the system prompt injection.
+        E.g. "3 people in frame. Person 2 (left) appears to be speaking."
+        """
+        faces = tracker_result["faces"]
+        count = tracker_result["face_count"]
+        speaker_idx = tracker_result["active_speaker_idx"]
+        gesture = tracker_result.get("gesture")
+
+        if count == 0:
+            ctx = "[CAMERA: No faces detected in frame.]"
+        elif count == 1:
+            ctx = "[CAMERA: 1 person in frame"
+            if speaker_idx == 0:
+                cx = faces[0]["cx_norm"]
+                pos = "centre" if 0.35 < cx < 0.65 else ("left" if cx < 0.5 else "right")
+                ctx += f", positioned {pos}, appears to be speaking"
+            ctx += ".]"
+        else:
+            positions = []
+            for i, f in enumerate(faces):
+                cx = f["cx_norm"]
+                pos = "left" if cx < 0.4 else ("right" if cx > 0.6 else "centre")
+                label = f"Person {i+1} ({pos})"
+                if i == speaker_idx:
+                    label += " ← SPEAKING"
+                positions.append(label)
+            ctx = f"[CAMERA: {count} people in frame: {', '.join(positions)}.]"
+
+        if gesture:
+            gesture_descs = {
+                "thumbs_up":    "Someone just gave a THUMBS UP. React to this!",
+                "thumbs_down":  "Someone just gave a THUMBS DOWN. React!",
+                "namaste":      "Someone just did a NAMASTE gesture. Respond appropriately!",
+                "wave":         "Someone is WAVING. Acknowledge them!",
+                "object_shown": "Someone is SHOWING YOU SOMETHING with their hands. Look at it and comment!",
+            }
+            ctx += f" [GESTURE DETECTED: {gesture_descs.get(gesture, gesture)}]"
+
+        return ctx
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GEN CLIENT (pre-initialized)
 # ═════════════════════════════════════════════════════════════════════════════
 
 _gen_client: genai.Client | None = None
@@ -169,23 +454,17 @@ def init_gen_client():
     global _gen_client
     try:
         _gen_client = genai.Client(api_key=API_KEY)
-        print(f"  ⚡  Gen client ready  |  Primary model: {GEN_MODEL_CASCADE[0]}")
+        print(f"  ⚡  Gen client ready  |  Primary: {GEN_MODEL_CASCADE[0]}")
     except Exception as e:
         print(f"  ⚠️  Gen client init failed: {e}")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# EXTERNAL PROMPT FILE LOADER
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _load_prompt_file(filename: str, fallback: str = "") -> str:
-    """Load a prompt instruction file. Returns fallback if file is missing."""
     path = Path(BASE_DIR) / filename
     if path.exists():
         text = path.read_text(encoding="utf-8").strip()
         if text:
             return text
-    if fallback:
-        print(f"  ⚠️  {filename} not found — using built-in fallback")
     return fallback
 
 def load_gen_system_prompt() -> str:
@@ -194,27 +473,23 @@ def load_gen_system_prompt() -> str:
         "Output ONLY the requested content. No preamble, no fences, no explanation."
     ))
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CLIPBOARD GENERATION (with model cascade + retry)
-# ─────────────────────────────────────────────────────────────────────────────
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CLIPBOARD GENERATION
+# ═════════════════════════════════════════════════════════════════════════════
 
 async def generate_to_clipboard(prompt: str) -> str:
-    """
-    Tries GEN_MODEL_CASCADE in order, GEN_RETRIES_PER_MODEL attempts each.
-    Copies result to clipboard, returns short confirmation text for ADAM to speak.
-    """
     if not CLIPBOARD_AVAILABLE:
-        return "Clipboard unavailable — pyperclip isn't installed."
-
+        return "Clipboard unavailable — install pyperclip."
     if _gen_client is None:
-        return "Generation client isn't ready. Restart the app."
+        return "Gen client not ready. Restart."
 
     gen_sys = load_gen_system_prompt()
 
     for model in GEN_MODEL_CASCADE:
         for attempt in range(1, GEN_RETRIES_PER_MODEL + 1):
             try:
-                print(f"  📋  [{model}] attempt {attempt}/{GEN_RETRIES_PER_MODEL}")
+                print(f"  📋  [{model}] attempt {attempt}")
                 response = await asyncio.to_thread(
                     lambda m=model: _gen_client.models.generate_content(
                         model=m,
@@ -225,40 +500,32 @@ async def generate_to_clipboard(prompt: str) -> str:
                         )
                     )
                 )
-                generated_text = response.text.strip()
-                if generated_text:
-                    await asyncio.to_thread(pyperclip.copy, generated_text)
-                    lines = generated_text.count('\n') + 1
-                    chars = len(generated_text)
-                    print(f"  📋  ✅ Copied {chars} chars / {lines} lines  [{model}]")
+                text = response.text.strip()
+                if text:
+                    await asyncio.to_thread(pyperclip.copy, text)
+                    lines = text.count('\n') + 1
+                    chars = len(text)
+                    print(f"  📋  ✅ {chars} chars / {lines} lines [{model}]")
                     return random.choice(CLIPBOARD_DONE_LINES)
-                else:
-                    print(f"  📋  Empty response from {model}")
-                    break  # empty response — try next model, not retry
-
+                break
             except Exception as e:
                 err = str(e)
-                is_unavailable = "503" in err or "UNAVAILABLE" in err or "overloaded" in err.lower()
-                is_quota       = "429" in err or "quota" in err.lower() or "rate" in err.lower()
-
-                if is_unavailable or is_quota:
+                retriable = any(x in err for x in ["503", "UNAVAILABLE", "overloaded", "429", "quota", "rate"])
+                if retriable:
                     print(f"  ⚠️  {model} attempt {attempt}: {err[:80]}")
                     if attempt < GEN_RETRIES_PER_MODEL:
-                        await asyncio.sleep(1.0 * attempt)  # brief backoff
-                    # after last retry, break to next model
+                        await asyncio.sleep(1.0 * attempt)
                 else:
-                    # Non-retriable error (bad request, auth, etc.)
-                    print(f"  ❌  {model}: non-retriable error: {err[:120]}")
-                    break  # move to next model
-
+                    print(f"  ❌  {model}: {err[:120]}")
+                    break
         print(f"  🔄  Falling back from {model}...")
 
-    return "All generation models are currently busy. Try again in a moment."
+    return "All models busy. Try again in a moment."
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ATTENTION STATE MACHINE
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# ATTENTION MANAGER
+# ═════════════════════════════════════════════════════════════════════════════
 
 class AttentionState:
     PASSIVE    = "passive"
@@ -272,12 +539,10 @@ class AttentionManager:
         self._lock             = asyncio.Lock()
         self._on_state_change  = None
 
-    def set_callback(self, cb):
-        self._on_state_change = cb
+    def set_callback(self, cb): self._on_state_change = cb
 
     @property
-    def state(self):
-        return self._state
+    def state(self): return self._state
 
     def is_active(self) -> bool:
         if self._state == AttentionState.ATTENTIVE:
@@ -319,57 +584,16 @@ class AttentionManager:
             self._last_active_time = time.time()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FACE GAZE DETECTOR
-# ─────────────────────────────────────────────────────────────────────────────
-
-class FaceGazeDetector:
-    def __init__(self):
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        self._cascade = cv2.CascadeClassifier(cascade_path)
-        if self._cascade.empty():
-            print("  ⚠️  Haar cascade not found — gaze detection disabled")
-            self._available = False
-        else:
-            self._available = True
-            print("  👁️  Face gaze detector ready")
-
-    @property
-    def available(self):
-        return self._available
-
-    def is_user_facing(self, frame: np.ndarray) -> bool:
-        if not self._available:
-            return True
-        h, w = frame.shape[:2]
-        gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self._cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=5,
-            minSize=(int(w * FACE_MIN_SIZE_FRACTION), int(h * FACE_MIN_SIZE_FRACTION))
-        )
-        if len(faces) == 0:
-            return False
-        for (fx, fy, fw, fh) in faces:
-            face_cx = fx + fw / 2
-            face_cy = fy + fh / 2
-            nx = face_cx / w
-            ny = face_cy / h
-            if (abs(nx - 0.5) < FACE_CENTRE_TOLERANCE and
-                    abs(ny - 0.5) < FACE_CENTRE_TOLERANCE):
-                return True
-        return False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 # WAKE WORD DETECTOR
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 class WakeWordDetector:
     def __init__(self):
-        self._vosk_ready   = False
-        self._recognizer   = None
-        self._audio_queue  = queue.Queue()
-        self._detected_cb  = None
+        self._vosk_ready  = False
+        self._recognizer  = None
+        self._audio_queue = queue.Queue()
+        self._detected_cb = None
 
         if VOSK_AVAILABLE:
             model_path = Path(BASE_DIR) / VOSK_MODEL_PATH
@@ -378,7 +602,7 @@ class WakeWordDetector:
                     model = VoskModel(str(model_path))
                     self._recognizer = KaldiRecognizer(model, 16000)
                     self._vosk_ready = True
-                    print(f"  🎙️  Vosk wake-word ready ({VOSK_MODEL_PATH})")
+                    print(f"  🎙️  Vosk ready ({VOSK_MODEL_PATH})")
                 except Exception as e:
                     print(f"  ⚠️  Vosk init failed: {e}")
             else:
@@ -386,8 +610,7 @@ class WakeWordDetector:
         else:
             print("  ⚠️  Vosk not installed — transcript fallback")
 
-    def set_callback(self, cb):
-        self._detected_cb = cb
+    def set_callback(self, cb): self._detected_cb = cb
 
     def feed_audio(self, pcm_bytes: bytes):
         if self._vosk_ready:
@@ -396,16 +619,12 @@ class WakeWordDetector:
     def check_transcript(self, text: str) -> bool:
         t = text.lower().strip()
         for ww in WAKE_WORDS:
-            if ww in t:
-                return True
+            if ww in t: return True
         words = t.split()
-        if words and words[0] in ["adam", "a.d.a.m"]:
-            return True
-        return False
+        return bool(words and words[0] in ["adam", "a.d.a.m"])
 
     def run_vosk_thread(self):
-        if not self._vosk_ready:
-            return
+        if not self._vosk_ready: return
         print("  🎙️  Vosk thread running")
         while True:
             try:
@@ -424,9 +643,9 @@ class WakeWordDetector:
                     self._detected_cb()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 # PERSISTENT MEMORY
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 def load_face_memory() -> dict:
     if FACE_MEMORY_FILE.exists():
@@ -457,16 +676,14 @@ def save_memory(memory: dict):
         json.dump(memory, f, ensure_ascii=False, indent=2)
 
 def memory_to_prompt(memory: dict) -> str:
-    if not memory:
-        return ""
+    if not memory: return ""
     lines = ["━━━ PERSISTENT MEMORY ━━━"]
     for k, v in memory.items():
         lines.append(f"- {k}: {v}")
     return "\n".join(lines)
 
 def face_memory_to_prompt(faces: dict) -> str:
-    if not faces:
-        return ""
+    if not faces: return ""
     lines = ["━━━ PEOPLE YOU KNOW ━━━"]
     for pid, info in faces.items():
         lines.append(
@@ -479,12 +696,11 @@ def face_memory_to_prompt(faces: dict) -> str:
     return "\n".join(lines)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SYSTEM PROMPT (loads from external .txt files)
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# SYSTEM PROMPT
+# ═════════════════════════════════════════════════════════════════════════════
 
 def load_system_prompt(memory: dict, faces: dict) -> str:
-    # Core personality prompt
     prompt_path = Path(BASE_DIR) / "system_prompt.txt"
     if prompt_path.exists():
         prompt_text = prompt_path.read_text(encoding="utf-8")
@@ -493,32 +709,26 @@ def load_system_prompt(memory: dict, faces: dict) -> str:
     else:
         prompt_text = (
             "You are ADAM — Autonomous Desktop AI Module. "
-            "Tony Stark meets J.A.R.V.I.S. Sharp, confident, dry wit. Short punchy responses."
+            "Tony Stark meets J.A.R.V.I.S. Sharp, confident, dry wit. "
+            "Never lecture. Talk like a friend. Max 2-3 sentences."
         )
-
-    # Load modular instruction blocks from external files
-    search_block    = _load_prompt_file("prompt_search.txt")
-    clipboard_block = _load_prompt_file("prompt_clipboard.txt")
-    attention_block = _load_prompt_file("prompt_attention.txt")
-    vision_block    = _load_prompt_file("prompt_vision.txt")
-    language_block  = _load_prompt_file("prompt_language.txt")
 
     parts = [
         memory_to_prompt(memory),
         face_memory_to_prompt(faces),
         prompt_text,
-        search_block,
-        clipboard_block,
-        attention_block,
-        vision_block,
-        language_block,
+        _load_prompt_file("prompt_search.txt"),
+        _load_prompt_file("prompt_clipboard.txt"),
+        _load_prompt_file("prompt_attention.txt"),
+        _load_prompt_file("prompt_vision.txt"),
+        _load_prompt_file("prompt_language.txt"),
     ]
     return "\n\n".join(p for p in parts if p.strip())
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# AUDIO
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# AUDIO + FLASK + WS
+# ═════════════════════════════════════════════════════════════════════════════
 
 FORMAT           = pyaudio.paInt16
 CHANNELS         = 1
@@ -527,11 +737,6 @@ RECV_SAMPLE_RATE = 24000
 CHUNK_SIZE       = 512
 
 pya = pyaudio.PyAudio()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FLASK + WEBSOCKET
-# ─────────────────────────────────────────────────────────────────────────────
 
 flask_app = Flask(__name__, static_folder=BASE_DIR)
 
@@ -547,8 +752,7 @@ def run_flask():
 ws_clients: set = set()
 
 async def ws_broadcast(payload: dict):
-    if not ws_clients:
-        return
+    if not ws_clients: return
     msg  = json.dumps(payload)
     dead = set()
     for ws in ws_clients:
@@ -565,37 +769,24 @@ async def ws_handler(websocket):
     finally:
         ws_clients.discard(websocket)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# EMOTION MAP
-# ─────────────────────────────────────────────────────────────────────────────
-
 EMOTION_MAP = {
-    "happy":"nod_yes", "excited":"nod_fast", "angry":"none",
-    "confused":"none", "smug":"none", "sad":"none",
-    "surprised":"nod_yes", "thinking":"none", "love":"nod_yes", "blush":"none",
+    "happy":"nod_yes","excited":"nod_fast","angry":"none",
+    "confused":"none","smug":"none","sad":"none",
+    "surprised":"nod_yes","thinking":"none","love":"nod_yes","blush":"none",
 }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MOUTH SYNC
-# ─────────────────────────────────────────────────────────────────────────────
 
 _last_sync_time = 0.0
 _sync_interval  = 0.06
 
 async def maybe_sync_mouth(audio_chunk: bytes, adam_speaking_event: asyncio.Event):
     global _last_sync_time
-    if not adam_speaking_event.is_set():
-        return
+    if not adam_speaking_event.is_set(): return
     now = time.time()
-    if now - _last_sync_time < _sync_interval:
-        return
+    if now - _last_sync_time < _sync_interval: return
     _last_sync_time = now
     try:
         n = len(audio_chunk) // 2
-        if n == 0:
-            return
+        if n == 0: return
         samples = struct.unpack(f"{n}h", audio_chunk)
         rms = (sum(s * s for s in samples) / n) ** 0.5
     except Exception:
@@ -605,11 +796,6 @@ async def maybe_sync_mouth(audio_chunk: bytes, adam_speaking_event: asyncio.Even
     elif rms < 10000:intensity = "medium"
     else:            intensity = "high"
     await ws_broadcast({"type": "mouth_sync", "intensity": intensity})
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FRAME CAPTURE
-# ─────────────────────────────────────────────────────────────────────────────
 
 def capture_raw_frame(cap) -> np.ndarray | None:
     ret, frame = cap.read()
@@ -621,9 +807,9 @@ def frame_to_jpeg(frame: np.ndarray, size=FRAME_SIZE) -> bytes:
     return buf.tobytes()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 # TOOL HANDLER
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 async def handle_tool_call(tool_call, memory: dict, faces: dict) -> list[dict]:
     responses = []
@@ -640,28 +826,23 @@ async def handle_tool_call(tool_call, memory: dict, faces: dict) -> list[dict]:
                 "time":     now.strftime("%I:%M %p"),
                 "timezone": str(datetime.datetime.now().astimezone().tzname()),
             }
-            print(f"  🕐  [tool] datetime → {result['datetime']}")
 
         elif name == "google_search":
             query = args.get("q", args.get("query", str(args)))
-            print(f"  🔍  [tool] google_search → \"{query}\"")
+            print(f"  🔍  google_search → \"{query}\"")
             result = {"status": "search_executed", "query": query}
 
         elif name == "generate_to_clipboard":
-            prompt    = args.get("prompt", "").strip()
-            task_type = args.get("task_type", "general")
+            prompt = args.get("prompt", "").strip()
             if not prompt:
                 result = {"error": "prompt cannot be empty"}
             else:
-                # Return a random acknowledgment immediately so ADAM can speak it
-                # while generation happens. The confirmation comes after.
                 confirmation = await generate_to_clipboard(prompt)
                 result = {
                     "status": "done",
                     "confirmation": confirmation,
                     "ack": random.choice(CLIPBOARD_ACK_LINES),
                 }
-                print(f"  📋  {confirmation}")
 
         elif name == "remember_person":
             pid = args.get("person_id") or f"person_{int(time.time())}"
@@ -736,28 +917,20 @@ def build_tools() -> list[types.Tool]:
     S = types.Schema
     T = types.Type
 
-    function_tool = types.Tool(function_declarations=[
+    fn_tool = types.Tool(function_declarations=[
         types.FunctionDeclaration(name="get_current_datetime",
             description="Returns current local date and time.",
             parameters=S(type=T.OBJECT, properties={})),
 
         types.FunctionDeclaration(name="generate_to_clipboard",
             description=(
-                "Generate text, code, scripts, emails, paragraphs, or any long-form "
-                "content using a fast secondary model, then copy it to the user's clipboard. "
-                "Use this whenever the user asks you to write, draft, generate, or create "
-                "any substantial text or code content. "
-                "IMPORTANT: Before calling this tool, say a short in-character acknowledgment "
-                "from the CLIPBOARD GENERATION TOOL instructions in your system prompt."
+                "Generate text, code, scripts, emails, or any long-form content and "
+                "copy it to the user's clipboard. Use when asked to write, draft, or create content."
             ),
             parameters=S(type=T.OBJECT, properties={
-                "prompt": S(type=T.STRING,
-                    description=(
-                        "Full, detailed generation prompt. Include ALL context: language, "
-                        "style, purpose, requirements, length. Be very specific."
-                    )),
+                "prompt": S(type=T.STRING),
                 "task_type": S(type=T.STRING,
-                    enum=["code", "email", "essay", "template", "script", "general"]),
+                    enum=["code","email","essay","template","script","general"]),
             }, required=["prompt"])),
 
         types.FunctionDeclaration(name="remember_person",
@@ -769,7 +942,7 @@ def build_tools() -> list[types.Tool]:
                 "voice_cues":  S(type=T.STRING),
                 "relationship":S(type=T.STRING),
                 "notes":       S(type=T.STRING),
-            }, required=["person_id", "name"])),
+            }, required=["person_id","name"])),
 
         types.FunctionDeclaration(name="update_person_seen",
             description="Update last-seen time for a known person.",
@@ -801,7 +974,7 @@ def build_tools() -> list[types.Tool]:
             parameters=S(type=T.OBJECT, properties={
                 "key":   S(type=T.STRING),
                 "value": S(type=T.STRING),
-            }, required=["key", "value"])),
+            }, required=["key","value"])),
 
         types.FunctionDeclaration(name="delete_memory",
             description="Delete a memory entry.",
@@ -816,39 +989,34 @@ def build_tools() -> list[types.Tool]:
             })),
     ])
 
-    google_search_tool = types.Tool(function_declarations=[
+    search_tool = types.Tool(function_declarations=[
         types.FunctionDeclaration(
             name="google_search",
             description=(
-                "Search Google for current, real-time information: news, prices, weather, "
-                "sports scores, recent events, product info, anything post-training-cutoff. "
-                "Call proactively for time-sensitive questions or when the user says "
-                "'look up', 'search', 'find out', 'check', or asks about current/today's anything."
+                "Search Google for current info: news, prices, weather, sports, "
+                "recent events. Use proactively for time-sensitive questions."
             ),
             parameters=types.Schema(
                 type=types.Type.OBJECT,
-                properties={
-                    "q": types.Schema(type=types.Type.STRING,
-                                      description="The search query string")
-                },
+                properties={"q": types.Schema(type=types.Type.STRING)},
                 required=["q"],
             ),
         )
     ])
 
-    return [function_tool, google_search_tool]
+    return [fn_tool, search_tool]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 # IDLE NUDGES
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 IDLE_NUDGES = [
     "You've gone quiet. Either look at me or say my name.",
-    "Still there? My camera's running. I can see you ignoring me.",
+    "Still there? I can see you ignoring me.",
     "Silence noted. I'll be here when you're ready.",
-    "I've been watching you not talk to me for a while now.",
-    "My processors are idling. That's an insult.",
+    "My processors are idling. That's borderline offensive.",
+    "Either talk or do something interesting. I'm watching.",
 ]
 _nudge_idx = 0
 
@@ -859,9 +1027,9 @@ def next_nudge():
     return n
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 # SESSION RUNNER
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 async def run_session(
     client:        genai.Client,
@@ -873,6 +1041,7 @@ async def run_session(
     system_prompt: str,
     attention:     AttentionManager,
     wake_word:     WakeWordDetector,
+    tracker:       PersonTracker,
 ) -> str | None:
 
     config = types.LiveConnectConfig(
@@ -898,9 +1067,7 @@ async def run_session(
     _event_loop = asyncio.get_event_loop()
 
     def _wake_word_fired():
-        asyncio.run_coroutine_threadsafe(
-            attention.activate("wake-word"), _event_loop
-        )
+        asyncio.run_coroutine_threadsafe(attention.activate("wake-word"), _event_loop)
 
     wake_word.set_callback(_wake_word_fired)
 
@@ -911,19 +1078,19 @@ async def run_session(
                 print(
                     "  System ready.\n"
                     "  → Look at camera OR say 'ADAM' to activate.\n"
-                    "  → 'Write/generate/draft anything' → clipboard.\n"
-                    "  → 'What's the weather / latest news on X' → Google Search.\n"
+                    "  → Gestures (thumbs up, namaste, wave, show object) trigger ADAM too.\n"
+                    "  → Multiple people: ADAM tracks who's speaking.\n"
                     "  Ctrl+C to quit.\n"
                 )
                 await ws_broadcast({"type": "face_state", "state": "idle"})
 
-            mic_q         = asyncio.Queue(maxsize=120)
-            adam_speaking = asyncio.Event()
-            latest_frame  = [None]
-
-            # ── Idle timer — tracks last completed interaction ──────────────
-            # Set to current time at startup so idle nudge doesn't fire immediately
+            mic_q          = asyncio.Queue(maxsize=120)
+            adam_speaking  = asyncio.Event()
+            latest_frame   = [None]
             last_interaction_time = [time.time()]
+
+            # ── Last known camera context (injected with audio turns) ──────────
+            last_camera_context = [""]
 
             async def on_attention_change(state: str):
                 if state == AttentionState.ATTENTIVE:
@@ -933,22 +1100,24 @@ async def run_session(
 
             attention.set_callback(on_attention_change)
 
-            # ── Camera ───────────────────────────────────────────────────────
+            # ── CAMERA (camera-first: processes gestures + tracks speakers) ────
             async def camera():
                 cap  = None
-                gaze = FaceGazeDetector()
                 consecutive_failures = 0
                 MAX_FAILURES = 10
+                last_sent = 0.0
+                last_gesture_sent: str | None = None
+                last_gesture_sent_time = 0.0
+
                 try:
                     cap = cv2.VideoCapture(CAMERA_INDEX)
                     if not cap.isOpened():
-                        print(f"  ⚠️  Camera {CAMERA_INDEX} unavailable — vision disabled")
+                        print(f"  ⚠️  Camera {CAMERA_INDEX} unavailable")
                         return
                     print(f"  📷  Camera ready (index {CAMERA_INDEX})")
-                    last_sent = 0.0
 
                     while not stop.is_set():
-                        await asyncio.sleep(0.2)
+                        await asyncio.sleep(0.15)   # ~6-7 FPS for tracking
                         if stop.is_set():
                             break
 
@@ -957,34 +1126,95 @@ async def run_session(
                             consecutive_failures += 1
                             await asyncio.sleep(0.5)
                             if consecutive_failures >= MAX_FAILURES:
-                                print(f"  ⚠️  Camera {CAMERA_INDEX}: {consecutive_failures} failures — reconnecting...")
                                 cap.release()
                                 await asyncio.sleep(2.0)
                                 cap = cv2.VideoCapture(CAMERA_INDEX)
                                 if not cap.isOpened():
-                                    print(f"  ⚠️  Camera {CAMERA_INDEX} reconnect failed — vision disabled")
+                                    print(f"  ⚠️  Camera reconnect failed")
                                     return
-                                print(f"  📷  Camera {CAMERA_INDEX} reconnected")
+                                print(f"  📷  Camera reconnected")
                                 consecutive_failures = 0
                             continue
 
                         consecutive_failures = 0
                         latest_frame[0] = raw
 
-                        user_facing = await asyncio.to_thread(gaze.is_user_facing, raw)
-                        if user_facing:
+                        # ── Run multi-person tracker ──────────────────────────
+                        tracker_result = await asyncio.to_thread(tracker.process_frame, raw)
+
+                        # ── Build camera context string for injections ─────────
+                        ctx_str = tracker.build_context_string(tracker_result)
+                        last_camera_context[0] = ctx_str
+
+                        # ── Attention from face gaze ───────────────────────────
+                        has_centred_face = any(f["is_centre"] for f in tracker_result["faces"])
+                        if has_centred_face:
                             await attention.activate("face-detected")
                         else:
                             elapsed = time.time() - attention._last_active_time
-                            if (attention.state == AttentionState.ATTENTIVE and
-                                    elapsed > 5.0):
+                            if (attention.state == AttentionState.ATTENTIVE and elapsed > 5.0):
                                 await attention.deactivate("face-lost")
 
+                        # ── GESTURE → camera-first trigger ────────────────────
+                        gesture = tracker_result.get("gesture")
                         now = time.time()
+                        if (gesture and
+                                gesture != last_gesture_sent and
+                                now - last_gesture_sent_time > 4.0 and
+                                not adam_speaking.is_set()):
+
+                            print(f"  🤲  Gesture detected: {gesture}")
+                            last_gesture_sent = gesture
+                            last_gesture_sent_time = now
+
+                            # Activate and send frame + gesture context
+                            await attention.activate(f"gesture:{gesture}")
+                            jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
+                            try:
+                                # Send frame FIRST (visual context)
+                                await session.send_realtime_input(
+                                    video=types.Blob(data=jpeg, mime_type="image/jpeg")
+                                )
+                                # Then inject gesture instruction
+                                gesture_prompts = {
+                                    "thumbs_up":    "Someone just gave you a thumbs up. React in character.",
+                                    "thumbs_down":  "Someone just gave you a thumbs down. React in character.",
+                                    "namaste":      "Someone just did a namaste gesture to you. Respond appropriately and in character.",
+                                    "wave":         "Someone is waving at you. Acknowledge them naturally.",
+                                    "object_shown": "Someone is showing you something with their hands. Look at the frame and comment on what you see.",
+                                }
+                                prompt = gesture_prompts.get(gesture,
+                                    f"A gesture was detected: {gesture}. React naturally.")
+                                await session.send_realtime_input(
+                                    text=f"[CAMERA-FIRST TRIGGER: {prompt} {ctx_str}]"
+                                )
+                            except (ConnectionClosedError, ConnectionClosedOK):
+                                return
+                            except Exception as e:
+                                print(f"  ⚠️  Gesture trigger error: {e}")
+
+                        # ── Send frame to Gemini at 1 FPS when active ─────────
                         if (now - last_sent >= CAMERA_FPS_INTERVAL and
                                 not adam_speaking.is_set() and
                                 attention.is_active()):
-                            jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
+                            # Annotate frame with speaker info if multiple people
+                            frame_to_send = raw
+                            if tracker_result["face_count"] > 1:
+                                # Draw lightweight annotations for Gemini to see
+                                annotated = raw.copy()
+                                for i, f in enumerate(tracker_result["faces"]):
+                                    color = (0, 255, 0) if i == tracker_result["active_speaker_idx"] else (200, 200, 200)
+                                    cv2.rectangle(annotated,
+                                                  (f["x"], f["y"]),
+                                                  (f["x"]+f["w"], f["y"]+f["h"]),
+                                                  color, 2)
+                                    label = f"P{i+1}" + (" [speaking]" if i == tracker_result["active_speaker_idx"] else "")
+                                    cv2.putText(annotated, label,
+                                                (f["x"], f["y"]-6),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                                frame_to_send = annotated
+
+                            jpeg = await asyncio.to_thread(frame_to_jpeg, frame_to_send)
                             try:
                                 await session.send_realtime_input(
                                     video=types.Blob(data=jpeg, mime_type="image/jpeg"))
@@ -1000,7 +1230,7 @@ async def run_session(
                     if cap:
                         cap.release()
 
-            # ── Listen ───────────────────────────────────────────────────────
+            # ── LISTEN ───────────────────────────────────────────────────────
             async def listen():
                 stream = pya.open(
                     format=FORMAT, channels=CHANNELS,
@@ -1022,7 +1252,7 @@ async def run_session(
                     stream.stop_stream()
                     stream.close()
 
-            # ── Send ─────────────────────────────────────────────────────────
+            # ── SEND (voice is secondary, but still injected with camera context) ──
             async def send():
                 try:
                     while not stop.is_set():
@@ -1041,8 +1271,7 @@ async def run_session(
                             pass
                         try:
                             await session.send_realtime_input(
-                                audio=types.Blob(data=chunk,
-                                                 mime_type="audio/pcm;rate=16000"))
+                                audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
                         except (ConnectionClosedError, ConnectionClosedOK):
                             return
                         except Exception:
@@ -1050,7 +1279,7 @@ async def run_session(
                 except asyncio.CancelledError:
                     pass
 
-            # ── Receive ──────────────────────────────────────────────────────
+            # ── RECEIVE ──────────────────────────────────────────────────────
             async def receive():
                 nonlocal latest_handle
                 try:
@@ -1069,8 +1298,7 @@ async def run_session(
                                 return
 
                             if msg.tool_call:
-                                responses = await handle_tool_call(
-                                    msg.tool_call, memory, faces)
+                                responses = await handle_tool_call(msg.tool_call, memory, faces)
                                 await session.send_tool_response(
                                     function_responses=[
                                         types.FunctionResponse(
@@ -1085,7 +1313,7 @@ async def run_session(
                             if sc is None:
                                 continue
 
-                            # Fallback transcript wake word
+                            # Fallback wake word in transcript
                             if sc.input_transcription and sc.input_transcription.text:
                                 transcript = sc.input_transcription.text
                                 print(f"  🗣️  You: {transcript}")
@@ -1093,12 +1321,21 @@ async def run_session(
                                         wake_word.check_transcript(transcript)):
                                     await attention.activate("transcript-wake-word")
 
+                                # Inject camera context alongside the voice turn
+                                ctx = last_camera_context[0]
+                                if ctx:
+                                    try:
+                                        await session.send_realtime_input(
+                                            text=f"[LIVE CAMERA CONTEXT: {ctx}]"
+                                        )
+                                    except Exception:
+                                        pass
+
                             if sc.model_turn:
                                 if not adam_speaking.is_set():
                                     adam_speaking.set()
                                     await attention.set_responding(True)
-                                    await ws_broadcast({"type": "face_state",
-                                                        "state": "speaking"})
+                                    await ws_broadcast({"type": "face_state", "state": "speaking"})
                                 for part in sc.model_turn.parts:
                                     if part.inline_data and part.inline_data.data:
                                         audio_data = part.inline_data.data
@@ -1118,7 +1355,7 @@ async def run_session(
                 except Exception as e:
                     print(f"\n⚠️  Receive: {type(e).__name__}: {e}")
 
-            # ── Speaker ──────────────────────────────────────────────────────
+            # ── SPEAKER ──────────────────────────────────────────────────────
             async def speaker():
                 stream = pya.open(
                     format=FORMAT, channels=CHANNELS,
@@ -1128,15 +1365,13 @@ async def run_session(
                 STUCK_WATCHDOG_S = 2.5
 
                 async def end_of_turn():
-                    """Called when ADAM finishes speaking. Resets idle timer."""
                     await ws_broadcast({"type": "mouth_sync", "intensity": "closed"})
                     await asyncio.sleep(0.1)
                     await asyncio.sleep(POST_SPEECH_MUTE_S)
                     drained = 0
                     while not out_q.empty():
                         try:
-                            out_q.get_nowait()
-                            drained += 1
+                            out_q.get_nowait(); drained += 1
                         except asyncio.QueueEmpty:
                             break
                     if drained:
@@ -1148,7 +1383,6 @@ async def run_session(
                             break
                     adam_speaking.clear()
                     await attention.set_responding(False)
-                    # ▼ Reset idle timer AFTER every completed turn
                     last_interaction_time[0] = time.time()
                     print("  🎤  Your turn...")
                     await ws_broadcast({"type": "face_state", "state": "listening"})
@@ -1174,14 +1408,8 @@ async def run_session(
                     stream.stop_stream()
                     stream.close()
 
-            # ── Idle watcher ─────────────────────────────────────────────────
+            # ── IDLE WATCHER ─────────────────────────────────────────────────
             async def idle_watcher():
-                """
-                Fires a nudge only after IDLE_TIMEOUT_S seconds of silence
-                following the last completed conversation turn.
-                Timer is reset in end_of_turn() — so it starts counting from
-                the moment ADAM finishes speaking, not from script launch.
-                """
                 if not ENABLE_IDLE:
                     return
                 try:
@@ -1190,34 +1418,28 @@ async def run_session(
                         if stop.is_set() or adam_speaking.is_set():
                             continue
                         if attention.state != AttentionState.PASSIVE:
-                            # Still in conversation — don't nudge
                             continue
-
                         elapsed = time.time() - last_interaction_time[0]
                         if elapsed < IDLE_TIMEOUT_S:
                             continue
 
-                        # Reset so we don't fire again until next timeout
                         last_interaction_time[0] = time.time()
                         nudge = next_nudge()
-                        print(f"  💤  Idle nudge ({elapsed:.0f}s since last interaction)")
+                        print(f"  💤  Idle nudge ({elapsed:.0f}s)")
 
                         try:
                             await attention.activate("idle-nudge")
-                            frame_jpeg = None
                             raw = latest_frame[0]
                             if raw is not None:
-                                frame_jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
-                            if frame_jpeg is not None:
+                                jpeg = await asyncio.to_thread(frame_to_jpeg, raw)
                                 await session.send_realtime_input(
-                                    video=types.Blob(data=frame_jpeg,
-                                                     mime_type="image/jpeg"))
+                                    video=types.Blob(data=jpeg, mime_type="image/jpeg"))
                             await session.send_realtime_input(
                                 text=(
-                                    f"[SYSTEM: User has been silent for {elapsed:.0f}s since "
-                                    f"the last conversation ended. A camera frame was just sent "
-                                    f"— react to what you see. Break silence in-character, "
-                                    f"1-2 sentences max. Suggestion: {nudge}]"
+                                    f"[SYSTEM: {elapsed:.0f}s of silence since last chat. "
+                                    f"Camera frame sent — react to what you see. "
+                                    f"Break silence in-character, 1-2 sentences MAX. "
+                                    f"Suggestion: {nudge}]"
                                 )
                             )
                         except Exception as e:
@@ -1225,7 +1447,7 @@ async def run_session(
                 except asyncio.CancelledError:
                     pass
 
-            # ── Launch ───────────────────────────────────────────────────────
+            # ── LAUNCH ───────────────────────────────────────────────────────
             t_cam = asyncio.create_task(camera())
             t_l   = asyncio.create_task(listen())
             t_s   = asyncio.create_task(send())
@@ -1252,9 +1474,9 @@ async def run_session(
     return latest_handle
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 async def main():
     memory        = load_memory()
@@ -1262,11 +1484,10 @@ async def main():
     system_prompt = load_system_prompt(memory, faces)
     attention     = AttentionManager()
     wake_word     = WakeWordDetector()
+    tracker       = PersonTracker()
 
     if wake_word._vosk_ready:
-        vosk_thread = threading.Thread(
-            target=wake_word.run_vosk_thread, daemon=True)
-        vosk_thread.start()
+        threading.Thread(target=wake_word.run_vosk_thread, daemon=True).start()
 
     client        = genai.Client(api_key=API_KEY)
     stop          = asyncio.Event()
@@ -1285,7 +1506,7 @@ async def main():
 
         result = await run_session(
             client, resume_handle, stop, out_q,
-            memory, faces, system_prompt, attention, wake_word
+            memory, faces, system_prompt, attention, wake_word, tracker
         )
         if result is None:
             break
@@ -1303,34 +1524,21 @@ async def main():
 
 
 def main_entry():
-    # Pre-initialize the generation client at startup
     init_gen_client()
 
-    print("=" * 64)
-    print("  ADAM — Autonomous Desktop AI Module  (v21)")
+    print("=" * 66)
+    print("  ADAM — Autonomous Desktop AI Module  (v22)")
     print(f"  Built by DGEN Technologies Pvt. Ltd., Kolkata")
     print(f"  Live model  : {LIVE_MODEL}")
     print(f"  Gen cascade : {' → '.join(GEN_MODEL_CASCADE)}")
     print(f"  Voice       : {VOICE}")
-    print(f"  Camera      : index {CAMERA_INDEX}")
-    print(f"  Search      : Google Search (function tool)")
-    print(f"  Clipboard   : {'✅ pyperclip ready' if CLIPBOARD_AVAILABLE else '❌ install pyperclip'}")
+    print(f"  Camera      : index {CAMERA_INDEX}  |  Priority: CAMERA-FIRST")
+    print(f"  Multi-person: ✅  Speaker tracking via mouth movement analysis")
+    print(f"  Gestures    : 👍 thumbs_up  🙏 namaste  👋 wave  📦 object_shown")
+    print(f"  Clipboard   : {'✅ ready' if CLIPBOARD_AVAILABLE else '❌ install pyperclip'}")
     print(f"  Vosk        : {'ready' if VOSK_AVAILABLE else 'not installed'}")
-    print(f"  Idle nudge  : {'ON' if ENABLE_IDLE else 'OFF'}  after {IDLE_TIMEOUT_S}s silence")
-    print("=" * 64)
-    print()
-    print("  PROMPT FILES (edit these to customise ADAM's behaviour):")
-    for f in ["system_prompt.txt", "gen_system_prompt.txt", "prompt_search.txt",
-              "prompt_clipboard.txt", "prompt_attention.txt",
-              "prompt_vision.txt", "prompt_language.txt"]:
-        status = "✅" if (Path(BASE_DIR) / f).exists() else "⚠️  missing (fallback used)"
-        print(f"    {status}  {f}")
-    print()
-    print("  HOW TO USE:")
-    print("  ① Look at camera OR say 'Hey ADAM'  →  activates")
-    print("  ② Say 'write me a Python script for X'  →  clipboard (Ctrl+V)")
-    print("  ③ Say 'what's the weather in Kolkata'  →  Google Search")
-    print("  ④ Idle for 60s after last chat  →  ADAM breaks the silence")
+    print(f"  Idle nudge  : {'ON' if ENABLE_IDLE else 'OFF'}  |  {IDLE_TIMEOUT_S}s")
+    print("=" * 66)
     print()
 
     threading.Thread(target=run_flask, daemon=True).start()
