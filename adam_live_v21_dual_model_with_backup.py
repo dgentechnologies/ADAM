@@ -57,7 +57,6 @@ import webbrowser
 import struct
 import queue
 import random
-import uuid
 from pathlib import Path
 
 import cv2
@@ -135,8 +134,6 @@ VOSK_MODEL_PATH        = "vosk-model-small-en-in-0.4"
 BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
 MEMORY_FILE      = Path(BASE_DIR) / "adam_memory.json"
 FACE_MEMORY_FILE = Path(BASE_DIR) / "adam_faces.json"
-
-CONTEXT_LOG_TRUNCATE = 80          # max chars to print in context-refresh log line
 
 # ── Creative acknowledgment lines (randomised each time) ─────────────────────
 CLIPBOARD_ACK_LINES = [
@@ -628,12 +625,8 @@ def frame_to_jpeg(frame: np.ndarray, size=FRAME_SIZE) -> bytes:
 # TOOL HANDLER
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def handle_tool_call(tool_call, memory: dict, faces: dict) -> tuple[list[dict], str | None]:
-    """Returns (responses, context_update_text).
-    context_update_text is an optional system note to inject into the live session
-    after sending the tool response — used to reinforce memory saves mid-session."""
+async def handle_tool_call(tool_call, memory: dict, faces: dict) -> list[dict]:
     responses = []
-    context_update: str | None = None
     for fc in tool_call.function_calls:
         name    = fc.name
         call_id = fc.id
@@ -671,40 +664,18 @@ async def handle_tool_call(tool_call, memory: dict, faces: dict) -> tuple[list[d
                 print(f"  📋  {confirmation}")
 
         elif name == "remember_person":
-            pid = args.get("person_id") or f"person_{uuid.uuid4().hex[:8]}"
-            person_name = args.get("name", "Unknown")
-            appearance  = args.get("appearance", "")
-            voice_cues  = args.get("voice_cues", "")
-            relationship = args.get("relationship", "acquaintance")
-            notes       = args.get("notes", "")
+            pid = args.get("person_id") or f"person_{int(time.time())}"
             faces[pid] = {
-                "name":         person_name,
-                "appearance":   appearance,
-                "voice_cues":   voice_cues,
-                "relationship": relationship,
-                "notes":        notes,
+                "name":         args.get("name", "Unknown"),
+                "appearance":   args.get("appearance", ""),
+                "voice_cues":   args.get("voice_cues", ""),
+                "relationship": args.get("relationship", "acquaintance"),
+                "notes":        args.get("notes", ""),
                 "last_seen":    datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
             }
             save_face_memory(faces)
-            print(f"  👤  Remembered: {person_name} ({pid})")
-            result = {
-                "status": "saved",
-                "person_id": pid,
-                "message": (
-                    f"{person_name} has been permanently saved to visual memory. "
-                    f"Appearance: {appearance or 'not recorded'}. "
-                    f"Voice: {voice_cues or 'not recorded'}. "
-                    f"Relationship: {relationship}. "
-                    f"You WILL recognize them next time you see them. "
-                    f"Confirm to the user that you have saved their information."
-                ),
-            }
-            context_update = (
-                f"[MEMORY UPDATE: {person_name} (ID: {pid}) has just been saved to your permanent "
-                f"visual memory. Appearance: {appearance or 'not described'}. "
-                f"Voice: {voice_cues or 'not described'}. Relationship: {relationship}. "
-                f"You now know this person and will recognize them in future sessions.]"
-            )
+            print(f"  👤  Remembered: {args.get('name')} ({pid})")
+            result = {"status": "saved", "person_id": pid}
 
         elif name == "update_person_seen":
             pid = args.get("person_id", "")
@@ -714,13 +685,7 @@ async def handle_tool_call(tool_call, memory: dict, faces: dict) -> tuple[list[d
                     existing = faces[pid].get("notes", "")
                     faces[pid]["notes"] = (existing + " | " + args["notes_update"]).strip(" |")
                 save_face_memory(faces)
-                updated_name = faces[pid].get("name", pid)
-                print(f"  👤  Updated last seen: {updated_name} ({pid})")
-                result = {"status": "updated", "name": updated_name}
-                context_update = (
-                    f"[MEMORY UPDATE: {updated_name} (ID: {pid}) last-seen timestamp updated. "
-                    f"You have recognized them successfully.]"
-                )
+                result = {"status": "updated"}
             else:
                 result = {"status": "not_found"}
 
@@ -764,7 +729,7 @@ async def handle_tool_call(tool_call, memory: dict, faces: dict) -> tuple[list[d
             result = {"error": f"Unknown: {name}"}
 
         responses.append({"id": call_id, "name": name, "response": result})
-    return responses, context_update
+    return responses
 
 
 def build_tools() -> list[types.Tool]:
@@ -796,51 +761,25 @@ def build_tools() -> list[types.Tool]:
             }, required=["prompt"])),
 
         types.FunctionDeclaration(name="remember_person",
-            description=(
-                "Save a person to permanent visual memory. "
-                "CALL THIS TOOL IMMEDIATELY whenever the user asks you to remember them, "
-                "their face, their voice, or their appearance — or when they introduce someone. "
-                "Do NOT say 'I'll remember you' without calling this tool first — that saves nothing. "
-                "Use the current camera frame to fill in appearance details: hair, face shape, "
-                "skin tone, clothing, distinctive features. "
-                "Fill in voice_cues from how they sound: pitch, accent, pace, patterns. "
-                "Set relationship to 'user' for the primary user, 'friend', 'family', or 'colleague'. "
-                "Always supply a meaningful person_id (e.g. 'tirthankar_main', 'friend_rahul')."
-            ),
+            description="Save a new person to visual memory.",
             parameters=S(type=T.OBJECT, properties={
-                "person_id":   S(type=T.STRING,
-                    description="Unique identifier, e.g. 'tirthankar_main' or 'friend_priya'"),
-                "name":        S(type=T.STRING,
-                    description="Full name of the person"),
-                "appearance":  S(type=T.STRING,
-                    description="Detailed visual description from the camera: hair, face, skin tone, clothing, build, distinctive features"),
-                "voice_cues":  S(type=T.STRING,
-                    description="Voice characteristics: pitch, accent, speaking pace, distinctive patterns"),
-                "relationship":S(type=T.STRING,
-                    description="Relationship to you/the user: 'user', 'friend', 'family', 'colleague'"),
-                "notes":       S(type=T.STRING,
-                    description="Any other relevant notes about this person"),
+                "person_id":   S(type=T.STRING),
+                "name":        S(type=T.STRING),
+                "appearance":  S(type=T.STRING),
+                "voice_cues":  S(type=T.STRING),
+                "relationship":S(type=T.STRING),
+                "notes":       S(type=T.STRING),
             }, required=["person_id", "name"])),
 
         types.FunctionDeclaration(name="update_person_seen",
-            description=(
-                "Update the last-seen timestamp and optionally add notes for a known person. "
-                "Call this when you recognize someone from your visual memory at the start of a conversation. "
-                "Use get_all_people first to look up the correct person_id if needed."
-            ),
+            description="Update last-seen time for a known person.",
             parameters=S(type=T.OBJECT, properties={
-                "person_id":    S(type=T.STRING,
-                    description="The person_id of the known person to update"),
-                "notes_update": S(type=T.STRING,
-                    description="Optional new observation to append to their notes"),
+                "person_id":    S(type=T.STRING),
+                "notes_update": S(type=T.STRING),
             }, required=["person_id"])),
 
         types.FunctionDeclaration(name="get_all_people",
-            description=(
-                "Retrieve everyone saved in visual memory. "
-                "Use this to check if someone is already known before calling remember_person, "
-                "or to find a person_id before calling update_person_seen."
-            ),
+            description="Get all people in visual memory.",
             parameters=S(type=T.OBJECT, properties={})),
 
         types.FunctionDeclaration(name="set_emotion",
@@ -1130,7 +1069,7 @@ async def run_session(
                                 return
 
                             if msg.tool_call:
-                                responses, context_update = await handle_tool_call(
+                                responses = await handle_tool_call(
                                     msg.tool_call, memory, faces)
                                 await session.send_tool_response(
                                     function_responses=[
@@ -1140,15 +1079,6 @@ async def run_session(
                                         for r in responses
                                     ]
                                 )
-                                # If a person was saved, inject a context note so the
-                                # current session knows about the new memory entry
-                                if context_update:
-                                    try:
-                                        await session.send_realtime_input(
-                                            text=context_update)
-                                        print(f"  🔄  Context refreshed: {context_update[:CONTEXT_LOG_TRUNCATE]}...")
-                                    except Exception as ctx_err:
-                                        print(f"  ⚠️  Context refresh failed: {ctx_err}")
                                 continue
 
                             sc = msg.server_content

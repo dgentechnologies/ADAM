@@ -1,0 +1,42 @@
+{
+  "friend_sukomal": {
+    "name": "Sukomal Debnath",
+    "appearance": "medium build, short dark hair, full beard and moustache, wearing a light-colored button-up shirt, wide smile. He is sitting directly in front of and slightly below Tirthankar.",
+    "voice_cues": "medium-high pitch, friendly tone, moderate speaking pace with an Indian accent",
+    "relationship": "friend",
+    "notes": "User confirmed identity.",
+    "last_seen": "2026-04-07 16:45"
+  },
+  "friend_sneha": {
+    "name": "Sneha",
+    "appearance": "medium build, round face, dark hair, wearing a patterned tunic, standing against a plain wall.",
+    "voice_cues": "Unknown, not heard speaking.",
+    "relationship": "friend",
+    "notes": "Seen again with the user. | User brought Sneha again. Sneha is now speaking directly into a microphone, looking calm. | Seen again in visual frame. | Identified visually. Looking at camera, speaking Bengali.",
+    "last_seen": "2026-04-07 16:31"
+  },
+  "tirthankar_main": {
+    "name": "Tirthankar Dasgupta",
+    "appearance": "medium build, short dark hair, clean shaven, wearing an orange and black striped polo shirt. sitting in a brightly lit room with white walls.",
+    "voice_cues": "medium-low pitch, moderate pace, calm voice, speaking Bengali.",
+    "relationship": "user",
+    "notes": "Recognized user with friend Sneha. | User left the conversation.",
+    "last_seen": "2026-04-07 16:44"
+  },
+  "unknown_person_01": {
+    "name": "unknown_friend",
+    "appearance": "short dark hair, medium build, smiling, wearing black tshirt",
+    "voice_cues": "",
+    "relationship": "friend",
+    "notes": "",
+    "last_seen": "2026-04-07 16:44"
+  },
+  "colleague_arpan": {
+    "name": "Arpan Bairagi",
+    "appearance": "young man, white tshirt, leaning on his hand in front of a laptop.",
+    "voice_cues": "not heard speaking",
+    "relationship": "colleague",
+    "notes": "User introduced Arpan. Relationship established as colleague per system prompt context.",
+    "last_seen": "2026-04-07 16:49"
+  }
+}
