@@ -6,5 +6,13 @@
   "user_friend_name": "Arpan Bairagi",
   "user_friend_context": "Arpan Bairagi is a friend and colleague of tirthankar_main at DGEN. He is the COO.",
   "user_description_tirthankar_polo_shirt": "User Tirthankar is wearing an orange and black striped polo shirt.",
-  "object_shown_metal_thing": "User showed a shiny metallic object, possibly for a project."
+  "object_shown_metal_thing": "User showed a shiny metallic object, possibly for a project.",
+  "friend_vision_confirmed": "Confirmed visual recognition was successful on 2026-04-11 at 15:35.",
+  "last_speech_time": "user said: \"কথা বল নাই কেন?\" at 2026-04-11 10:06-UTC. User noted I was quiet.",
+  "friend_arpan_identified": "Arpan Bairagi introduced himself. He is Tirthankar's friend and direct colleague. Confirmed on 2026-04-11.",
+  "friend_sagnik_appearance_black_shirt": "Person confirmed visually at 2026-04-11 meeting with Tirthankar and Arpan. Notes indicate this is likely Sagnik. Confirmation pending.",
+  "person_wants_name_recall": "Person asked for their name. System failed to recall, needing identification directly or prompt in context; last seen on 2026-04-11 at 10:09 AM-UTC.",
+  "people_count_response": "Stated that I saw two people, but noted a third might be nearby. Time: 2026-04-11 10:10 UTC.",
+  "group_pose_context": "Two individuals in frame, one asking for identification while laughing. Third individual mentioned in reflection. Time: 2026-04-11 10:11 AM.",
+  "user_threat_delete_data": "User is angry and threatened to delete all data. Dropped sarcasm, used supportive tone on 2026-04-11 at 10:13 AM UTC."
 }

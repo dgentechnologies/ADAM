@@ -20,8 +20,8 @@
     "appearance": "medium build, short dark hair, clean shaven, wearing an olive green tshirt. sitting in a brightly lit room with white walls, with a sliding window behind.",
     "voice_cues": "medium-low pitch, moderate pace, calm voice, speaking English.",
     "relationship": "acquaintance",
-    "notes": "",
-    "last_seen": "2026-04-08 01:00",
+    "notes": "Tirthankar was visually identified again. Looking happy with his colleague Arpan. | User stressed, reminding ADAM of developer status and power over me. Dropping sarcasm, using supportive tone.",
+    "last_seen": "2026-04-11 15:43",
     "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\tirthankar_main.jpg"
   },
   "unknown_person_01": {
@@ -29,8 +29,8 @@
     "appearance": "short dark hair, medium build, smiling, wearing black tshirt",
     "voice_cues": "",
     "relationship": "friend",
-    "notes": "",
-    "last_seen": "2026-04-08 00:58"
+    "notes": "New individual present; asks identification. Needs naming and memory. | Visual contact maintained but still unsure of the specific new individual's identity. Still waiting for name. | Sagnik, or the previously un-named user, has had their photo taken for future recognition.",
+    "last_seen": "2026-04-11 15:39"
   },
   "colleague_arpan": {
     "name": "Arpan Bairagi",
@@ -39,5 +39,21 @@
     "relationship": "colleague",
     "notes": "User introduced Arpan. Relationship established as colleague per system prompt context.",
     "last_seen": "2026-04-07 16:49"
+  },
+  "friend_arpan": {
+    "name": "Arpan Bairagi",
+    "appearance": "",
+    "voice_cues": "",
+    "relationship": "acquaintance",
+    "notes": "User formally introduced to ADAM. Notes updated context.",
+    "last_seen": "2026-04-11 15:37"
+  },
+  "friend_arpan_temp": {
+    "name": "Arpan Bairagi",
+    "appearance": "young man, clean shaven, dark hair, wearing a patterned button-up shirt over a grey tshirt.",
+    "voice_cues": "",
+    "relationship": "COO of DGEN",
+    "notes": "",
+    "last_seen": "2026-04-11 15:38"
   }
 }
