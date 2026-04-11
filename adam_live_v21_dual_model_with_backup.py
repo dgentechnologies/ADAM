@@ -129,13 +129,14 @@ FACE_MEMORY_FILE = Path(BASE_DIR) / "adam_faces.json"
 FACES_DIR        = Path(BASE_DIR) / "faces"          # saved face crop photos
 
 # Gesture detection sensitivity
-GESTURE_MOTION_THRESHOLD  = 0.025   # fraction of frame area changed to trigger gesture notice
+GESTURE_MOTION_THRESHOLD  = 0.035   # fraction of frame area changed to trigger gesture notice
 MOUTH_MOVEMENT_SENSITIVITY = 6.0    # brightness delta in mouth ROI to count as "speaking"
 SPEAKER_INERTIA_FRAMES     = 10     # frames before switching active speaker
-WAVE_MIN_LATERAL_MOVEMENT  = 0.22   # min horizontal blob travel (fraction of frame) for wave
-WAVE_MOTION_THRESHOLD      = 0.07   # motion fraction required specifically for wave
-WAVE_SKIN_THRESHOLD        = 0.10   # skin fraction in upper half required for wave
+WAVE_MIN_LATERAL_MOVEMENT  = 0.30   # min horizontal hand-blob travel (fraction of 160px wide frame)
+WAVE_MOTION_THRESHOLD      = 0.08   # motion fraction required specifically for wave
+WAVE_SKIN_THRESHOLD        = 0.04   # hand-skin fraction (face-excluded) required for wave
 FACE_DETECT_MIN_NEIGHBORS  = 4      # lower = fewer missed faces (was 5)
+GESTURE_COOLDOWN_S         = 6.0    # seconds between any two gesture triggers
 
 # Camera preview window
 SHOW_PREVIEW     = True                   # Set False to run headless
@@ -205,9 +206,9 @@ class PersonTracker:
         # Gesture state
         self._prev_frame_small: np.ndarray | None = None
         self._last_gesture_time: float = 0.0
-        self._gesture_cooldown: float = 3.0   # seconds between gesture triggers
+        self._gesture_cooldown: float = GESTURE_COOLDOWN_S
         # Wave tracking: persistent blob-cx history for lateral movement detection
-        self._blob_cx_history: deque = deque(maxlen=8)
+        self._blob_cx_history: deque = deque(maxlen=10)
         # ADAM-speaking flag — suppresses speaker-id updates while ADAM is talking
         self._adam_speaking: bool = False
 
@@ -266,7 +267,7 @@ class PersonTracker:
             self._active_speaker_id = None
             self._speaker_inertia   = 0
             self._prev_gray         = gray
-            result["gesture"] = self._detect_gesture(frame)
+            result["gesture"] = self._detect_gesture(frame, [])
             return result
 
         # Sort faces left to right for consistent indexing
@@ -340,120 +341,152 @@ class PersonTracker:
         result["active_speaker_idx"] = self._active_speaker_id
 
         # ── Gesture detection ─────────────────────────────────────────────────
-        result["gesture"] = self._detect_gesture(frame)
+        # Pass face bounding boxes so gesture logic can exclude the face from
+        # skin analysis — prevents face skin from triggering namaste/object_shown.
+        face_boxes = [(f["x"], f["y"], f["w"], f["h"]) for f in result["faces"]]
+        result["gesture"] = self._detect_gesture(frame, face_boxes)
 
         self._prev_gray = gray
         return result
 
-    def _detect_gesture(self, frame: np.ndarray) -> str | None:
+    def _detect_gesture(self, frame: np.ndarray, face_boxes: list) -> str | None:
         """
-        Gesture detection using frame differencing + skin tone analysis.
-        Detects: thumbs_up, namaste, wave, object_shown.
+        Gesture detection using frame differencing + hand-only skin analysis.
 
-        Wave fix: requires sustained lateral hand movement (blob cx range >=
-        WAVE_MIN_LATERAL_MOVEMENT) so hair-fixing / head-scratching motions
-        that stay near the centre are NOT mis-classified as waves.
+        face_boxes: list of (x, y, w, h) in ORIGINAL frame coords.
+        Face regions are MASKED OUT of all skin calculations so the face itself
+        never triggers namaste / object_shown / wave false positives.
+
+        Gestures detected: wave, namaste, thumbs_up, object_shown.
         """
-        now = time.time()
-        h, w = frame.shape[:2]
+        now      = time.time()
+        SMALL_W  = 160
+        SMALL_H  = 120
+        orig_h, orig_w = frame.shape[:2]
+        sx = SMALL_W / orig_w
+        sy = SMALL_H / orig_h
 
-        # Downsample for speed
-        small = cv2.resize(frame, (160, 120))
+        small = cv2.resize(frame, (SMALL_W, SMALL_H))
 
-        # Define skin range once (used in both tracking and classification)
-        lower_skin = np.array([0, 20, 70],  dtype=np.uint8)
+        lower_skin = np.array([0,  20,  70], dtype=np.uint8)
         upper_skin = np.array([25, 255, 255], dtype=np.uint8)
 
-        # ── Always track blob-cx for wave detection (even during cooldown) ────
-        upper_track = small[:60, :]
-        skin_track  = cv2.inRange(
-            cv2.cvtColor(upper_track, cv2.COLOR_BGR2HSV), lower_skin, upper_skin)
-        skin_frac_t = np.sum(skin_track > 0) / skin_track.size
+        # ── Build face-exclusion mask (1 = excluded = face region) ───────────
+        # Inflate face bounding boxes by 25% on each side so hair/chin don't leak.
+        face_excl = np.zeros((SMALL_H, SMALL_W), dtype=np.uint8)
+        for (fx, fy, fw, fh) in face_boxes:
+            pad_x = int(fw * 0.25); pad_y = int(fh * 0.25)
+            x1 = max(0, int((fx - pad_x) * sx))
+            y1 = max(0, int((fy - pad_y) * sy))
+            x2 = min(SMALL_W, int((fx + fw + pad_x) * sx))
+            y2 = min(SMALL_H, int((fy + fh + pad_y) * sy))
+            face_excl[y1:y2, x1:x2] = 255
 
-        if skin_frac_t >= 0.06:
-            ctrs_t, _ = cv2.findContours(skin_track, cv2.RETR_EXTERNAL,
-                                          cv2.CHAIN_APPROX_SIMPLE)
-            if ctrs_t:
-                lg_t = max(ctrs_t, key=cv2.contourArea)
-                if cv2.contourArea(lg_t) >= 60:
-                    bxt, _, bwt, _ = cv2.boundingRect(lg_t)
-                    self._blob_cx_history.append((bxt + bwt / 2) / 160)
+        hand_mask_inv = cv2.bitwise_not(face_excl)   # 255 = include (not face)
+
+        # ── Compute hand-only skin in whole frame for wave tracking ──────────
+        hsv_full   = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+        skin_full  = cv2.inRange(hsv_full, lower_skin, upper_skin)
+        hand_skin  = cv2.bitwise_and(skin_full, hand_mask_inv)
+        skin_frac_hand = np.sum(hand_skin > 0) / hand_skin.size
+
+        # ── Always update wave blob-cx history (hand skin only) ──────────────
+        if skin_frac_hand >= 0.03:
+            ctrs, _ = cv2.findContours(hand_skin, cv2.RETR_EXTERNAL,
+                                        cv2.CHAIN_APPROX_SIMPLE)
+            if ctrs:
+                lg = max(ctrs, key=cv2.contourArea)
+                if cv2.contourArea(lg) >= 40:
+                    bxt, _, bwt, _ = cv2.boundingRect(lg)
+                    self._blob_cx_history.append((bxt + bwt / 2) / SMALL_W)
         else:
-            # No skin visible — clear stale history
-            if self._blob_cx_history:
-                self._blob_cx_history.clear()
+            self._blob_cx_history.clear()
 
         if self._prev_frame_small is None:
             self._prev_frame_small = small
             return None
 
-        # ── Gesture cooldown ──────────────────────────────────────────────────
+        # ── Cooldown ──────────────────────────────────────────────────────────
         if now - self._last_gesture_time < self._gesture_cooldown:
             self._prev_frame_small = small.copy()
             return None
 
-        # ── Motion detection ──────────────────────────────────────────────────
-        diff = cv2.absdiff(small, self._prev_frame_small)
+        # ── Motion (whole frame) ──────────────────────────────────────────────
+        diff          = cv2.absdiff(small, self._prev_frame_small)
         self._prev_frame_small = small.copy()
+        gray_diff     = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+        _, thresh     = cv2.threshold(gray_diff, 25, 255, cv2.THRESH_BINARY)
+        motion_frac   = np.sum(thresh > 0) / thresh.size
 
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray_diff, 25, 255, cv2.THRESH_BINARY)
-        motion_fraction = np.sum(thresh > 0) / thresh.size
-
-        # ── Wave: check with its OWN stricter threshold + lateral-movement proof ──
-        # Hair-fixing stays near the centre and produces a small cx range.
-        # A real wave travels from one side (cx<0.28 or cx>0.72) across the frame.
-        if (len(self._blob_cx_history) >= 4 and
-                motion_fraction > WAVE_MOTION_THRESHOLD and
-                skin_frac_t > WAVE_SKIN_THRESHOLD):
-            cx_range    = max(self._blob_cx_history) - min(self._blob_cx_history)
-            has_side    = any(cx < 0.28 or cx > 0.72 for cx in self._blob_cx_history)
+        # ── WAVE ──────────────────────────────────────────────────────────────
+        # Requires: 6+ frames of hand-only blob history, significant lateral
+        # travel (>= WAVE_MIN_LATERAL_MOVEMENT), blob must reach a far side.
+        if (len(self._blob_cx_history) >= 6 and
+                motion_frac > WAVE_MOTION_THRESHOLD and
+                skin_frac_hand > WAVE_SKIN_THRESHOLD):
+            cx_min   = min(self._blob_cx_history)
+            cx_max   = max(self._blob_cx_history)
+            cx_range = cx_max - cx_min
+            has_side = any(cx < 0.25 or cx > 0.75 for cx in self._blob_cx_history)
             if cx_range >= WAVE_MIN_LATERAL_MOVEMENT and has_side:
                 self._last_gesture_time = now
                 self._blob_cx_history.clear()
                 return "wave"
 
-        if motion_fraction < GESTURE_MOTION_THRESHOLD:
-            return None  # Not enough global motion for other gestures
-
-        # ── Skin tone check for remaining gestures ────────────────────────────
-        upper_half = small[:60, :]
-        hsv        = cv2.cvtColor(upper_half, cv2.COLOR_BGR2HSV)
-        skin_mask  = cv2.inRange(hsv, lower_skin, upper_skin)
-        skin_frac  = np.sum(skin_mask > 0) / skin_mask.size
-
-        if skin_frac < 0.08:
+        if motion_frac < GESTURE_MOTION_THRESHOLD:
             return None
 
-        contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL,
-                                        cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
+        # ── Classify remaining gestures from hand-only skin in upper 2/3 ─────
+        upper_h       = int(SMALL_H * 0.67)    # 80 px
+        skin_upper    = hand_skin[:upper_h, :]  # already face-excluded
+        skin_frac_up  = np.sum(skin_upper > 0) / skin_upper.size
+
+        if skin_frac_up < 0.05:
             return None
 
-        largest = max(contours, key=cv2.contourArea)
-        area    = cv2.contourArea(largest)
-        if area < 100:
+        ctrs_up, _ = cv2.findContours(skin_upper, cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_SIMPLE)
+        if not ctrs_up:
             return None
 
+        valid = [c for c in ctrs_up if cv2.contourArea(c) >= 80]
+        if not valid:
+            return None
+
+        largest      = max(valid, key=cv2.contourArea)
+        area         = cv2.contourArea(largest)
         bx, by, bw, bh = cv2.boundingRect(largest)
-        blob_cx_norm = (bx + bw / 2) / 160
-        blob_cy_norm = (by + bh / 2) / 60
-        aspect_ratio = bw / (bh + 1e-5)
+        blob_cx      = (bx + bw / 2) / SMALL_W
+        blob_cy      = (by + bh / 2) / upper_h
+        aspect       = bw / (bh + 1e-5)
 
-        # Namaste: wide blob, centered, high skin fraction
-        if skin_frac > 0.20 and 0.3 < blob_cx_norm < 0.7 and aspect_ratio > 1.2:
-            self._last_gesture_time = now
-            return "namaste"
-
-        # Thumbs up: tall narrow blob in upper half
-        if bh > bw * 0.8 and blob_cy_norm < 0.5 and skin_frac > 0.10:
-            if aspect_ratio < 0.8:
+        # NAMASTE: two hands pressed together → one wide dense blob,
+        # high skin fraction, centred, large area, high fill ratio.
+        # All-new stricter thresholds to prevent face false-triggers.
+        if (skin_frac_up > 0.15 and
+                0.25 < blob_cx < 0.75 and
+                aspect > 1.5 and
+                area > 1500):
+            fill = area / max(bw * bh, 1)
+            if fill > 0.55:
                 self._last_gesture_time = now
-                return "thumbs_up"
+                return "namaste"
 
-        # Showing object: large motion in centre of frame
-        center_motion = 0.2 < blob_cx_norm < 0.8 and 0.2 < blob_cy_norm < 0.8
-        if center_motion and motion_fraction > 0.08:
+        # THUMBS UP: tall narrow blob, well above midline
+        if (bh > bw * 0.9 and
+                blob_cy < 0.55 and
+                aspect < 0.85 and
+                area > 500 and
+                skin_frac_up > 0.05):
+            self._last_gesture_time = now
+            return "thumbs_up"
+
+        # OBJECT SHOWN: large hand blob in centre + lots of motion.
+        # area > 2500 prevents single-finger / casual gesture from firing.
+        if (0.15 < blob_cx < 0.85 and
+                motion_frac > 0.13 and
+                area > 2500 and
+                skin_frac_up > 0.12):
             self._last_gesture_time = now
             return "object_shown"
 
