@@ -1,7 +1,6 @@
 {
   "user_hobby": "User does projects",
   "user_name": "Tirthankar",
-  "user_last_topic": "wife of sagnik Nandini,jonny sins came to there house for some plumbing work.",
   "language_preference": "standard_bengali",
   "user_friend_name": "Arpan Bairagi",
   "user_friend_context": "Arpan Bairagi is a friend and colleague of tirthankar_main at DGEN. He is the COO.",
@@ -15,5 +14,8 @@
   "people_count_response": "Stated that I saw two people, but noted a third might be nearby. Time: 2026-04-11 10:10 UTC.",
   "group_pose_context": "Two individuals in frame, one asking for identification while laughing. Third individual mentioned in reflection. Time: 2026-04-11 10:11 AM.",
   "user_threat_delete_data": "User is angry and threatened to delete all data. Dropped sarcasm, used supportive tone on 2026-04-11 at 10:13 AM UTC.",
-  "dialect_preference_royal": "lakhnavi"
+  "dialect_preference_royal": "lakhnavi",
+  "adam_nickname_sagnik": "aadha_budhwa",
+  "adam_nickname_burho": "Sagnik nicknamed ADAM 'Burho' (old man) on 2026-04-12 during a joking session.",
+  "friend_name_nandini": "Nandini is present as of 2026-04-12, visual confirmed for future recognition."
 }
