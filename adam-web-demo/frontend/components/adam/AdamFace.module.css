@@ -1,0 +1,85 @@
+/* AdamFace.module.css */
+
+.face {
+  position: relative;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #0f172a, #020617);
+  border: 2px solid #0ea5e9;
+  box-shadow: 0 0 20px #0ea5e940, inset 0 0 30px #0ea5e910;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.face.listening { border-color: #38bdf8; box-shadow: 0 0 35px #38bdf860, inset 0 0 20px #38bdf815; }
+.face.speaking  { border-color: #7dd3fc; box-shadow: 0 0 45px #7dd3fc70, inset 0 0 25px #7dd3fc15; }
+
+.glowRing {
+  position: absolute; inset: -4px; border-radius: 50%;
+  border: 1px solid #0ea5e920;
+  animation: glowPulse 3s ease-in-out infinite;
+}
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.02); }
+}
+
+.eyes { display: flex; gap: 28px; margin-bottom: 8px; position: relative; z-index: 2; }
+
+.eye {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: #0ea5e9;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.25s ease;
+  box-shadow: 0 0 12px #0ea5e980;
+}
+.pupil { width: 12px; height: 12px; border-radius: 50%; background: #020617; }
+
+.eyeIdle      { animation: blink 4s ease-in-out infinite; }
+.eyeHappy     { height: 18px; border-radius: 0 0 17px 17px; animation: none; }
+.eyeThinking  { animation: think 2s ease-in-out infinite; }
+.eyeSurprised { width: 40px; height: 40px; box-shadow: 0 0 20px #0ea5e9; }
+.eyeSad       { height: 28px; border-radius: 17px 17px 0 0; transform: rotate(5deg); }
+.eyeExcited   { animation: excited 0.4s ease-in-out infinite alternate; }
+.eyeConfused  { transform: rotate(-15deg); }
+.eyeSarcastic { height: 24px; border-radius: 17px 17px 0 0; transform: rotate(-5deg); }
+
+@keyframes blink   { 0%, 90%, 100% { transform: scaleY(1); }  95% { transform: scaleY(0.1); } }
+@keyframes think   { 0%, 100% { transform: translateX(0); }   50% { transform: translateX(4px); } }
+@keyframes excited { from { transform: scale(1); } to { transform: scale(1.12); } }
+
+.nose { width: 5px; height: 5px; border-radius: 50%; background: #38bdf850; margin-bottom: 8px; position: relative; z-index: 2; }
+
+.mouth {
+  width: 36px; height: 12px;
+  border-radius: 0 0 18px 18px;
+  border: 2px solid #0ea5e9; border-top: none;
+  background: transparent; position: relative; z-index: 2;
+  transition: all 0.15s ease;
+}
+.mouthClosed { height: 3px; border-radius: 2px; border: 2px solid #0ea5e9; }
+.mouthLow    { height: 8px; border-radius: 0 0 8px 8px; }
+.mouthMedium { height: 14px; border-radius: 0 0 18px 18px; }
+.mouthHigh   { height: 20px; width: 44px; border-radius: 0 0 22px 22px; box-shadow: 0 0 8px #0ea5e960; }
+
+.pulseRing1, .pulseRing2 {
+  position: absolute; inset: -8px; border-radius: 50%;
+  border: 1px solid #38bdf840;
+  animation: pulse 1.5s ease-out infinite;
+  pointer-events: none;
+}
+.pulseRing2 { inset: -16px; animation-delay: 0.5s; }
+@keyframes pulse { 0% { transform: scale(0.95); opacity: 1; } 100% { transform: scale(1.1); opacity: 0; } }
+
+.waveform {
+  position: absolute; bottom: 16px;
+  display: flex; align-items: flex-end; gap: 3px; height: 20px;
+}
+.waveBar {
+  width: 3px; height: 100%;
+  background: #38bdf8; border-radius: 2px;
+  animation: wave 0.6s ease-in-out infinite alternate;
+}
+@keyframes wave { from { transform: scaleY(0.2); } to { transform: scaleY(1); } }
