@@ -1,6 +1,8 @@
 // app/api/relay-token/route.ts
 // Verifies a Firebase ID token, checks session caps, and mints a short-lived relay JWT.
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { SignJWT } from 'jose';

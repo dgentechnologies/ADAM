@@ -1611,16 +1611,10 @@ def build_tools() -> list[types.Tool]:
     ])
 
     # ── Native Google Search grounding — last resort, billing applies ─────────
-    # DynamicRetrievalConfig: only fire when model confidence < (1 - 0.75) = 0.25
-    # i.e. the model must be highly uncertain to trigger paid grounding.
-    # Default threshold is 0.3; raising to 0.75 cuts ~80% of grounding calls.
+    # dynamic_retrieval_config is not supported in this SDK version;
+    # plain GoogleSearch() is used. DDG (fn_tool) handles most queries first.
     search_tool = types.Tool(
-        google_search=types.GoogleSearch(
-            dynamic_retrieval_config=types.DynamicRetrievalConfig(
-                mode=types.DynamicRetrievalConfigMode.MODE_DYNAMIC,
-                dynamic_threshold=0.75,
-            )
-        )
+        google_search=types.GoogleSearch()
     )
 
     return [fn_tool, search_tool]

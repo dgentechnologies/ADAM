@@ -1,5 +1,7 @@
 // app/api/waitlist/route.ts — saves a waitlist entry to Firestore
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
