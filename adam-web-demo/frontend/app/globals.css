@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;600&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap');
 
 :root {
   --background: #0a0a0a;
@@ -6,10 +7,32 @@
   --dgen-blue: #0ea5e9;
   --dgen-blue-dark: #0284c7;
   --dgen-accent: #38bdf8;
+
+  /* shadcn-compatible tokens for login page components */
+  --primary: #4AF0FF;
+  --primary-foreground: #0a0a0a;
+  --input: rgba(255,255,255,0.1);
+  --ring: rgba(74,240,255,0.4);
+  --border: rgba(255,255,255,0.1);
+  --muted-foreground: rgba(255,255,255,0.45);
+  --accent: rgba(255,255,255,0.06);
+  --accent-foreground: #f0f0f0;
+  --destructive: rgba(220,80,80,0.9);
+  --destructive-foreground: #f0f0f0;
+  --secondary: rgba(255,255,255,0.06);
+  --secondary-foreground: #f0f0f0;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans, system-ui, sans-serif);
+}
+
+/* Reduced-motion: disable all animations */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

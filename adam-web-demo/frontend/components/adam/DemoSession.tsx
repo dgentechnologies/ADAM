@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
-import Link from 'next/link';
 import { AdamFace } from './AdamFace';
 import { AudioCapture } from './AudioCapture';
 import { SessionTimer } from './SessionTimer';
@@ -17,12 +16,14 @@ import type {
 } from '@/types';
 
 interface DemoSessionProps {
-  user: User;
+  user:              User;
+  onSessionEnded?:   (reason: string) => void;
+  fullscreen?:       boolean;
 }
 
 const RELAY_URL = process.env.NEXT_PUBLIC_RELAY_URL!;
 
-export function DemoSession({ user }: DemoSessionProps) {
+export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionProps) {
   const [state,          setState]          = useState<SessionState>('connecting');
   const [faceState,      setFaceState]      = useState<FaceState>('idle');
   const [emotion,        setEmotion]        = useState<Emotion>('idle');
@@ -30,7 +31,7 @@ export function DemoSession({ user }: DemoSessionProps) {
   const [transcripts,    setTranscripts]    = useState<TranscriptEntry[]>([]);
   const [isRecording,    setIsRecording]    = useState(false);
   const [turnCount,      setTurnCount]      = useState(0);
-  const [turnsAllowed,   setTurnsAllowed]   = useState(20);
+  const [turnsAllowed,   setTurnsAllowed]   = useState(1);
   const [durationMs,     setDurationMs]     = useState(300_000);
   const [endReason,      setEndReason]      = useState<string | null>(null);
   const [errorMsg,       setErrorMsg]       = useState<string | null>(null);
@@ -110,6 +111,12 @@ export function DemoSession({ user }: DemoSessionProps) {
     }
   }, [enqueueAudio]);
 
+  const stateRef = useRef<SessionState>('connecting');
+
+  // Keep stateRef in sync so ws.onclose can read the current value without a
+  // stale closure (the useEffect has empty deps, so `state` would be frozen).
+  useEffect(() => { stateRef.current = state; }, [state]);
+
   // ── Connect on mount ──────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -151,7 +158,7 @@ export function DemoSession({ user }: DemoSessionProps) {
         };
 
         ws.onclose = () => {
-          if (state !== 'ended' && state !== 'error') {
+          if (stateRef.current !== 'ended' && stateRef.current !== 'error') {
             setState('ended');
             setEndReason('connection_closed');
           }
@@ -176,6 +183,14 @@ export function DemoSession({ user }: DemoSessionProps) {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: 'smooth' });
   }, [transcripts]);
 
+  // Notify parent when session ends (fullscreen mode)
+  useEffect(() => {
+    if (state === 'ended' && onSessionEnded) {
+      onSessionEnded(endReason ?? 'unknown');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
   // ── Controls ──────────────────────────────────────────────────────────────
 
   const send = (msg: ClientMessage) => wsRef.current?.send(JSON.stringify(msg));
@@ -188,6 +203,16 @@ export function DemoSession({ user }: DemoSessionProps) {
   // ── Render states ─────────────────────────────────────────────────────────
 
   if (state === 'connecting') {
+    if (fullscreen) {
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: 24 }}>
+          <AdamFace emotion="idle" faceState="idle" size={200} />
+          <div style={{ width: 28, height: 28, border: '2px solid #4AF0FF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'adamSpin 0.8s linear infinite' }} />
+          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 12, color: '#9a9a9a', letterSpacing: '0.1em' }}>CONNECTING TO ADAM…</p>
+          <style>{`@keyframes adamSpin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-gray-400">
         <div className="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
@@ -197,6 +222,21 @@ export function DemoSession({ user }: DemoSessionProps) {
   }
 
   if (state === 'error') {
+    if (fullscreen) {
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: 20 }}>
+          <AdamFace emotion="sad" faceState="idle" size={180} />
+          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 12, color: '#ff6b6b', letterSpacing: '0.1em' }}>CONNECTION ERROR</p>
+          {errorMsg && <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 13, color: '#9a9a9a', maxWidth: 320, textAlign: 'center' }}>{errorMsg}</p>}
+          <button
+            onClick={() => window.location.reload()}
+            style={{ padding: '10px 28px', background: '#4AF0FF', color: '#0a0a0a', border: 'none', borderRadius: 10, fontFamily: '"Rajdhani", sans-serif', fontWeight: 600, fontSize: 14, letterSpacing: '0.06em', cursor: 'pointer' }}
+          >
+            RETRY
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="text-center space-y-4 py-16">
         <p className="text-red-400 font-semibold">Connection failed</p>
@@ -212,6 +252,8 @@ export function DemoSession({ user }: DemoSessionProps) {
   }
 
   if (state === 'ended') {
+    // fullscreen: parent handles overlay via onSessionEnded callback
+    if (onSessionEnded) return null;
     return (
       <div className="text-center space-y-6 py-16">
         <div className="flex justify-center">
@@ -221,7 +263,7 @@ export function DemoSession({ user }: DemoSessionProps) {
           <p className="text-xl font-bold mb-1">Session ended</p>
           <p className="text-gray-400 text-sm">
             {endReason === 'cap_reached'
-              ? 'You used all 20 turns — impressive.'
+              ? 'Session complete.'
               : endReason === 'timeout'
               ? '5 minutes are up.'
               : 'Goodbye.'}
@@ -234,17 +276,175 @@ export function DemoSession({ user }: DemoSessionProps) {
           >
             New Session
           </button>
-          <Link
-            href="/adam/waitlist"
-            className="px-6 py-2 border border-sky-500 hover:bg-sky-500/10 text-sky-400 rounded-lg text-sm font-semibold transition"
-          >
-            Join Waitlist
-          </Link>
         </div>
       </div>
     );
   }
 
+  // ── Fullscreen active layout ──────────────────────────────────────────────
+  if (fullscreen) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0a0a0a',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}
+      >
+        {/* Timer — top-left corner */}
+        <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10 }}>
+          <SessionTimer
+            durationMs={durationMs}
+            turnsAllowed={turnsAllowed}
+            turnCount={turnCount}
+            onExpire={endSession}
+            compact
+          />
+        </div>
+
+        {/* ADAM face — centered */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 14,
+            padding: '72px 24px 16px',
+            width: '100%',
+          }}
+        >
+          <AdamFace emotion={emotion} faceState={faceState} mouthIntensity={mouthIntensity} size={240} />
+          <p
+            style={{
+              fontFamily: '"Share Tech Mono", monospace',
+              fontSize: 11,
+              letterSpacing: '0.12em',
+              color: faceState === 'listening' ? '#4AF0FF'
+                   : faceState === 'speaking'  ? '#9a9a9a'
+                   : '#2a2a2a',
+            }}
+          >
+            {faceState === 'listening' ? '● LISTENING'
+             : faceState === 'speaking'  ? '▶ SPEAKING'
+             : '— IDLE'}
+          </p>
+        </div>
+
+        {/* Bottom: transcript + controls */}
+        <div
+          style={{
+            width: '100%',
+            maxWidth: 560,
+            padding: '0 24px 36px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+          }}
+        >
+          {/* Compact transcript — last 4 messages */}
+          {transcripts.length > 0 && (
+            <div
+              ref={transcriptRef}
+              style={{
+                maxHeight: 100,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 5,
+              }}
+            >
+              {transcripts.slice(-4).map((t, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: t.role === 'adam' ? 'flex-start' : 'flex-end' }}>
+                  <span
+                    style={{
+                      fontFamily: '"DM Sans", sans-serif',
+                      fontSize: 12,
+                      color: t.role === 'adam' ? '#9a9a9a' : '#f0f0f0',
+                      background: t.role === 'adam' ? 'rgba(74,240,255,0.06)' : 'rgba(255,255,255,0.07)',
+                      border: `1px solid ${t.role === 'adam' ? 'rgba(74,240,255,0.12)' : 'rgba(255,255,255,0.08)'}`,
+                      padding: '4px 10px',
+                      borderRadius: 8,
+                      maxWidth: '82%',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {t.role === 'adam' && (
+                      <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: '#4AF0FF', marginRight: 5, letterSpacing: '0.06em' }}>ADAM </span>
+                    )}
+                    {t.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <button
+              onPointerDown={startRecording}
+              onPointerUp={stopRecording}
+              onPointerLeave={stopRecording}
+              style={{
+                padding: '14px 40px',
+                background: isRecording ? 'rgba(220,80,80,0.9)' : '#4AF0FF',
+                color: isRecording ? '#fff' : '#0a0a0a',
+                border: 'none',
+                borderRadius: 14,
+                fontFamily: '"Rajdhani", sans-serif',
+                fontWeight: 600,
+                fontSize: 15,
+                letterSpacing: '0.07em',
+                cursor: 'pointer',
+                boxShadow: isRecording ? '0 0 22px rgba(220,80,80,0.45)' : '0 0 22px rgba(74,240,255,0.3)',
+                transition: 'all 0.15s ease',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+              }}
+            >
+              {isRecording ? '🔴 LISTENING…' : '🎤 HOLD TO SPEAK'}
+            </button>
+            <button
+              onClick={endSession}
+              title="End session"
+              style={{
+                padding: '14px 18px',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 14,
+                color: '#555',
+                cursor: 'pointer',
+                fontSize: 16,
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(220,80,80,0.5)'; e.currentTarget.style.color = '#ff6b6b'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = '#555'; }}
+            >
+              ■
+            </button>
+          </div>
+
+          {errorMsg && (
+            <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 11, color: '#ff6b6b', textAlign: 'center' }}>
+              {errorMsg}
+            </p>
+          )}
+        </div>
+
+        <AudioCapture isRecording={isRecording} onAudioChunk={sendAudioChunk} />
+
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Share+Tech+Mono&family=DM+Sans:wght@300;400&display=swap');
+        `}</style>
+      </div>
+    );
+  }
+
+  // ── Default (non-fullscreen) active layout ────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Face */}

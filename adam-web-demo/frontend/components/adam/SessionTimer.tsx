@@ -7,6 +7,7 @@ interface SessionTimerProps {
   turnsAllowed: number;
   turnCount:    number;
   onExpire:     () => void;
+  compact?:     boolean;
 }
 
 function fmt(ms: number) {
@@ -16,7 +17,7 @@ function fmt(ms: number) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-export function SessionTimer({ durationMs, turnsAllowed, turnCount, onExpire }: SessionTimerProps) {
+export function SessionTimer({ durationMs, turnsAllowed, turnCount, onExpire, compact }: SessionTimerProps) {
   const [remaining, setRemaining] = useState(durationMs);
   const startRef   = useRef(Date.now());
   const onExpireRef= useRef(onExpire);
@@ -33,9 +34,38 @@ export function SessionTimer({ durationMs, turnsAllowed, turnCount, onExpire }: 
     return () => clearInterval(id);
   }, [durationMs]);
 
-  const pct      = remaining / durationMs;
-  const isWarn   = pct < 0.25;
-  const turnsLeft = turnsAllowed - turnCount;
+  const pct    = remaining / durationMs;
+  const isWarn = pct < 0.25;
+
+  if (compact) {
+    return (
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '5px 10px',
+          background: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(8px)',
+          border: `1px solid ${isWarn ? 'rgba(220,80,80,0.5)' : 'rgba(74,240,255,0.25)'}`,
+          borderRadius: 8,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: '"Share Tech Mono", monospace',
+            fontSize: 13,
+            fontWeight: 700,
+            color: isWarn ? '#ff6b6b' : '#4AF0FF',
+            letterSpacing: '0.05em',
+          }}
+        >
+          ⏱ {fmt(remaining)}
+        </span>
+
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-between px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm">
@@ -48,9 +78,7 @@ export function SessionTimer({ durationMs, turnsAllowed, turnCount, onExpire }: 
           style={{ width: `${pct * 100}%` }}
         />
       </div>
-      <span className={`font-semibold ${turnsLeft <= 3 ? 'text-red-400' : 'text-gray-300'}`}>
-        💬 {turnCount} / {turnsAllowed}
-      </span>
+
     </div>
   );
 }

@@ -10,22 +10,29 @@ import {
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   signOut as firebaseSignOut,
   type User,
 } from 'firebase/auth';
-import { auth, googleProvider } from '@/lib/firebase';
+import { auth, googleProvider, isFirebaseConfigured } from '@/lib/firebase';
 
 interface AuthContextValue {
   user:    User | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
-  signOut:          () => Promise<void>;
+  signInWithGoogle:        () => Promise<void>;
+  signInWithEmail:         (email: string, password: string) => Promise<void>;
+  signUpWithEmail:         (email: string, password: string, name?: string) => Promise<void>;
+  signOut:                 () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user:             null,
   loading:          true,
   signInWithGoogle: async () => {},
+  signInWithEmail:  async () => {},
+  signUpWithEmail:  async () => {},
   signOut:          async () => {},
 });
 
@@ -34,6 +41,10 @@ export function FirebaseAuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      setLoading(false);
+      return;
+    }
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
       setLoading(false);
@@ -45,12 +56,21 @@ export function FirebaseAuthProvider({ children }: { children: ReactNode }) {
     await signInWithPopup(auth, googleProvider);
   };
 
+  const signInWithEmail = async (email: string, password: string) => {
+    await signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const signUpWithEmail = async (email: string, password: string, name?: string) => {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    if (name?.trim()) await updateProfile(cred.user, { displayName: name.trim() });
+  };
+
   const signOut = async () => {
     await firebaseSignOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, signOut }}>
       {children}
     </AuthContext.Provider>
   );
