@@ -174,6 +174,8 @@ FACES_DIR        = Path(BASE_DIR) / "faces"
 CONV_MAX_TURNS    = 40   # max turns kept on disk
 CONV_PROMPT_TURNS = 20   # turns injected into system prompt (token budget)
 
+USE_GROUNDING     = False  # set True to enable native Google Search grounding (billable)
+
 # ── v29: Search cost optimisation ────────────────────────────────────────────
 SEARCH_CACHE_TTL_S  = 1800   # seconds before a cached DDG result expires
 SEARCH_MIN_GAP_S    = 5.0    # minimum seconds between consecutive DDG calls
@@ -1613,11 +1615,13 @@ def build_tools() -> list[types.Tool]:
     # ── Native Google Search grounding — last resort, billing applies ─────────
     # dynamic_retrieval_config is not supported in this SDK version;
     # plain GoogleSearch() is used. DDG (fn_tool) handles most queries first.
-    search_tool = types.Tool(
-        google_search=types.GoogleSearch()
-    )
+    if USE_GROUNDING:
+        search_tool = types.Tool(
+            google_search=types.GoogleSearch()
+        )
+        return [fn_tool, search_tool]
 
-    return [fn_tool, search_tool]
+    return [fn_tool]
 
 
 # ═════════════════════════════════════════════════════════════════════════════

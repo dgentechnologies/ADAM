@@ -155,6 +155,8 @@ FACES_DIR        = Path(BASE_DIR) / "faces"
 CONV_MAX_TURNS    = 40   # max turns kept on disk
 CONV_PROMPT_TURNS = 20   # turns injected into system prompt (token budget)
 
+USE_GROUNDING     = False  # set True to enable native Google Search grounding (billable)
+
 _preview_queue: queue.Queue = queue.Queue(maxsize=1)
 _preview_stop               = threading.Event()
 
@@ -1509,9 +1511,11 @@ def build_tools() -> list[types.Tool]:
     # Gemini handles search autonomously — no tool_call callback is fired;
     # results appear as executable_code / code_execution_result parts in
     # server_content.model_turn.  No FunctionDeclaration needed.
-    search_tool = types.Tool(google_search=types.GoogleSearch())
+    if USE_GROUNDING:
+        search_tool = types.Tool(google_search=types.GoogleSearch())
+        return [fn_tool, search_tool]
 
-    return [fn_tool, search_tool]
+    return [fn_tool]
 
 
 # ═════════════════════════════════════════════════════════════════════════════

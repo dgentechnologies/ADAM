@@ -16,7 +16,7 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from 'firebase/auth';
-import { auth, googleProvider, isFirebaseConfigured } from '@/lib/firebase';
+import { getClientAuth, googleProvider, isFirebaseConfigured } from '@/lib/firebase';
 
 interface AuthContextValue {
   user:    User | null;
@@ -45,7 +45,7 @@ export function FirebaseAuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(getClientAuth(), (firebaseUser) => {
       setUser(firebaseUser);
       setLoading(false);
     });
@@ -53,20 +53,20 @@ export function FirebaseAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    await signInWithPopup(getClientAuth(), googleProvider);
   };
 
   const signInWithEmail = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    await signInWithEmailAndPassword(getClientAuth(), email, password);
   };
 
   const signUpWithEmail = async (email: string, password: string, name?: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const cred = await createUserWithEmailAndPassword(getClientAuth(), email, password);
     if (name?.trim()) await updateProfile(cred.user, { displayName: name.trim() });
   };
 
   const signOut = async () => {
-    await firebaseSignOut(auth);
+    await firebaseSignOut(getClientAuth());
   };
 
   return (

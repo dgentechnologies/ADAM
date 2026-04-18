@@ -1,14 +1,14 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '@/components/FirebaseAuthProvider';
 import { DemoSession } from '@/components/adam/DemoSession';
 import { AdamFace } from '@/components/adam/AdamFace';
 import { OnboardingForm } from '@/components/adam/OnboardingForm';
 import { DemoAuthGate } from '@/components/adam/DemoAuthGate';
-import { db } from '@/lib/firebase';
+import { getClientDb } from '@/lib/firebase';
 
 const WAITLIST_URL = 'https://dgentechnologies.com/adam#waitlist';
 
@@ -18,86 +18,115 @@ type DemoOverlay = 'welcome' | 'active' | 'ended';
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;600&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap');`;
 
-// ── Shared input styles ───────────────────────────────────────────────────────
-const INPUT: React.CSSProperties = {
-  width: '100%', padding: '12px 16px',
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.09)',
-  borderRadius: 10, color: '#f0f0f0',
-  fontFamily: '"DM Sans", sans-serif', fontSize: 14,
-  outline: 'none', boxSizing: 'border-box',
-  transition: 'border-color 0.2s',
+// ── Portal: renders children into document.body to avoid transform stacking ──
+function Portal({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return createPortal(children, document.body);
+}
+
+// ── Ambient background shared by overlays ─────────────────────────────────────
+const OVERLAY_BG_STYLES: React.CSSProperties = {
+  position: 'fixed', inset: 0, zIndex: 9999,
+  background: '#080a0c',
+  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+  padding: '24px 20px',
+  overflow: 'hidden',
 };
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
 function Spinner({ label }: { label?: string }) {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: 20 }}>
-      <div style={{ filter: 'drop-shadow(0 0 18px rgba(74,240,255,0.3))' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#080a0c', gap: 20 }}>
+      <style>{`@keyframes pgSpin { to { transform: rotate(360deg); } } ${FONTS}`}</style>
+      {/* Ambient grid */}
+      <div style={{ position: 'fixed', inset: 0, backgroundImage: 'linear-gradient(rgba(74,240,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(74,240,255,0.025) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' }} />
+      <div style={{ filter: 'drop-shadow(0 0 24px rgba(74,240,255,0.4))', position: 'relative', zIndex: 1 }}>
         <AdamFace emotion="idle" faceState="idle" size={160} />
       </div>
-      <div style={{ width: 24, height: 24, border: '1.5px solid rgba(74,240,255,0.3)', borderTopColor: '#4AF0FF', borderRadius: '50%', animation: 'pgSpin 0.8s linear infinite' }} />
-      {label && <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 11, color: '#444', letterSpacing: '0.12em' }}>{label}</p>}
-      <style>{`@keyframes pgSpin { to { transform: rotate(360deg); } } ${FONTS}`}</style>
+      <div style={{ width: 22, height: 22, border: '1.5px solid rgba(74,240,255,0.25)', borderTopColor: '#4AF0FF', borderRadius: '50%', animation: 'pgSpin 0.8s linear infinite', position: 'relative', zIndex: 1 }} />
+      {label && <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: '#333', letterSpacing: '0.14em', position: 'relative', zIndex: 1 }}>{label}</p>}
     </div>
   );
 }
 
-// ── Welcome overlay ───────────────────────────────────────────────────────────
+// ── Welcome overlay (rendered via Portal to avoid parent transform issues) ────
 function WelcomeOverlay({ onDismiss }: { onDismiss: () => void }) {
   const [visible, setVisible] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setVisible(true), 60); return () => clearTimeout(t); }, []);
+  useEffect(() => { const t = setTimeout(() => setVisible(true), 80); return () => clearTimeout(t); }, []);
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 200,
-        background: '#0a0a0a',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: '32px 24px',
-        opacity: visible ? 1 : 0,
-        transition: 'opacity 0.5s ease',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Ambient glow behind face */}
-      <div style={{ position: 'absolute', top: '35%', left: '50%', transform: 'translate(-50%, -50%)', width: 520, height: 520, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,240,255,0.06) 0%, transparent 65%)', pointerEvents: 'none' }} />
+    <Portal>
+      <style>{`
+        ${FONTS}
+        @keyframes wFadeUp {
+          from { opacity: 0; transform: translateY(28px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)   scale(1);    }
+        }
+        @keyframes wPulse {
+          0%, 100% { opacity: 0.5; transform: scale(1);    }
+          50%       { opacity: 1;   transform: scale(1.07); }
+        }
+      `}</style>
+      <div style={{ ...OVERLAY_BG_STYLES, opacity: visible ? 1 : 0, transition: 'opacity 0.45s ease' }}>
+        {/* Grid texture */}
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(74,240,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(74,240,255,0.03) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' }} />
+        {/* Radial glow */}
+        <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)', width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,240,255,0.07) 0%, transparent 60%)', pointerEvents: 'none' }} />
 
-      <div style={{ width: '100%', maxWidth: 420, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, position: 'relative', zIndex: 1 }}>
+        {/* Glass card */}
+        <div style={{
+          width: '100%', maxWidth: 460, position: 'relative', zIndex: 1,
+          background: 'rgba(10, 14, 18, 0.72)',
+          backdropFilter: 'blur(28px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderTop: '1px solid rgba(255,255,255,0.13)',
+          borderRadius: 28,
+          boxShadow: '0 0 0 1px rgba(255,255,255,0.03), 0 32px 80px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.07)',
+          padding: '36px 32px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22,
+          animation: visible ? 'wFadeUp 0.65s cubic-bezier(0.22,1,0.36,1) both' : 'none',
+        }}>
+          {/* DGEN badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 14px', background: 'rgba(74,240,255,0.07)', border: '1px solid rgba(74,240,255,0.18)', borderRadius: 20 }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#4AF0FF', boxShadow: '0 0 7px #4AF0FF', flexShrink: 0 }} />
+            <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(74,240,255,0.75)', letterSpacing: '0.18em' }}>DGEN TECHNOLOGIES</span>
+          </div>
 
-        {/* DGEN badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20 }}>
-          <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: '#555', letterSpacing: '0.14em' }}>DGEN TECHNOLOGIES</span>
-        </div>
+          {/* Face with animated glow ring */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ position: 'absolute', width: 230, height: 230, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,240,255,0.13) 0%, transparent 65%)', animation: 'wPulse 2.8s ease-in-out infinite', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', width: 205, height: 205, borderRadius: '50%', border: '1px solid rgba(74,240,255,0.14)', animation: 'wPulse 2.8s ease-in-out infinite 0.3s', pointerEvents: 'none' }} />
+            <div style={{ filter: 'drop-shadow(0 0 26px rgba(74,240,255,0.5))', position: 'relative', zIndex: 1 }}>
+              <AdamFace emotion="happy" faceState="idle" size={178} />
+            </div>
+          </div>
 
-        {/* Animated face */}
-        <div style={{ filter: 'drop-shadow(0 0 28px rgba(74,240,255,0.4))' }}>
-          <AdamFace emotion="happy" faceState="idle" size={190} />
-        </div>
+          {/* Heading */}
+          <div style={{ textAlign: 'center' }}>
+            <h1 style={{ fontFamily: '"Rajdhani", sans-serif', fontWeight: 600, fontSize: 44, letterSpacing: '0.06em', color: '#f0f0f0', margin: 0, lineHeight: 1.05 }}>
+              Hello. I&apos;m <span style={{ color: '#4AF0FF', textShadow: '0 0 22px rgba(74,240,255,0.55)' }}>ADAM</span>.
+            </h1>
+            <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.22)', letterSpacing: '0.2em', margin: '7px 0 0' }}>
+              AUTONOMOUS DESKTOP AI MODULE
+            </p>
+          </div>
 
-        {/* Greeting */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <h1 style={{ fontFamily: '"Rajdhani", sans-serif', fontWeight: 600, fontSize: 40, letterSpacing: '0.06em', color: '#f0f0f0', margin: 0 }}>
-            Hello. I&apos;m <span style={{ color: '#4AF0FF' }}>ADAM</span>.
-          </h1>
-          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: '#444', letterSpacing: '0.1em', margin: 0 }}>
-            AUTONOMOUS DESKTOP AI MODULE
-          </p>
-        </div>
+          {/* Info glass box */}
+          <div style={{ width: '100%', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.055)', borderRadius: 16, padding: '18px 20px', textAlign: 'left' }}>
+            <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 14, lineHeight: 1.85, color: '#888', margin: 0 }}>
+              I can hear your voice, process what you say in real time, and respond like a person — powered by{' '}
+              <span style={{ color: '#d4d4d4', fontWeight: 500 }}>Gemini Live</span>. You have a{' '}
+              <span style={{ color: '#4AF0FF', fontWeight: 500 }}>5-minute session</span> right now.
+            </p>
+            <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 14, lineHeight: 1.85, color: '#888', margin: '10px 0 0' }}>
+              Hold the <span style={{ color: '#4AF0FF', fontWeight: 500 }}>mic button</span> and speak. Release when done.
+            </p>
+          </div>
 
-        {/* Message */}
-        <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: '20px 22px', textAlign: 'left' }}>
-          <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 14, lineHeight: 1.8, color: '#aaa', margin: 0 }}>
-            I can hear your voice, process what you say in real time, and respond like a person — because I&apos;m powered by{' '}
-            <span style={{ color: '#f0f0f0', fontWeight: 500 }}>Gemini Live</span>. You have{' '}
-            <span style={{ color: '#4AF0FF', fontWeight: 500 }}>5 minutes</span> with me right now.
-          </p>
-          <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 14, lineHeight: 1.8, color: '#aaa', margin: '10px 0 0' }}>
-            Hold the <span style={{ color: '#4AF0FF', fontWeight: 500 }}>mic button</span> and speak clearly. Release when you&apos;re done.
-          </p>
-        </div>
-
-        {/* CTA */}
+          {/* CTA */}
         <button
           onClick={onDismiss}
           style={{
@@ -230,7 +259,7 @@ export default function AdamDemoPage() {
   useEffect(() => {
     if (!user || loading) return;
     setStep('checking');
-    getDoc(doc(db, 'onboarding', user.uid))
+    getDoc(doc(getClientDb(), 'onboarding', user.uid))
       .then((snap) => setStep(snap.exists() && snap.data()?.completed ? 'demo' : 'onboarding'))
       .catch(() => setStep('demo'));
   }, [user, loading]);

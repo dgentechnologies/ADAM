@@ -26,6 +26,13 @@ const nextConfig: NextConfig = {
             key: 'X-Frame-Options',
             value: 'ALLOWALL',
           },
+          {
+            // Required for Firebase signInWithPopup: allows the opener window to
+            // retain a reference to the Google OAuth popup so Firebase can detect
+            // when auth completes. Without this, COOP blocks window.closed polls.
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin-allow-popups',
+          },
         ],
       },
     ];
