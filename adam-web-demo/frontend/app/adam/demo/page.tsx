@@ -126,114 +126,165 @@ function WelcomeOverlay({ onDismiss }: { onDismiss: () => void }) {
             </p>
           </div>
 
-          {/* CTA */}
-        <button
-          onClick={onDismiss}
-          style={{
-            width: '100%', padding: '15px 0',
-            background: '#4AF0FF', color: '#0a0a0a',
-            border: 'none', borderRadius: 14,
-            fontFamily: '"Rajdhani", sans-serif', fontWeight: 600,
-            fontSize: 16, letterSpacing: '0.09em',
-            cursor: 'pointer',
-            boxShadow: '0 0 32px rgba(74,240,255,0.35)',
-            transition: 'transform 0.1s ease, box-shadow 0.2s ease',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 0 48px rgba(74,240,255,0.55)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 0 32px rgba(74,240,255,0.35)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-        >
-          UNDERSTOOD →
-        </button>
+            {/* CTA */}
+          <button
+            onClick={onDismiss}
+            style={{
+              width: '100%', padding: '16px 0',
+              background: 'linear-gradient(135deg, #4AF0FF 0%, #00c8e0 100%)',
+              color: '#080a0c',
+              border: 'none', borderRadius: 16,
+              fontFamily: '"Rajdhani", sans-serif', fontWeight: 600,
+              fontSize: 17, letterSpacing: '0.13em',
+              cursor: 'pointer',
+              boxShadow: '0 0 0 1px rgba(74,240,255,0.25), 0 8px 36px rgba(74,240,255,0.42)',
+              transition: 'transform 0.15s ease, box-shadow 0.2s ease',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 0 1px rgba(74,240,255,0.35), 0 14px 52px rgba(74,240,255,0.58)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 0 0 1px rgba(74,240,255,0.25), 0 8px 36px rgba(74,240,255,0.42)'; }}
+          >
+            START SESSION →
+          </button>
 
-        <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.08em' }}>
-          MICROPHONE ACCESS REQUIRED
-        </p>
+          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.14)', letterSpacing: '0.12em', margin: 0 }}>
+            MICROPHONE ACCESS REQUIRED
+          </p>
+        </div>
       </div>
-      <style>{FONTS}</style>
+    </Portal>
+  );
+}
+
+// ── Star rating ───────────────────────────────────────────────────────────────
+function StarRating() {
+  const [rating, setRating] = useState(0);
+  const [hover,  setHover]  = useState(0);
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          onClick={() => setRating(n)}
+          onMouseEnter={() => setHover(n)}
+          onMouseLeave={() => setHover(0)}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+            fontSize: 26,
+            color: n <= (hover || rating) ? '#4AF0FF' : 'rgba(255,255,255,0.13)',
+            textShadow: n <= (hover || rating) ? '0 0 14px rgba(74,240,255,0.65)' : 'none',
+            transition: 'color 0.12s, text-shadow 0.12s',
+          }}
+        >★</button>
+      ))}
     </div>
   );
 }
 
 // ── End overlay ───────────────────────────────────────────────────────────────
 function EndOverlay({ reason }: { reason: string }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setVisible(true), 80); return () => clearTimeout(t); }, []);
+
   const isTimeout  = reason === 'timeout' || reason === 'cap_reached';
   const isUserExit = reason === 'user_disconnect';
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 200,
-        background: '#0a0a0a',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: '32px 24px',
-      }}
-    >
-      {/* Subtle ambient */}
-      <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,240,255,0.04) 0%, transparent 65%)', pointerEvents: 'none' }} />
+    <Portal>
+      <style>{`
+        ${FONTS}
+        @keyframes eFadeUp {
+          from { opacity: 0; transform: translateY(20px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0)   scale(1);    }
+        }
+      `}</style>
+      <div style={{ ...OVERLAY_BG_STYLES, opacity: visible ? 1 : 0, transition: 'opacity 0.45s ease' }}>
+        {/* Grid */}
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(74,240,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(74,240,255,0.025) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' }} />
+        {/* Ambient glow */}
+        <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,240,255,0.06) 0%, transparent 65%)', pointerEvents: 'none' }} />
 
-      <div style={{ width: '100%', maxWidth: 380, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22, position: 'relative', zIndex: 1 }}>
+        {/* Glass card */}
+        <div style={{
+          width: '100%', maxWidth: 420, position: 'relative', zIndex: 1,
+          background: 'rgba(10, 14, 18, 0.75)',
+          backdropFilter: 'blur(28px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderTop: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: 28,
+          boxShadow: '0 0 0 1px rgba(255,255,255,0.03), 0 32px 80px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.06)',
+          padding: '36px 32px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+          animation: visible ? 'eFadeUp 0.6s cubic-bezier(0.22,1,0.36,1) both' : 'none',
+          textAlign: 'center',
+        }}>
+          {/* Face */}
+          <div style={{ filter: 'drop-shadow(0 0 20px rgba(74,240,255,0.22))' }}>
+            <AdamFace emotion="sad" faceState="idle" size={145} />
+          </div>
 
-        <div style={{ filter: 'drop-shadow(0 0 20px rgba(74,240,255,0.2))' }}>
-          <AdamFace emotion="sad" faceState="idle" size={150} />
+          {/* Text */}
+          <div>
+            <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.22)', letterSpacing: '0.18em', margin: '0 0 8px' }}>
+              {isTimeout ? '■ PREVIEW COMPLETE' : isUserExit ? '■ SESSION CLOSED' : '■ SESSION ENDED'}
+            </p>
+            <h2 style={{ fontFamily: '"Rajdhani", sans-serif', fontWeight: 600, fontSize: 30, letterSpacing: '0.05em', color: '#f0f0f0', margin: 0 }}>
+              {isTimeout ? "That's your 5-minute preview." : isUserExit ? 'You ended the session.' : 'Session complete.'}
+            </h2>
+            <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 13, color: '#555', margin: '8px 0 0', lineHeight: 1.7 }}>
+              {isTimeout ? 'Want ADAM on your desk, available all day? Be first when it ships.' : 'Ready to own one? Join the waitlist.'}
+            </p>
+          </div>
+
+          {/* Stars */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: '#333', letterSpacing: '0.12em', margin: 0 }}>RATE THIS EXPERIENCE</p>
+            <StarRating />
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: '100%', height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
+
+          {/* Waitlist CTA */}
+          <a
+            href={WAITLIST_URL}
+            target="_top"
+            style={{
+              display: 'block', width: '100%', padding: '15px 0',
+              background: 'linear-gradient(135deg, #4AF0FF 0%, #00c8e0 100%)',
+              color: '#080a0c',
+              borderRadius: 16, textDecoration: 'none',
+              fontFamily: '"Rajdhani", sans-serif', fontWeight: 600,
+              fontSize: 16, letterSpacing: '0.11em', textAlign: 'center',
+              boxShadow: '0 0 0 1px rgba(74,240,255,0.22), 0 8px 28px rgba(74,240,255,0.38)',
+              transition: 'transform 0.15s ease, box-shadow 0.2s ease',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(74,240,255,0.35), 0 14px 44px rgba(74,240,255,0.52)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(74,240,255,0.22), 0 8px 28px rgba(74,240,255,0.38)'; }}
+          >
+            → JOIN THE ADAM WAITLIST
+          </a>
+
+          {/* Try again */}
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.07)',
+              color: '#444', borderRadius: 12,
+              padding: '11px 0', cursor: 'pointer', width: '100%',
+              fontFamily: '"Share Tech Mono", monospace', fontSize: 11,
+              letterSpacing: '0.07em',
+              transition: 'border-color 0.2s, color 0.2s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#f0f0f0'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'; e.currentTarget.style.color = '#444'; }}
+          >
+            TRY AGAIN ↺
+          </button>
         </div>
-
-        <div>
-          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: '#444', letterSpacing: '0.12em', margin: '0 0 8px' }}>
-            {isTimeout ? 'PREVIEW ENDED' : isUserExit ? 'SESSION CLOSED' : 'SESSION ENDED'}
-          </p>
-          <h2 style={{ fontFamily: '"Rajdhani", sans-serif', fontWeight: 600, fontSize: 30, letterSpacing: '0.05em', color: '#f0f0f0', margin: 0 }}>
-            {isTimeout
-              ? "That's your 5-minute preview."
-              : isUserExit
-              ? 'You ended the session.'
-              : 'Session complete.'}
-          </h2>
-          <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 14, color: '#666', marginTop: 10, lineHeight: 1.7 }}>
-            {isTimeout
-              ? 'Want ADAM on your desk, available all day? Be first when it ships.'
-              : 'Ready to own one? Join the waitlist now.'}
-          </p>
-        </div>
-
-        {/* Waitlist CTA */}
-        <a
-          href={WAITLIST_URL}
-          target="_top"
-          style={{
-            display: 'block', width: '100%', padding: '15px 0',
-            background: '#4AF0FF', color: '#0a0a0a',
-            borderRadius: 14, textDecoration: 'none',
-            fontFamily: '"Rajdhani", sans-serif', fontWeight: 600,
-            fontSize: 15, letterSpacing: '0.09em', textAlign: 'center',
-            boxShadow: '0 0 32px rgba(74,240,255,0.3)',
-            transition: 'box-shadow 0.2s',
-          }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 48px rgba(74,240,255,0.5)'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 32px rgba(74,240,255,0.3)'; }}
-        >
-          → JOIN THE ADAM WAITLIST
-        </a>
-
-        {/* Try again */}
-        <button
-          onClick={() => window.location.reload()}
-          style={{
-            background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: '#444', borderRadius: 12,
-            padding: '11px 32px', cursor: 'pointer',
-            fontFamily: '"Share Tech Mono", monospace', fontSize: 11,
-            letterSpacing: '0.07em',
-            transition: 'border-color 0.2s, color 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.22)'; e.currentTarget.style.color = '#f0f0f0'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#444'; }}
-        >
-          TRY AGAIN ↺
-        </button>
       </div>
-      <style>{FONTS}</style>
-    </div>
+    </Portal>
   );
 }
 
@@ -325,22 +376,32 @@ export default function AdamDemoPage() {
     return <OnboardingForm user={user} onComplete={() => setStep('demo')} />;
   }
 
-  // ── Demo — welcome overlay ────────────────────────────────────────────────
-  if (demoOverlay === 'welcome') {
-    return <WelcomeOverlay onDismiss={() => setDemoOverlay('active')} />;
-  }
+  // ── Demo flow ─────────────────────────────────────────────────────────────
+  // Always render DemoSession once active (it returns null when ended + fullscreen).
+  // Overlays (welcome & ended) render on top via portals.
+  return (
+    <>
+      {/* Active session — only mount when the welcome has been dismissed */}
+      {demoOverlay !== 'welcome' && (
+        <DemoSession
+          user={user}
+          fullscreen
+          onSessionEnded={(reason) => {
+            setEndReason(reason);
+            setDemoOverlay('ended');
+          }}
+        />
+      )}
 
-  // ── Demo — active session ─────────────────────────────────────────────────
-  if (demoOverlay === 'active') {
-    return (
-      <DemoSession
-        user={user}
-        fullscreen
-        onSessionEnded={(reason) => { setEndReason(reason); setDemoOverlay('ended'); }}
-      />
-    );
-  }
+      {/* Welcome overlay — portal so position:fixed is never trapped by parent transforms */}
+      {demoOverlay === 'welcome' && (
+        <WelcomeOverlay onDismiss={() => setDemoOverlay('active')} />
+      )}
 
-  // ── Demo — ended overlay ──────────────────────────────────────────────────
-  return <EndOverlay reason={endReason} />;
+      {/* End overlay — renders on top of the (null-returning) DemoSession */}
+      {demoOverlay === 'ended' && (
+        <EndOverlay reason={endReason} />
+      )}
+    </>
+  );
 }

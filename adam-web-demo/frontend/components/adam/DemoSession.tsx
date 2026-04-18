@@ -124,6 +124,12 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
     (async () => {
       try {
+        if (!RELAY_URL) {
+          setErrorMsg('Demo relay not configured. Please try again later.');
+          setState('error');
+          return;
+        }
+
         // 1. Get fresh Firebase ID token
         const idToken = await user.getIdToken(/* forceRefresh */ true);
 
@@ -158,7 +164,12 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         };
 
         ws.onclose = () => {
-          if (stateRef.current !== 'ended' && stateRef.current !== 'error') {
+          // If we never finished connecting, treat as an error (not a completed session).
+          // This prevents the page from jumping straight to the waitlist EndOverlay.
+          if (stateRef.current === 'connecting') {
+            setState('error');
+            setErrorMsg('Could not connect to ADAM. Check your connection and try again.');
+          } else if (stateRef.current !== 'ended' && stateRef.current !== 'error') {
             setState('ended');
             setEndReason('connection_closed');
           }
@@ -205,10 +216,14 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
   if (state === 'connecting') {
     if (fullscreen) {
       return (
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: 24 }}>
-          <AdamFace emotion="idle" faceState="idle" size={200} />
-          <div style={{ width: 28, height: 28, border: '2px solid #4AF0FF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'adamSpin 0.8s linear infinite' }} />
-          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 12, color: '#9a9a9a', letterSpacing: '0.1em' }}>CONNECTING TO ADAM…</p>
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#080a0c', gap: 24, position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(74,240,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(74,240,255,0.025) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,240,255,0.06) 0%, transparent 65%)', pointerEvents: 'none' }} />
+          <div style={{ filter: 'drop-shadow(0 0 28px rgba(74,240,255,0.45))', position: 'relative', zIndex: 1 }}>
+            <AdamFace emotion="idle" faceState="idle" size={200} />
+          </div>
+          <div style={{ width: 26, height: 26, border: '2px solid rgba(74,240,255,0.3)', borderTopColor: '#4AF0FF', borderRadius: '50%', animation: 'adamSpin 0.8s linear infinite', position: 'relative', zIndex: 1 }} />
+          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 11, color: '#444', letterSpacing: '0.12em', position: 'relative', zIndex: 1 }}>CONNECTING TO ADAM…</p>
           <style>{`@keyframes adamSpin { to { transform: rotate(360deg); } }`}</style>
         </div>
       );
@@ -224,16 +239,36 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
   if (state === 'error') {
     if (fullscreen) {
       return (
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: 20 }}>
-          <AdamFace emotion="sad" faceState="idle" size={180} />
-          <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 12, color: '#ff6b6b', letterSpacing: '0.1em' }}>CONNECTION ERROR</p>
-          {errorMsg && <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 13, color: '#9a9a9a', maxWidth: 320, textAlign: 'center' }}>{errorMsg}</p>}
-          <button
-            onClick={() => window.location.reload()}
-            style={{ padding: '10px 28px', background: '#4AF0FF', color: '#0a0a0a', border: 'none', borderRadius: 10, fontFamily: '"Rajdhani", sans-serif', fontWeight: 600, fontSize: 14, letterSpacing: '0.06em', cursor: 'pointer' }}
-          >
-            RETRY
-          </button>
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#080a0c', gap: 22, position: 'relative', overflow: 'hidden', padding: '24px 20px' }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(74,240,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(74,240,255,0.02) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' }} />
+          {/* Glass error card */}
+          <div style={{
+            width: '100%', maxWidth: 400, position: 'relative', zIndex: 1,
+            background: 'rgba(10, 14, 18, 0.72)',
+            backdropFilter: 'blur(24px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+            border: '1px solid rgba(220,80,80,0.18)',
+            borderTop: '1px solid rgba(220,80,80,0.28)',
+            borderRadius: 24,
+            boxShadow: '0 0 0 1px rgba(220,80,80,0.08), 0 24px 60px rgba(0,0,0,0.8)',
+            padding: '36px 28px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, textAlign: 'center',
+          }}>
+            <div style={{ filter: 'drop-shadow(0 0 16px rgba(220,80,80,0.35))' }}>
+              <AdamFace emotion="sad" faceState="idle" size={160} />
+            </div>
+            <div>
+              <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: 'rgba(220,80,80,0.7)', letterSpacing: '0.14em', margin: '0 0 6px' }}>CONNECTION ERROR</p>
+              {errorMsg && <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 13, color: '#666', lineHeight: 1.6, margin: 0 }}>{errorMsg}</p>}
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              style={{ padding: '13px 40px', background: 'linear-gradient(135deg, #4AF0FF, #00c8e0)', color: '#080a0c', border: 'none', borderRadius: 14, fontFamily: '"Rajdhani", sans-serif', fontWeight: 600, fontSize: 15, letterSpacing: '0.08em', cursor: 'pointer', boxShadow: '0 6px 24px rgba(74,240,255,0.35)' }}
+            >
+              RETRY
+            </button>
+          </div>
+          <style>{`@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Share+Tech+Mono&family=DM+Sans:wght@400&display=swap');`}</style>
         </div>
       );
     }
@@ -241,12 +276,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
       <div className="text-center space-y-4 py-16">
         <p className="text-red-400 font-semibold">Connection failed</p>
         <p className="text-gray-500 text-sm">{errorMsg}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-6 py-2 bg-sky-500 hover:bg-sky-400 text-white rounded-lg text-sm font-semibold transition"
-        >
-          Try Again
-        </button>
+        <button onClick={() => window.location.reload()} className="px-6 py-2 bg-sky-500 hover:bg-sky-400 text-white rounded-lg text-sm font-semibold transition">Try Again</button>
       </div>
     );
   }
