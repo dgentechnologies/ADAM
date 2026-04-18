@@ -313,98 +313,102 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
   // ── Fullscreen active layout ──────────────────────────────────────────────
   if (fullscreen) {
+    const statusLabel =
+      faceState === 'listening' ? '● LISTENING'
+      : faceState === 'speaking' ? '▶ SPEAKING'
+      : '— IDLE';
+    const statusColor =
+      faceState === 'listening' ? '#4AF0FF'
+      : faceState === 'speaking' ? '#9a9a9a'
+      : 'rgba(255,255,255,0.18)';
+    const glowColor =
+      faceState === 'listening' ? 'rgba(74,240,255,0.28)'
+      : faceState === 'speaking' ? 'rgba(74,240,255,0.18)'
+      : 'rgba(74,240,255,0.09)';
+
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#0a0a0a',
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
-        {/* Timer — top-left corner */}
-        <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10 }}>
-          <SessionTimer
-            durationMs={durationMs}
-            turnsAllowed={turnsAllowed}
-            turnCount={turnCount}
-            onExpire={endSession}
-            compact
-          />
+      <div style={{ minHeight: '100vh', background: '#080a0c', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Share+Tech+Mono&family=DM+Sans:wght@300;400&display=swap');
+          @keyframes fsGlow  { 0%,100% { opacity:.7; transform:scale(1); }    50% { opacity:1; transform:scale(1.07); } }
+          @keyframes fsPulse { 0%,100% { box-shadow:0 0 0 0 rgba(74,240,255,0); } 50% { box-shadow:0 0 0 14px rgba(74,240,255,0); } }
+          @keyframes fsSpin  { to { transform:rotate(360deg); } }
+          @keyframes fsRecPulse { 0%,100% { box-shadow:0 0 0 0 rgba(220,80,80,0.6), 0 8px 28px rgba(220,80,80,0.4); } 50% { box-shadow:0 0 0 10px rgba(220,80,80,0), 0 8px 28px rgba(220,80,80,0.55); } }
+        `}</style>
+
+        {/* Background grid */}
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(74,240,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(74,240,255,0.025) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' }} />
+        {/* Ambient top glow */}
+        <div style={{ position: 'absolute', top: '10%', left: '55%', transform: 'translateX(-50%)', width: 600, height: 600, borderRadius: '50%', background: `radial-gradient(circle, ${glowColor} 0%, transparent 65%)`, transition: 'background 0.8s ease', pointerEvents: 'none' }} />
+        {/* Ambient bottom glow */}
+        <div style={{ position: 'absolute', bottom: '0%', left: '35%', transform: 'translateX(-50%)', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,240,255,0.03) 0%, transparent 65%)', pointerEvents: 'none' }} />
+
+        {/* ── Top bar: timer + end button ──────────────────────────────── */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px' }}>
+          {/* ADAM label */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', background: 'rgba(10,14,18,0.6)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20 }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: state === 'active' ? '#4AF0FF' : '#333', boxShadow: state === 'active' ? '0 0 7px #4AF0FF' : 'none', transition: 'all 0.4s', flexShrink: 0 }} />
+            <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.16em' }}>ADAM DEMO</span>
+          </div>
+
+          {/* Timer glass badge */}
+          <div style={{ padding: '6px 14px', background: 'rgba(10,14,18,0.6)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20 }}>
+            <SessionTimer durationMs={durationMs} turnsAllowed={turnsAllowed} turnCount={turnCount} onExpire={endSession} compact />
+          </div>
         </div>
 
-        {/* ADAM face — centered */}
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 14,
-            padding: '72px 24px 16px',
-            width: '100%',
-          }}
-        >
-          <AdamFace emotion={emotion} faceState={faceState} mouthIntensity={mouthIntensity} size={240} />
-          <p
-            style={{
-              fontFamily: '"Share Tech Mono", monospace',
-              fontSize: 11,
-              letterSpacing: '0.12em',
-              color: faceState === 'listening' ? '#4AF0FF'
-                   : faceState === 'speaking'  ? '#9a9a9a'
-                   : '#2a2a2a',
-            }}
-          >
-            {faceState === 'listening' ? '● LISTENING'
-             : faceState === 'speaking'  ? '▶ SPEAKING'
-             : '— IDLE'}
-          </p>
+        {/* ── Center: face ──────────────────────────────────────────────── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: '88px 24px 16px', width: '100%' }}>
+          {/* Face glow ring */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ position: 'absolute', width: 310, height: 310, borderRadius: '50%', background: `radial-gradient(circle, ${glowColor} 0%, transparent 65%)`, transition: 'background 0.6s ease', animation: faceState !== 'idle' ? 'fsGlow 2.2s ease-in-out infinite' : 'none', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', width: 278, height: 278, borderRadius: '50%', border: `1px solid ${faceState === 'idle' ? 'rgba(255,255,255,0.04)' : 'rgba(74,240,255,0.16)'}`, transition: 'border-color 0.5s ease', pointerEvents: 'none' }} />
+            <div style={{ filter: `drop-shadow(0 0 ${faceState === 'idle' ? '18px' : '32px'} rgba(74,240,255,${faceState === 'idle' ? '0.25' : '0.5'}))`, transition: 'filter 0.5s ease', position: 'relative', zIndex: 1 }}>
+              <AdamFace emotion={emotion} faceState={faceState} mouthIntensity={mouthIntensity} size={260} />
+            </div>
+          </div>
+
+          {/* Status pill */}
+          <div style={{ padding: '7px 18px', background: 'rgba(10,14,18,0.65)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: `1px solid ${faceState === 'idle' ? 'rgba(255,255,255,0.06)' : 'rgba(74,240,255,0.18)'}`, borderRadius: 20, transition: 'border-color 0.4s ease' }}>
+            <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: statusColor, letterSpacing: '0.14em', transition: 'color 0.3s ease' }}>
+              {statusLabel}
+            </span>
+          </div>
         </div>
 
-        {/* Bottom: transcript + controls */}
-        <div
-          style={{
-            width: '100%',
-            maxWidth: 560,
-            padding: '0 24px 36px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
-          }}
-        >
-          {/* Compact transcript — last 4 messages */}
+        {/* ── Bottom: transcript + controls ────────────────────────────── */}
+        <div style={{ width: '100%', maxWidth: 580, padding: '0 20px 36px', display: 'flex', flexDirection: 'column', gap: 12, position: 'relative', zIndex: 10 }}>
+
+          {/* Transcript glass panel */}
           {transcripts.length > 0 && (
             <div
               ref={transcriptRef}
               style={{
-                maxHeight: 100,
+                maxHeight: 148,
                 overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 5,
+                background: 'rgba(10,14,18,0.65)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 20,
+                padding: '14px 16px',
+                display: 'flex', flexDirection: 'column', gap: 7,
               }}
             >
-              {transcripts.slice(-4).map((t, i) => (
+              {transcripts.slice(-5).map((t, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: t.role === 'adam' ? 'flex-start' : 'flex-end' }}>
                   <span
                     style={{
-                      fontFamily: '"DM Sans", sans-serif',
-                      fontSize: 12,
-                      color: t.role === 'adam' ? '#9a9a9a' : '#f0f0f0',
+                      fontFamily: '"DM Sans", sans-serif', fontSize: 12, lineHeight: 1.6,
+                      color: t.role === 'adam' ? '#9a9a9a' : '#e8e8e8',
                       background: t.role === 'adam' ? 'rgba(74,240,255,0.06)' : 'rgba(255,255,255,0.07)',
                       border: `1px solid ${t.role === 'adam' ? 'rgba(74,240,255,0.12)' : 'rgba(255,255,255,0.08)'}`,
-                      padding: '4px 10px',
-                      borderRadius: 8,
-                      maxWidth: '82%',
-                      lineHeight: 1.5,
+                      padding: '5px 12px', borderRadius: 10, maxWidth: '82%',
                     }}
                   >
                     {t.role === 'adam' && (
-                      <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: '#4AF0FF', marginRight: 5, letterSpacing: '0.06em' }}>ADAM </span>
+                      <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 8, color: '#4AF0FF', marginRight: 6, letterSpacing: '0.08em' }}>ADAM </span>
                     )}
                     {t.text}
                   </span>
@@ -413,63 +417,79 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
             </div>
           )}
 
-          {/* Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          {/* Controls glass strip */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            background: 'rgba(10,14,18,0.72)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.07)',
+            borderTop: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 22,
+            padding: '12px 16px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
+          }}>
+            {/* Mic button */}
             <button
               onPointerDown={startRecording}
               onPointerUp={stopRecording}
               onPointerLeave={stopRecording}
               style={{
-                padding: '14px 40px',
-                background: isRecording ? 'rgba(220,80,80,0.9)' : '#4AF0FF',
-                color: isRecording ? '#fff' : '#0a0a0a',
+                flex: 1,
+                padding: '14px 0',
+                background: isRecording
+                  ? 'linear-gradient(135deg, rgba(220,80,80,0.9), rgba(180,40,40,0.9))'
+                  : 'linear-gradient(135deg, #4AF0FF, #00c8e0)',
+                color: isRecording ? '#fff' : '#080a0c',
                 border: 'none',
                 borderRadius: 14,
                 fontFamily: '"Rajdhani", sans-serif',
                 fontWeight: 600,
                 fontSize: 15,
-                letterSpacing: '0.07em',
+                letterSpacing: '0.09em',
                 cursor: 'pointer',
-                boxShadow: isRecording ? '0 0 22px rgba(220,80,80,0.45)' : '0 0 22px rgba(74,240,255,0.3)',
-                transition: 'all 0.15s ease',
+                boxShadow: isRecording
+                  ? '0 0 0 1px rgba(220,80,80,0.3), 0 8px 24px rgba(220,80,80,0.45)'
+                  : '0 0 0 1px rgba(74,240,255,0.2), 0 8px 24px rgba(74,240,255,0.35)',
+                transition: 'all 0.18s ease',
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
+                animation: isRecording ? 'fsRecPulse 1.4s ease-in-out infinite' : 'none',
               }}
             >
-              {isRecording ? '🔴 LISTENING…' : '🎤 HOLD TO SPEAK'}
+              {isRecording ? '● LISTENING…' : '🎤 HOLD TO SPEAK'}
             </button>
+
+            {/* End button */}
             <button
               onClick={endSession}
               title="End session"
               style={{
                 padding: '14px 18px',
-                background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 14,
-                color: '#555',
+                color: 'rgba(255,255,255,0.35)',
                 cursor: 'pointer',
-                fontSize: 16,
-                transition: 'all 0.15s ease',
+                fontSize: 15,
+                transition: 'all 0.18s ease',
+                flexShrink: 0,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(220,80,80,0.5)'; e.currentTarget.style.color = '#ff6b6b'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = '#555'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(220,80,80,0.12)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.35)'; e.currentTarget.style.color = '#ff6b6b'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = 'rgba(255,255,255,0.35)'; }}
             >
               ■
             </button>
           </div>
 
           {errorMsg && (
-            <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 11, color: '#ff6b6b', textAlign: 'center' }}>
+            <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: 'rgba(220,80,80,0.75)', textAlign: 'center', letterSpacing: '0.06em' }}>
               {errorMsg}
             </p>
           )}
         </div>
 
         <AudioCapture isRecording={isRecording} onAudioChunk={sendAudioChunk} />
-
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Share+Tech+Mono&family=DM+Sans:wght@300;400&display=swap');
-        `}</style>
       </div>
     );
   }
