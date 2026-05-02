@@ -51,12 +51,18 @@ function parseAllowedOrigins(raw) {
   return new Set(origins);
 }
 
+function parseBoolean(raw, fallback = false) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  return ['true', '1', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
+}
+
 export const CONFIG = {
   PORT:            parsePort(process.env.PORT),
   NODE_ENV:        process.env.NODE_ENV ?? 'development',
   ALLOWED_ORIGINS: parseAllowedOrigins(process.env.ALLOWED_ORIGIN),
   GOOGLE_API_KEY:  process.env.GOOGLE_API_KEY,
   RELAY_JWT_SECRET: process.env.RELAY_JWT_SECRET,
+  ALLOW_LEGACY_RELAY_TOKENS: parseBoolean(process.env.ALLOW_LEGACY_RELAY_TOKENS),
 
   FIREBASE: {
     PROJECT_ID:    process.env.FIREBASE_ADMIN_PROJECT_ID,
