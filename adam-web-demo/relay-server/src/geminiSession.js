@@ -41,6 +41,7 @@ Never end with: "Is there anything else?", "Let me know if you need anything", "
 export async function createGeminiSession({ uid, userName, sendToClient, onSessionEnd }) {
   const log = (msg) => console.log(`[${new Date().toISOString()}] [GEMINI] [${uid}] ${msg}`);
   let ended = false;
+  let isClosing = false;
 
   const endOnce = (reason) => {
     if (ended) return;
@@ -49,7 +50,7 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
   };
 
   const liveConfig = {
-    model: 'gemini-2.0-flash-live-001',
+    model: CONFIG.GEMINI_LIVE_MODEL,
     config: {
       responseModalities:       [Modality.AUDIO],
       systemInstruction:        { parts: [{ text: WEB_DEMO_SYSTEM_PROMPT }] },
@@ -58,7 +59,43 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
         voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } },
       },
       inputAudioTranscription:  {},
-      contextWindowCompression: { slidingWindow: {} },
+      outputAudioTranscription: {},
+    },
+    callbacks: {
+      onopen: () => {
+        log(`Gemini websocket opened (model=${CONFIG.GEMINI_LIVE_MODEL})`);
+      },
+      onmessage: (message) => {
+        processGeminiMessage(message, { sendToClient, uid, log, session })
+          .catch((err) => {
+            log(`Gemini message handler error: ${err.message}`);
+            sendToClient({ type: 'error', code: 'gemini_error', message: err.message });
+            endOnce('error');
+          });
+      },
+      onerror: (event) => {
+        const errMsg = event?.error?.message || event?.message || 'Gemini websocket error';
+        log(`Gemini websocket error: ${errMsg}`);
+      },
+      onclose: (event) => {
+        if (isClosing) return;
+
+        const code = event?.code;
+        const reason = event?.reason || 'no reason provided';
+        log(`Gemini websocket closed (code=${code ?? 'unknown'}, reason=${reason})`);
+
+        if (code && code !== 1000) {
+          sendToClient({
+            type: 'error',
+            code: 'gemini_socket_closed',
+            message: `Gemini closed the session (code=${code}, reason=${reason}).`,
+          });
+          endOnce('error');
+          return;
+        }
+
+        endOnce('gemini_stream_closed');
+      },
     },
   };
 
@@ -69,21 +106,6 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
     log('Gemini Live session connected');
     sendToClient({ type: 'face_state', state: 'idle' });
 
-    // Stream handler
-    (async () => {
-      try {
-        for await (const message of session) {
-          await processGeminiMessage(message, { sendToClient, uid, log, session });
-        }
-        log('Gemini stream ended normally');
-        endOnce('gemini_stream_closed');
-      } catch (err) {
-        log(`Gemini stream error: ${err.message}`);
-        sendToClient({ type: 'error', code: 'gemini_error', message: err.message });
-        endOnce('error');
-      }
-    })();
-
   } catch (err) {
     log(`Failed to connect to Gemini Live: ${err.message}`);
     throw err;
@@ -93,7 +115,7 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
     sendAudio: async (base64Data) => {
       if (!session) return;
       try {
-        await session.sendRealtimeInput({
+        session.sendRealtimeInput({
           audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
         });
         sendToClient({ type: 'face_state', state: 'listening' });
@@ -103,7 +125,7 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
     sendText: async (text) => {
       if (!session) return;
       try {
-        await session.sendClientContent({
+        session.sendClientContent({
           turns: [{ role: 'user', parts: [{ text }] }],
           turnComplete: true,
         });
@@ -113,12 +135,13 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
     endTurn: async () => {
       if (!session) return;
       try {
-        await session.sendRealtimeInput({ audioStreamEnd: true });
+        session.sendRealtimeInput({ audioStreamEnd: true });
       } catch (err) { log(`endTurn error: ${err.message}`); }
     },
 
     close: () => {
       if (session) {
+        isClosing = true;
         try { session.close(); } catch (_) {}
         session = null;
         log('Session closed by relay');
@@ -128,14 +151,27 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
 }
 
 async function processGeminiMessage(message, { sendToClient, uid, log, session }) {
-  if (message.data) {
-    sendToClient({ type: 'audio', data: message.data });
-    sendToClient({ type: 'face_state', state: 'speaking' });
+  // Log raw message structure for debugging (remove after confirmed working)
+  log(`Gemini msg keys: ${Object.keys(message).join(', ')}`);
+
+  if (message.setupComplete) {
+    log('Gemini setup complete');
     return;
   }
 
   if (message.serverContent) {
     const sc = message.serverContent;
+
+    // Audio arrives as inlineData inside modelTurn parts
+    for (const part of sc.modelTurn?.parts ?? []) {
+      if (part.inlineData?.data) {
+        sendToClient({ type: 'audio', data: part.inlineData.data });
+        sendToClient({ type: 'face_state', state: 'speaking' });
+      }
+      if (part.text) {
+        sendToClient({ type: 'transcript', text: part.text, role: 'adam' });
+      }
+    }
 
     if (sc.inputTranscription?.text) {
       sendToClient({ type: 'transcript', text: sc.inputTranscription.text, role: 'user' });
@@ -146,9 +182,6 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session }
     if (sc.turnComplete) {
       sendToClient({ type: 'turn_complete' });
       sendToClient({ type: 'face_state', state: 'idle' });
-    }
-    for (const part of sc.modelTurn?.parts ?? []) {
-      if (part.text) sendToClient({ type: 'transcript', text: part.text, role: 'adam' });
     }
     return;
   }
