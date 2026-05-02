@@ -1,0 +1,530 @@
+/* Premium fullscreen layout for ADAM experience demo */
+
+.shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(1600px 900px at 15% -15%, rgba(255, 255, 255, 0.1) 0%, transparent 52%),
+    radial-gradient(900px 500px at 90% 110%, rgba(74, 240, 255, 0.08) 0%, transparent 64%),
+    linear-gradient(180deg, #050608 0%, #0a0b0d 55%, #090a0b 100%);
+  color: #f0f0f0;
+  padding: 24px 24px 28px;
+}
+
+.gridTexture {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.45;
+  background-image:
+    linear-gradient(rgba(74, 240, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 240, 255, 0.03) 1px, transparent 1px);
+  background-size: 54px 54px;
+}
+
+.ambientTop,
+.ambientBottom {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(8px);
+}
+
+.ambientTop {
+  width: 680px;
+  height: 680px;
+  left: 28%;
+  top: -260px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.17) 0%, rgba(74, 240, 255, 0.1) 32%, transparent 70%);
+}
+
+.ambientBottom {
+  width: 560px;
+  height: 560px;
+  right: -140px;
+  bottom: -240px;
+  background: radial-gradient(circle, rgba(74, 240, 255, 0.1) 0%, transparent 70%);
+}
+
+.topBar {
+  position: relative;
+  z-index: 2;
+  max-width: 1360px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.brandBadge,
+.timerWrap {
+  background: rgba(14, 16, 19, 0.63);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 8px 16px;
+}
+
+.brandBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brandDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #4af0ff;
+  box-shadow: 0 0 10px #4af0ff;
+}
+
+.brandText {
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.17em;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.mainLayout {
+  position: relative;
+  z-index: 2;
+  max-width: 1360px;
+  margin: 20px auto 0;
+  display: grid;
+  grid-template-columns: minmax(440px, 1.2fr) minmax(360px, 0.8fr);
+  gap: 22px;
+  min-height: calc(100vh - 95px);
+}
+
+.stagePane {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 52%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-top-color: rgba(255, 255, 255, 0.16);
+  border-radius: 30px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 40px 120px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+}
+
+.stageSubhead {
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.46);
+  text-align: center;
+}
+
+.chassisWrap {
+  position: relative;
+  width: min(100%, 560px);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chassisHalo {
+  position: absolute;
+  width: 88%;
+  aspect-ratio: 1 / 1;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(74, 240, 255, 0.2) 0%, rgba(74, 240, 255, 0.06) 36%, transparent 70%);
+  animation: haloPulse 4.4s ease-in-out infinite;
+}
+
+.chassisBody {
+  position: relative;
+  width: 82%;
+  aspect-ratio: 1 / 1;
+  border-radius: 42% 42% 46% 46%;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.1) 23%, rgba(180, 185, 193, 0.17) 53%, rgba(130, 137, 145, 0.21) 100%),
+    radial-gradient(circle at 26% 18%, rgba(255, 255, 255, 0.75) 0%, transparent 44%),
+    linear-gradient(165deg, #b3bac2 0%, #7a828d 48%, #5d6670 100%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 32px 80px rgba(0, 0, 0, 0.5),
+    inset 0 2px 8px rgba(255, 255, 255, 0.55),
+    inset 0 -12px 20px rgba(34, 38, 43, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: perspective(1200px) rotateX(8deg);
+}
+
+.chassisRim {
+  position: absolute;
+  inset: 6.5%;
+  border-radius: 44% 44% 46% 46%;
+  border: 1px solid rgba(12, 14, 18, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.faceDock {
+  position: relative;
+  width: 68%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.12) 0%, rgba(5, 7, 10, 0.85) 62%, rgba(4, 5, 8, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    inset 0 -16px 24px rgba(0, 0, 0, 0.5),
+    0 0 38px rgba(74, 240, 255, 0.18);
+  display: grid;
+  place-items: center;
+}
+
+.chassisBase {
+  position: absolute;
+  bottom: -16px;
+  width: 50%;
+  height: 26px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(29, 32, 36, 0.75) 0%, rgba(6, 8, 10, 0.95) 100%);
+  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.45);
+}
+
+.statusRow {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 13, 17, 0.58);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 9px 18px;
+}
+
+.statusText {
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+
+.chatPane {
+  background: rgba(11, 13, 16, 0.72);
+  backdrop-filter: blur(22px) saturate(145%);
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  border-radius: 30px;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.chatHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chatTitle {
+  margin: 0;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.chatHint {
+  margin: 4px 0 0;
+  font-family: "DM Sans", sans-serif;
+  font-size: 13px;
+  color: rgba(240, 240, 240, 0.6);
+}
+
+.endSessionBtn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.82);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-family: "Share Tech Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.endSessionBtn:hover,
+.endSessionBtn:focus-visible {
+  border-color: rgba(220, 80, 80, 0.55);
+  background: rgba(220, 80, 80, 0.12);
+  color: #ff8a8a;
+  outline: none;
+}
+
+.transcriptPanel {
+  flex: 1;
+  min-height: 240px;
+  max-height: 58vh;
+  overflow-y: auto;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(8, 9, 12, 0.5) 100%);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.transcriptPanel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.transcriptPanel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+.emptyState {
+  margin: auto;
+  text-align: center;
+  font-family: "DM Sans", sans-serif;
+  font-size: 13px;
+  color: rgba(240, 240, 240, 0.48);
+}
+
+.msgRow {
+  display: flex;
+}
+
+.msgLeft {
+  justify-content: flex-start;
+}
+
+.msgRight {
+  justify-content: flex-end;
+}
+
+.msgBubble {
+  max-width: 86%;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-family: "DM Sans", sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  border: 1px solid transparent;
+}
+
+.adamBubble {
+  color: #d9dee4;
+  background: rgba(74, 240, 255, 0.07);
+  border-color: rgba(74, 240, 255, 0.24);
+}
+
+.userBubble {
+  color: #fcfcfc;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.msgTag {
+  display: block;
+  margin-bottom: 4px;
+  font-family: "Share Tech Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  color: #4af0ff;
+}
+
+.controlsPanel {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.micBtn {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.2s ease;
+}
+
+.micOn {
+  color: #051115;
+  background: linear-gradient(135deg, #4af0ff 0%, #8af7ff 100%);
+  box-shadow: 0 10px 28px rgba(74, 240, 255, 0.38);
+}
+
+.micOff {
+  color: #f8f8f8;
+  background: linear-gradient(135deg, rgba(220, 80, 80, 0.96) 0%, rgba(160, 46, 46, 0.98) 100%);
+  box-shadow: 0 10px 28px rgba(220, 80, 80, 0.45);
+  animation: recPulse 1.7s ease-in-out infinite;
+}
+
+.micBtn:hover,
+.micBtn:focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metaCard {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metaLabel {
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.metaValue {
+  font-family: "DM Sans", sans-serif;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.errorText {
+  margin: 0;
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 120, 120, 0.88);
+}
+
+@keyframes haloPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+@keyframes recPulse {
+  0%,
+  100% {
+    box-shadow: 0 10px 28px rgba(220, 80, 80, 0.45), 0 0 0 0 rgba(220, 80, 80, 0.35);
+  }
+  50% {
+    box-shadow: 0 10px 28px rgba(220, 80, 80, 0.45), 0 0 0 10px rgba(220, 80, 80, 0);
+  }
+}
+
+@media (max-width: 1120px) {
+  .mainLayout {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .stagePane {
+    min-height: 460px;
+  }
+
+  .chatPane {
+    min-height: 420px;
+  }
+
+  .transcriptPanel {
+    max-height: 280px;
+  }
+}
+
+@media (max-width: 700px) {
+  .shell {
+    padding: 14px 12px 18px;
+  }
+
+  .brandText {
+    font-size: 9px;
+    letter-spacing: 0.13em;
+  }
+
+  .topBar {
+    gap: 8px;
+  }
+
+  .brandBadge,
+  .timerWrap {
+    padding: 6px 10px;
+  }
+
+  .mainLayout {
+    margin-top: 12px;
+    gap: 14px;
+  }
+
+  .stagePane,
+  .chatPane {
+    border-radius: 20px;
+    padding: 16px;
+  }
+
+  .stagePane {
+    min-height: 380px;
+  }
+
+  .chassisWrap {
+    width: min(100%, 360px);
+  }
+
+  .chatTitle {
+    font-size: 22px;
+  }
+
+  .chatHint {
+    font-size: 12px;
+  }
+
+  .transcriptPanel {
+    min-height: 200px;
+    max-height: 240px;
+  }
+
+  .metaGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chassisHalo,
+  .micOff {
+    animation: none;
+  }
+}
