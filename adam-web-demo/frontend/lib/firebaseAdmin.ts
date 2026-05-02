@@ -27,7 +27,9 @@ export const adminAuth = new Proxy({} as Auth, {
   get(_target, prop: string) {
     const auth = getAuth(getAdminApp());
     const value = (auth as unknown as Record<string, unknown>)[prop];
-    return typeof value === 'function' ? (value as Function).bind(auth) : value;
+    return typeof value === 'function'
+      ? (value as (...args: unknown[]) => unknown).bind(auth)
+      : value;
   },
 });
 
@@ -35,6 +37,8 @@ export const adminDb = new Proxy({} as Firestore, {
   get(_target, prop: string) {
     const db = getFirestore(getAdminApp());
     const value = (db as unknown as Record<string, unknown>)[prop];
-    return typeof value === 'function' ? (value as Function).bind(db) : value;
+    return typeof value === 'function'
+      ? (value as (...args: unknown[]) => unknown).bind(db)
+      : value;
   },
 });

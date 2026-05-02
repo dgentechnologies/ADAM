@@ -62,7 +62,16 @@ export function SessionTimer({ durationMs, turnsAllowed, turnCount, onExpire, co
         >
           ⏱ {fmt(remaining)}
         </span>
-
+        <span
+          style={{
+            fontFamily: '"Share Tech Mono", monospace',
+            fontSize: 11,
+            color: 'rgba(255,255,255,0.55)',
+            letterSpacing: '0.04em',
+          }}
+        >
+          {turnCount}/{turnsAllowed}
+        </span>
       </div>
     );
   }
@@ -78,7 +87,9 @@ export function SessionTimer({ durationMs, turnsAllowed, turnCount, onExpire, co
           style={{ width: `${pct * 100}%` }}
         />
       </div>
-
+      <span className="font-mono text-xs text-gray-400">
+        {turnCount}/{turnsAllowed}
+      </span>
     </div>
   );
 }

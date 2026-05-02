@@ -122,7 +122,7 @@ function WelcomeOverlay({ onDismiss }: { onDismiss: () => void }) {
               <span style={{ color: '#4AF0FF', fontWeight: 500 }}>5-minute session</span> right now.
             </p>
             <p style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 14, lineHeight: 1.85, color: '#888', margin: '10px 0 0' }}>
-              Hold the <span style={{ color: '#4AF0FF', fontWeight: 500 }}>mic button</span> and speak. Release when done.
+              The microphone turns on automatically when the session starts. Just speak naturally.
             </p>
           </div>
 

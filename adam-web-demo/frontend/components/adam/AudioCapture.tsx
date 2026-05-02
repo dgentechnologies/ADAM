@@ -7,8 +7,10 @@ interface AudioCaptureProps {
   onAudioChunk: (base64: string) => void;
 }
 
-const SAMPLE_RATE   = 16000;
-const CHUNK_SIZE_MS = 250;
+const SAMPLE_RATE = 16000;
+// createScriptProcessor requires a power-of-2 buffer size (256–16384).
+// 4096 / 16000 = 256ms per chunk — close enough to the 250ms target.
+const BUFFER_SIZE = 4096;
 
 export function AudioCapture({ isRecording, onAudioChunk }: AudioCaptureProps) {
   const streamRef       = useRef<MediaStream | null>(null);
@@ -36,7 +38,7 @@ export function AudioCapture({ isRecording, onAudioChunk }: AudioCaptureProps) {
       audioCtxRef.current = ctx;
 
       const source    = ctx.createMediaStreamSource(stream);
-      const bufSize   = Math.floor(SAMPLE_RATE * CHUNK_SIZE_MS / 1000);
+      const bufSize   = BUFFER_SIZE;
       const processor = ctx.createScriptProcessor(bufSize, 1, 1);
       processorRef.current = processor;
 

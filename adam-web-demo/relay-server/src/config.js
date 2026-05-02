@@ -61,6 +61,7 @@ export const CONFIG = {
   NODE_ENV:        process.env.NODE_ENV ?? 'development',
   ALLOWED_ORIGINS: parseAllowedOrigins(process.env.ALLOWED_ORIGIN),
   GOOGLE_API_KEY:  process.env.GOOGLE_API_KEY,
+  GEMINI_LIVE_MODEL: process.env.GEMINI_LIVE_MODEL ?? 'gemini-3.1-flash-live-preview',
   RELAY_JWT_SECRET: process.env.RELAY_JWT_SECRET,
   ALLOW_LEGACY_RELAY_TOKENS: parseBoolean(process.env.ALLOW_LEGACY_RELAY_TOKENS),
 

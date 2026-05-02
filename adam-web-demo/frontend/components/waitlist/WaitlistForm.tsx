@@ -43,7 +43,7 @@ export function WaitlistForm() {
     return (
       <div className="rounded-2xl bg-sky-500/10 border border-sky-500/30 p-8 text-center space-y-3">
         <div className="text-3xl">✓</div>
-        <p className="font-bold text-xl">You're on the list.</p>
+        <p className="font-bold text-xl">You&apos;re on the list.</p>
         <p className="text-gray-400 text-sm">DGEN will reach out when ADAM is ready to ship.</p>
       </div>
     );
