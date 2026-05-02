@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ADAM – Production 3D</title>
+
+<style>
+  body { margin:0; overflow:hidden; background:#eaeaea; font-family:Arial; }
+  canvas { display:block; }
+  #errorBox {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: #111;
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="threeCanvas"></canvas>
+<div id="errorBox">Initializing...</div>
+
+<!-- IMPORT MAP -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.152/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { FBXLoader } from 'https://cdn.jsdelivr.net/npm/three@0.152/examples/jsm/loaders/FBXLoader.js';
+import { RGBELoader } from 'https://cdn.jsdelivr.net/npm/three@0.152/examples/jsm/loaders/RGBELoader.js';
+
+let scene, camera, renderer, model;
+const errorBox = document.getElementById('errorBox');
+
+init();
+animate();
+
+function init() {
+  const canvas = document.getElementById('threeCanvas');
+
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 1.8, 4);
+
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.physicallyCorrectLights = true;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+
+  // HDRI
+  errorBox.innerHTML = 'Loading environment...';
+  new RGBELoader()
+    .setPath('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/')
+    .load('studio_small_08_1k.hdr', (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      scene.environment = texture;
+      scene.background = texture;
+    });
+
+  // LIGHTS
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2);
+  keyLight.position.set(5, 10, 5);
+  scene.add(keyLight);
+
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+  fillLight.position.set(-5, 5, -5);
+  scene.add(fillLight);
+
+  loadModel();
+
+  window.addEventListener('resize', onResize);
+}
+
+function loadModel() {
+  const loader = new FBXLoader();
+
+  // 🔥 CRITICAL FIX: Encode spaces in filename
+  const modelPath = encodeURI('ADAM model.fbx');
+
+  errorBox.innerHTML = 'Loading FBX model...';
+
+  loader.load(
+    modelPath,
+    (fbx) => {
+      model = fbx;
+
+      // Auto scale fix (handles different export sizes)
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3()).length();
+      const scaleFactor = 2 / size;
+      model.scale.setScalar(scaleFactor);
+
+      model.position.set(0, -1, 0);
+
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.material = new THREE.MeshPhysicalMaterial({
+            color: 0x111111,
+            metalness: 0.6,
+            roughness: 0.25,
+            clearcoat: 1,
+            clearcoatRoughness: 0.1
+          });
+        }
+      });
+
+      scene.add(model);
+
+      errorBox.innerHTML = '✅ ADAM loaded successfully';
+      setTimeout(() => errorBox.style.display = 'none', 2000);
+    },
+
+    (progress) => {
+      const percent = (progress.loaded / progress.total * 100).toFixed(0);
+      errorBox.innerHTML = `Loading model: ${percent}%`;
+    },
+
+    (error) => {
+      console.error('FBX LOAD ERROR:', error);
+
+      errorBox.innerHTML = `❌ FBX Load Failed<br><br>
+      Possible fixes:<br>
+      1. Rename file → <b>ADAM_model.fbx</b> (NO SPACES)<br>
+      2. Place file in SAME folder<br>
+      3. Use localhost (not file://)<br>
+      4. Check console (F12)`;
+
+      // fallback geometry
+      const fallback = new THREE.Mesh(
+        new THREE.BoxGeometry(1,1,1),
+        new THREE.MeshStandardMaterial({ color: 0xff0000 })
+      );
+      scene.add(fallback);
+    }
+  );
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (model) model.rotation.y += 0.005;
+
+  renderer.render(scene, camera);
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+</script>
+
+</body>
+</html>

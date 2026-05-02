@@ -7,14 +7,36 @@ import { NextRequest } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { SignJWT } from 'jose';
 import { FieldValue } from 'firebase-admin/firestore';
+import { randomUUID } from 'crypto';
 
 const MAX_SESSIONS_PER_DAY = 3;
+const MAX_ID_TOKEN_LENGTH = 8192;
+
+function getRelaySecret(): Uint8Array {
+  const value = process.env.RELAY_JWT_SECRET;
+  if (!value) {
+    throw new Error('RELAY_JWT_SECRET is not configured');
+  }
+  return new TextEncoder().encode(value);
+}
+
+function normalizeDisplayName(name: unknown): string {
+  if (typeof name !== 'string') return 'User';
+  const trimmed = name.trim();
+  if (!trimmed) return 'User';
+  return trimmed.slice(0, 120);
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const contentType = req.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      return Response.json({ error: 'Content-Type must be application/json' }, { status: 415 });
+    }
+
     const { idToken } = await req.json() as { idToken?: string };
 
-    if (!idToken || typeof idToken !== 'string') {
+    if (!idToken || typeof idToken !== 'string' || idToken.length > MAX_ID_TOKEN_LENGTH) {
       return Response.json({ error: 'idToken is required' }, { status: 400 });
     }
 
@@ -27,6 +49,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { uid, email, name } = decoded;
+    const safeName = normalizeDisplayName(name);
 
     // Check daily session cap in Firestore
     const userRef  = adminDb.collection('adamUsers').doc(uid);
@@ -48,7 +71,7 @@ export async function POST(req: NextRequest) {
       await userRef.set({
         uid,
         email:               email ?? '',
-        name:                name  ?? '',
+        name:                safeName,
         createdAt:           FieldValue.serverTimestamp(),
         lastSeenAt:          FieldValue.serverTimestamp(),
         demoSessionsToday:   0,
@@ -58,10 +81,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Mint short-lived relay JWT (60 seconds — just enough to open the WebSocket)
-    const secret = new TextEncoder().encode(process.env.RELAY_JWT_SECRET!);
+    const secret = getRelaySecret();
 
-    const relayToken = await new SignJWT({ uid, email: email ?? '', name: name ?? 'User' })
+    const relayToken = await new SignJWT({ uid, email: email ?? '', name: safeName })
       .setProtectedHeader({ alg: 'HS256' })
+      .setIssuer('dgentechnologies.com/adam')
+      .setAudience('adam-relay')
+      .setJti(randomUUID())
       .setIssuedAt()
       .setExpirationTime('60s')
       .sign(secret);

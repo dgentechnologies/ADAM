@@ -40,6 +40,13 @@ Never end with: "Is there anything else?", "Let me know if you need anything", "
  */
 export async function createGeminiSession({ uid, userName, sendToClient, onSessionEnd }) {
   const log = (msg) => console.log(`[${new Date().toISOString()}] [GEMINI] [${uid}] ${msg}`);
+  let ended = false;
+
+  const endOnce = (reason) => {
+    if (ended) return;
+    ended = true;
+    onSessionEnd(reason);
+  };
 
   const liveConfig = {
     model: 'gemini-2.0-flash-live-001',
@@ -69,11 +76,11 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
           await processGeminiMessage(message, { sendToClient, uid, log, session });
         }
         log('Gemini stream ended normally');
-        onSessionEnd('gemini_stream_closed');
+        endOnce('gemini_stream_closed');
       } catch (err) {
         log(`Gemini stream error: ${err.message}`);
         sendToClient({ type: 'error', code: 'gemini_error', message: err.message });
-        onSessionEnd('error');
+        endOnce('error');
       }
     })();
 
@@ -148,7 +155,7 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session }
 
   if (message.toolCall) {
     for (const fn of message.toolCall.functionCalls ?? []) {
-      log(`Tool call: ${fn.name}(${JSON.stringify(fn.args)})`);
+      log(`Tool call: ${fn.name}`);
       try {
         const response = await handleToolCall(fn.name, fn.args ?? {}, { sendToClient, uid });
         await session.sendToolResponse({

@@ -16,10 +16,45 @@ for (const key of REQUIRED_ENV) {
   }
 }
 
+function parsePort(raw) {
+  const parsed = Number.parseInt(raw ?? '8080', 10);
+  if (Number.isNaN(parsed) || parsed <= 0 || parsed > 65535) {
+    console.error('[CONFIG] PORT must be a valid TCP port (1-65535)');
+    process.exit(1);
+  }
+  return parsed;
+}
+
+function parseAllowedOrigins(raw) {
+  const origins = String(raw)
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (!origins.length) {
+    console.error('[CONFIG] ALLOWED_ORIGIN must contain at least one origin');
+    process.exit(1);
+  }
+
+  for (const origin of origins) {
+    try {
+      const parsed = new URL(origin);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('Unsupported protocol');
+      }
+    } catch {
+      console.error(`[CONFIG] Invalid origin in ALLOWED_ORIGIN: ${origin}`);
+      process.exit(1);
+    }
+  }
+
+  return new Set(origins);
+}
+
 export const CONFIG = {
-  PORT:            parseInt(process.env.PORT ?? '8080', 10),
+  PORT:            parsePort(process.env.PORT),
   NODE_ENV:        process.env.NODE_ENV ?? 'development',
-  ALLOWED_ORIGIN:  process.env.ALLOWED_ORIGIN,
+  ALLOWED_ORIGINS: parseAllowedOrigins(process.env.ALLOWED_ORIGIN),
   GOOGLE_API_KEY:  process.env.GOOGLE_API_KEY,
   RELAY_JWT_SECRET: process.env.RELAY_JWT_SECRET,
 

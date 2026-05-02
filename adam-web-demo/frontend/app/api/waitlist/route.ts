@@ -6,8 +6,21 @@ import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_FIELD_LENGTH = 300;
+
+function normalizeField(value: unknown, maxLen = MAX_FIELD_LENGTH): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, maxLen);
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const contentType = req.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      return Response.json({ error: 'Content-Type must be application/json' }, { status: 415 });
+    }
+
     const body = await req.json() as {
       email?: string;
       name?: string;
@@ -18,11 +31,11 @@ export async function POST(req: NextRequest) {
 
     const { email, name, company, use_case, referral } = body;
 
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
+    const normalised = normalizeField(email, 320).toLowerCase();
+    if (!normalised || !EMAIL_REGEX.test(normalised)) {
       return Response.json({ error: 'Valid email is required' }, { status: 400 });
     }
 
-    const normalised = email.toLowerCase().trim();
     const col        = adminDb.collection('waitlist');
 
     // Check for existing entry
@@ -34,10 +47,10 @@ export async function POST(req: NextRequest) {
 
     await col.add({
       email:      normalised,
-      name:       name      ?? '',
-      company:    company   ?? '',
-      useCase:    use_case  ?? '',
-      referral:   referral  ?? '',
+      name:       normalizeField(name),
+      company:    normalizeField(company),
+      useCase:    normalizeField(use_case, 800),
+      referral:   normalizeField(referral),
       signedUpAt: FieldValue.serverTimestamp(),
       confirmed:  false,
     });

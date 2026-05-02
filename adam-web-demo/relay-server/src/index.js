@@ -3,10 +3,10 @@
 
 import 'dotenv/config';
 import http from 'http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
-import { CONFIG } from './config.js';
+import { CONFIG, SESSION_CAPS } from './config.js';
 import { validateToken } from './authMiddleware.js';
 import { createGeminiSession } from './geminiSession.js';
 import { clearMemory } from './toolHandlers.js';
@@ -50,11 +50,27 @@ const httpServer = http.createServer((req, res) => {
 
 // ── WebSocket server ──────────────────────────────────────────────────────────
 
-const wss = new WebSocketServer({ server: httpServer });
+const wss = new WebSocketServer({
+  server: httpServer,
+  maxPayload: 1 * 1024 * 1024,
+  perMessageDeflate: false,
+});
+
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((client) => {
+    if (client.isAlive === false) {
+      client.terminate();
+      return;
+    }
+
+    client.isAlive = false;
+    client.ping();
+  });
+}, 30000);
 
 wss.on('connection', (ws, req) => {
   const origin = req.headers.origin;
-  if (CONFIG.NODE_ENV === 'production' && origin !== CONFIG.ALLOWED_ORIGIN) {
+  if (CONFIG.NODE_ENV === 'production' && (!origin || !CONFIG.ALLOWED_ORIGINS.has(origin))) {
     log(null, `Rejected connection from origin: ${origin}`);
     ws.close(4001, 'Origin not allowed');
     return;
@@ -70,26 +86,47 @@ wss.on('connection', (ws, req) => {
   let dbSessionId = null;
   let sessionStart = null;
   let gemini      = null;
+  let closing     = false;
+  let persistedSessionEnd = false;
+
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
   const send = (obj) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  };
+
+  const normalizeCapError = (reason) => {
+    if (reason === 'session_active') return 'An active session is already running.';
+    if (reason === 'daily_cap_reached') return 'Daily session limit reached. Please come back tomorrow.';
+    if (reason?.startsWith('cooldown_')) return `Please wait before starting another session (${reason.replace('cooldown_', '')}).`;
+    return 'Session unavailable right now. Please try again shortly.';
   };
 
   const closeSession = async (reason) => {
+    if (closing) return;
+    closing = true;
+
     log(uid, `Session ending — reason: ${reason}`);
 
     if (gemini) { gemini.close(); gemini = null; }
+
+    const sessionSnapshot = uid ? getSession(uid) : null;
+
     if (uid) {
       clearMemory(uid);
       removeSession(uid);
     }
 
-    if (dbSessionId && sessionStart) {
+    if (!persistedSessionEnd && dbSessionId && sessionStart) {
+      persistedSessionEnd = true;
       try {
         await endSession({
           sessionId:  dbSessionId,
           durationMs: Date.now() - sessionStart,
-          turnCount:  getSession(uid)?.turnCount ?? 0,
+          turnCount:  sessionSnapshot?.turnCount ?? 0,
           endReason:  reason,
         });
       } catch (err) {
@@ -98,7 +135,9 @@ wss.on('connection', (ws, req) => {
     }
 
     send({ type: 'session_end', reason });
-    if (ws.readyState === ws.OPEN) ws.close();
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
   };
 
   // ── Message handler ─────────────────────────────────────────────────────────
@@ -108,10 +147,19 @@ wss.on('connection', (ws, req) => {
     try { msg = JSON.parse(raw.toString()); }
     catch { send({ type: 'error', code: 'parse_error', message: 'Invalid JSON' }); return; }
 
+    if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') {
+      send({ type: 'error', code: 'protocol_error', message: 'Invalid message format' });
+      return;
+    }
+
     // ── AUTH ──────────────────────────────────────────────────────────────────
     if (msg.type === 'auth') {
       if (authed) return;
       try {
+        if (typeof msg.token !== 'string') {
+          throw new Error('auth_failed: token is required');
+        }
+
         const payload = await validateToken(msg.token);
         uid       = payload.uid;
         userName  = payload.name;
@@ -124,11 +172,13 @@ wss.on('connection', (ws, req) => {
 
         // Check capacity
         const today           = new Date().toISOString().slice(0, 10);
-        const sessionsToday   = userDoc.lastSessionDate === today ? userDoc.demoSessionsToday : 0;
+        const sessionsToday = userDoc.lastSessionDate === today
+          ? Number(userDoc.demoSessionsToday ?? 0)
+          : 0;
         const { allowed, reason } = canStartSession(uid, sessionsToday);
 
         if (!allowed) {
-          send({ type: 'error', code: 'cap_exceeded', message: reason });
+          send({ type: 'error', code: 'cap_exceeded', message: normalizeCapError(reason) });
           ws.close();
           return;
         }
@@ -149,7 +199,7 @@ wss.on('connection', (ws, req) => {
         send({
           type:         'session_ready',
           sessionId:    dbSessionId,
-          turnsAllowed: SESSION_CAPS_TURNS,
+          turnsAllowed: SESSION_CAPS.MAX_TURNS,
           durationMs:   remainingMs(uid),
         });
 
@@ -175,13 +225,23 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.type === 'audio') {
+      if (typeof msg.data !== 'string' || msg.data.length === 0 || msg.data.length > 700000) {
+        send({ type: 'error', code: 'bad_request', message: 'Invalid audio payload' });
+        return;
+      }
+
       await gemini.sendAudio(msg.data);
       return;
     }
 
     if (msg.type === 'text') {
+      if (typeof msg.text !== 'string' || msg.text.trim().length === 0 || msg.text.length > 2000) {
+        send({ type: 'error', code: 'bad_request', message: 'Invalid text payload' });
+        return;
+      }
+
       const { capReached } = incrementTurn(uid);
-      await gemini.sendText(msg.text);
+      await gemini.sendText(msg.text.trim());
       if (capReached) await closeSession('cap_reached');
       return;
     }
@@ -197,11 +257,13 @@ wss.on('connection', (ws, req) => {
       await closeSession('user_disconnect');
       return;
     }
+
+    send({ type: 'error', code: 'unknown_message_type', message: `Unsupported message type: ${msg.type}` });
   });
 
   ws.on('close', async () => {
     log(uid ?? connId, 'WebSocket closed');
-    if (authed && gemini) await closeSession('user_disconnect');
+    if (authed) await closeSession('user_disconnect');
   });
 
   ws.on('error', (err) => {
@@ -209,25 +271,57 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Pull MAX_TURNS for session_ready message
-const SESSION_CAPS_TURNS = 20;
-
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 
-process.on('SIGTERM', () => {
-  log(null, 'SIGTERM — shutting down gracefully');
+const shutdown = (signal) => {
+  if (shutdown.started) return;
+  shutdown.started = true;
+
+  clearInterval(heartbeatInterval);
+
+  log(null, `${signal} — shutting down gracefully`);
   wss.clients.forEach((client) => {
-    if (client.readyState === client.OPEN) {
+    if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify({ type: 'session_end', reason: 'server_restart' }));
       client.close();
     }
   });
-  httpServer.close(() => { log(null, 'HTTP server closed'); process.exit(0); });
+
+  httpServer.close(() => {
+    log(null, 'HTTP server closed');
+    process.exit(0);
+  });
+};
+
+shutdown.started = false;
+
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM');
+});
+
+process.on('SIGINT', () => {
+  shutdown('SIGINT');
+});
+
+process.on('uncaughtException', (err) => {
+  log(null, `Uncaught exception: ${err.message}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  log(null, `Unhandled rejection: ${String(reason)}`);
+});
+
+httpServer.on('error', (err) => {
+  log(null, `HTTP server error: ${err.message}`);
+});
+
+wss.on('error', (err) => {
+  log(null, `WebSocket server error: ${err.message}`);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 httpServer.listen(CONFIG.PORT, () => {
   log(null, `ADAM Relay Server listening on port ${CONFIG.PORT}`);
-  log(null, `Environment: ${CONFIG.NODE_ENV} | Origin: ${CONFIG.ALLOWED_ORIGIN}`);
+  log(null, `Environment: ${CONFIG.NODE_ENV} | Origin(s): ${Array.from(CONFIG.ALLOWED_ORIGINS).join(',')}`);
 });

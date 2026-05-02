@@ -1,5 +1,13 @@
 // toolHandlers.js — handles Gemini function call tool invocations
 
+const VALID_EMOTIONS = new Set(['idle', 'happy', 'thinking', 'surprised', 'sad', 'excited', 'confused', 'sarcastic']);
+const VALID_HEAD_GESTURES = new Set(['none', 'nod_yes', 'shake_no', 'tilt_left', 'tilt_right']);
+const VALID_MOUTH_INTENSITY = new Set(['closed', 'low', 'medium', 'high']);
+const MAX_MEMORY_KEYS_PER_USER = 50;
+const MAX_MEMORY_KEY_LENGTH = 80;
+const MAX_MEMORY_VALUE_LENGTH = 1000;
+const MAX_SEARCH_QUERY_LENGTH = 256;
+
 export async function handleToolCall(name, args, { sendToClient, uid }) {
   switch (name) {
     case 'set_emotion':
@@ -20,11 +28,23 @@ export async function handleToolCall(name, args, { sendToClient, uid }) {
 }
 
 function handleSetEmotion({ emotion, head_gesture = 'none' }, sendToClient) {
+  if (!VALID_EMOTIONS.has(emotion)) {
+    return { success: false, error: 'Invalid emotion value' };
+  }
+
+  if (!VALID_HEAD_GESTURES.has(head_gesture)) {
+    return { success: false, error: 'Invalid head_gesture value' };
+  }
+
   sendToClient({ type: 'emotion', emotion, head: head_gesture });
   return { success: true };
 }
 
 function handleSetMouthSync({ intensity = 'medium' }, sendToClient) {
+  if (!VALID_MOUTH_INTENSITY.has(intensity)) {
+    return { success: false, error: 'Invalid mouth intensity' };
+  }
+
   sendToClient({ type: 'mouth_sync', intensity });
   return { success: true };
 }
@@ -43,8 +63,22 @@ function handleGetDatetime() {
 const memoryStore = new Map();
 
 function handleSaveMemory({ key, value }, uid) {
+  if (typeof key !== 'string' || key.trim().length === 0 || key.length > MAX_MEMORY_KEY_LENGTH) {
+    return { success: false, error: 'Invalid memory key' };
+  }
+
+  if (typeof value !== 'string' || value.length > MAX_MEMORY_VALUE_LENGTH) {
+    return { success: false, error: 'Invalid memory value' };
+  }
+
   if (!memoryStore.has(uid)) memoryStore.set(uid, {});
-  memoryStore.get(uid)[key] = value;
+
+  const record = memoryStore.get(uid);
+  if (!(key in record) && Object.keys(record).length >= MAX_MEMORY_KEYS_PER_USER) {
+    return { success: false, error: 'Memory limit reached for session' };
+  }
+
+  record[key.trim()] = value;
   return { success: true };
 }
 
@@ -61,17 +95,30 @@ const searchCache = new Map();
 const CACHE_TTL   = 30 * 60 * 1000;
 
 async function handleWebSearch({ query }) {
-  const key    = query.toLowerCase().trim();
+  if (typeof query !== 'string' || query.trim().length === 0) {
+    return { error: 'Search query is required' };
+  }
+
+  if (query.length > MAX_SEARCH_QUERY_LENGTH) {
+    return { error: `Search query must be <= ${MAX_SEARCH_QUERY_LENGTH} characters` };
+  }
+
+  const normalizedQuery = query.trim();
+  const key    = normalizedQuery.toLowerCase();
   const cached = searchCache.get(key);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.result;
 
   try {
-    const url  = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const url  = `https://api.duckduckgo.com/?q=${encodeURIComponent(normalizedQuery)}&format=json&no_html=1&skip_disambig=1`;
     const res  = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) {
+      throw new Error(`Search API returned status ${res.status}`);
+    }
+
     const data = await res.json();
 
     const result = {
-      query,
+      query: normalizedQuery,
       abstract:       data.AbstractText ?? '',
       abstract_url:   data.AbstractURL  ?? '',
       answer:         data.Answer       ?? '',
@@ -81,7 +128,7 @@ async function handleWebSearch({ query }) {
     searchCache.set(key, { result, ts: Date.now() });
     return result;
   } catch (err) {
-    return { query, error: `Search failed: ${err.message}` };
+    return { query: normalizedQuery, error: `Search failed: ${err.message}` };
   }
 }
 
