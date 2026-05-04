@@ -6,7 +6,7 @@ import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
-import { CONFIG, SESSION_CAPS } from './config.js';
+import { CONFIG, SESSION_CAPS, isTester } from './config.js';
 import { validateToken } from './authMiddleware.js';
 import { createGeminiSession } from './geminiSession.js';
 import { clearMemory } from './toolHandlers.js';
@@ -196,10 +196,11 @@ wss.on('connection', (ws, req) => {
         registerSession(uid, dbSessionId, (reason) => closeSession(reason));
         await incrementSessionsToday(uid);
 
+        const tester = isTester(uid);
         send({
           type:         'session_ready',
           sessionId:    dbSessionId,
-          turnsAllowed: SESSION_CAPS.MAX_TURNS,
+          turnsAllowed: tester ? 9999 : SESSION_CAPS.MAX_TURNS,
           durationMs:   remainingMs(uid),
         });
 

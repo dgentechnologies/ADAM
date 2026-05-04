@@ -79,3 +79,20 @@ export const SESSION_CAPS = {
   MAX_SESSIONS_PER_DAY:  3,              // per Firebase UID
   COOLDOWN_MS:           10 * 60 * 1000, // 10 min between sessions
 };
+
+// UIDs that bypass all session caps (internal testers / devs).
+// Add UIDs as a comma-separated TESTER_UIDS env var, or hardcode here.
+const envTesters = (process.env.TESTER_UIDS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+export const TESTER_UIDS = new Set([
+  'J60GwuaTv6RTfpE7kw3NVBWzBQP2', // internal tester
+  ...envTesters,
+]);
+
+/** Returns true if the uid is a privileged tester — all caps are skipped. */
+export function isTester(uid) {
+  return TESTER_UIDS.has(uid);
+}

@@ -1,6 +1,6 @@
 // sessionManager.js — tracks active sessions in memory, enforces per-user caps
 
-import { SESSION_CAPS } from './config.js';
+import { SESSION_CAPS, isTester } from './config.js';
 
 // Map<uid, { sessionId, startedAt, turnCount, timerHandle }>
 const activeSessions = new Map();
@@ -15,6 +15,9 @@ const cooldownMap = new Map();
  * @returns {{ allowed: boolean, reason?: string }}
  */
 export function canStartSession(uid, dailySessions) {
+  // Testers are always allowed — no cooldown, no daily cap, no active-session block.
+  if (isTester(uid)) return { allowed: true };
+
   if (activeSessions.has(uid)) {
     return { allowed: false, reason: 'session_active' };
   }
@@ -36,8 +39,8 @@ export function canStartSession(uid, dailySessions) {
  * Register an active session and start the duration timer.
  */
 export function registerSession(uid, sessionId, onExpire) {
-  const startedAt    = Date.now();
-  const timerHandle  = setTimeout(() => onExpire('timeout'), SESSION_CAPS.MAX_DURATION_MS);
+  const startedAt = Date.now();
+  const timerHandle = setTimeout(() => onExpire('timeout'), SESSION_CAPS.MAX_DURATION_MS);
   activeSessions.set(uid, { sessionId, startedAt, turnCount: 0, timerHandle });
 }
 
@@ -49,7 +52,9 @@ export function incrementTurn(uid) {
   const session = activeSessions.get(uid);
   if (!session) return { turnCount: 0, capReached: false };
   session.turnCount += 1;
-  return { turnCount: session.turnCount, capReached: session.turnCount >= SESSION_CAPS.MAX_TURNS };
+  // Testers never hit the turn cap.
+  const capReached = !isTester(uid) && session.turnCount >= SESSION_CAPS.MAX_TURNS;
+  return { turnCount: session.turnCount, capReached };
 }
 
 export function remainingMs(uid) {
@@ -68,7 +73,10 @@ export function removeSession(uid) {
     clearTimeout(session.timerHandle);
     activeSessions.delete(uid);
   }
-  cooldownMap.set(uid, Date.now() + SESSION_CAPS.COOLDOWN_MS);
+  // Testers have no cooldown.
+  if (!isTester(uid)) {
+    cooldownMap.set(uid, Date.now() + SESSION_CAPS.COOLDOWN_MS);
+  }
 }
 
 export function activeSessionCount() {
