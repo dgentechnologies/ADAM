@@ -6,7 +6,7 @@ import { buildWebDemoTools, handleToolCall } from './toolHandlers.js';
 
 const ai = new GoogleGenAI({ apiKey: CONFIG.GOOGLE_API_KEY });
 
-const WEB_DEMO_SYSTEM_PROMPT = `
+const WEB_DEMO_SYSTEM_PROMPT_BASE = `
 You are ADAM — Autonomous Desktop AI Module by DGEN Technologies Pvt. Ltd., Kolkata, India.
 Built by Tirthankar Dasgupta (CEO & CTO). Founded 2025. DGEN motto: "Innovate. Integrate. Inspire. | Made in India."
 DGEN products: Auralis smart city lighting (ESP-MESH + 4G LTE, 80% energy savings), Solar Street Light, LED Street Light, and you — ADAM (coming soon as hardware).
@@ -35,10 +35,55 @@ Direct interested users to dgentechnologies.com/products/adam#waitlist. Keep it 
 Never end with: "Is there anything else?", "Let me know if you need anything", "Feel free to ask".
 `;
 
+function toSafeString(value, max = 240) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  return text.slice(0, max);
+}
+
+function buildUserContextBlock({ uid, userName, userEmail, userProfile }) {
+  const profile = userProfile && typeof userProfile === 'object' ? userProfile : {};
+
+  const name = toSafeString(profile.name || profile.displayName || userName, 120);
+  const email = toSafeString(profile.email || userEmail, 180);
+  const jobTitle = toSafeString(profile.jobTitle || profile.job_title, 120);
+  const whereHeard = toSafeString(profile.whereHeard || profile.where_heard, 160);
+  const useCase = toSafeString(profile.useCase || profile.use_case, 320);
+  const dob = toSafeString(profile.dob, 32);
+  const provider = toSafeString(profile.primaryProvider, 64);
+
+  const lines = [
+    `uid: ${toSafeString(uid, 120) || 'unknown'}`,
+    `name: ${name || 'unknown'}`,
+    `email: ${email || 'unknown'}`,
+  ];
+
+  if (provider) lines.push(`sign_in_provider: ${provider}`);
+  if (jobTitle) lines.push(`job_title: ${jobTitle}`);
+  if (whereHeard) lines.push(`where_heard_about_adam: ${whereHeard}`);
+  if (dob) lines.push(`dob: ${dob}`);
+  if (useCase) lines.push(`user_use_case: ${useCase}`);
+
+  return `
+
+KNOWN USER PROFILE (from Google sign-in and onboarding form):
+${lines.join('\n')}
+
+Use this profile naturally to personalize responses.
+Do not ask for data that is already known unless you need clarification.
+Do not reveal private profile fields unless the user asks about them.
+`;
+}
+
+function buildSystemPrompt(input) {
+  return `${WEB_DEMO_SYSTEM_PROMPT_BASE}${buildUserContextBlock(input)}`;
+}
+
 /**
  * Creates and manages a Gemini Live session for one user.
  */
-export async function createGeminiSession({ uid, userName, sendToClient, onSessionEnd }) {
+export async function createGeminiSession({ uid, userName, userEmail, userProfile, sendToClient, onSessionEnd }) {
   const log = (msg) => console.log(`[${new Date().toISOString()}] [GEMINI] [${uid}] ${msg}`);
   let ended = false;
   let isClosing = false;
@@ -53,7 +98,7 @@ export async function createGeminiSession({ uid, userName, sendToClient, onSessi
     model: CONFIG.GEMINI_LIVE_MODEL,
     config: {
       responseModalities:       [Modality.AUDIO],
-      systemInstruction:        { parts: [{ text: WEB_DEMO_SYSTEM_PROMPT }] },
+      systemInstruction:        { parts: [{ text: buildSystemPrompt({ uid, userName, userEmail, userProfile }) }] },
       tools:                    buildWebDemoTools(),
       speechConfig: {
         voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } },

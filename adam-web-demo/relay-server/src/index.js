@@ -207,6 +207,8 @@ wss.on('connection', (ws, req) => {
         gemini = await createGeminiSession({
           uid,
           userName,
+          userEmail,
+          userProfile: userDoc,
           sendToClient: send,
           onSessionEnd: closeSession,
         });

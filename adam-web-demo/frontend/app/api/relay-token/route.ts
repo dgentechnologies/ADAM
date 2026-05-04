@@ -48,8 +48,16 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Invalid or expired Firebase token' }, { status: 401 });
     }
 
-    const { uid, email, name } = decoded;
+    const { uid, email, name, picture, email_verified, firebase } = decoded as {
+      uid: string;
+      email?: string;
+      name?: string;
+      picture?: string;
+      email_verified?: boolean;
+      firebase?: { sign_in_provider?: string };
+    };
     const safeName = normalizeDisplayName(name);
+    const signInProvider = firebase?.sign_in_provider ?? 'unknown';
 
     // Check daily session cap in Firestore
     const userRef  = adminDb.collection('adamUsers').doc(uid);
@@ -59,6 +67,17 @@ export async function POST(req: NextRequest) {
     if (userSnap.exists) {
       const data = userSnap.data()!;
       const sessionsToday = data.lastSessionDate === today ? (data.demoSessionsToday ?? 0) : 0;
+
+      await userRef.set({
+        uid,
+        email: email ?? data.email ?? '',
+        name: safeName || data.name || 'User',
+        displayName: safeName || data.displayName || 'User',
+        photoURL: picture ?? data.photoURL ?? '',
+        emailVerified: typeof email_verified === 'boolean' ? email_verified : Boolean(data.emailVerified),
+        primaryProvider: signInProvider,
+        lastSeenAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
 
       if (sessionsToday >= MAX_SESSIONS_PER_DAY) {
         return Response.json(
@@ -72,6 +91,10 @@ export async function POST(req: NextRequest) {
         uid,
         email:               email ?? '',
         name:                safeName,
+        displayName:         safeName,
+        photoURL:            picture ?? '',
+        emailVerified:       Boolean(email_verified),
+        primaryProvider:     signInProvider,
         createdAt:           FieldValue.serverTimestamp(),
         lastSeenAt:          FieldValue.serverTimestamp(),
         demoSessionsToday:   0,
