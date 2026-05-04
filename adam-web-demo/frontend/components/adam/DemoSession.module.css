@@ -1,72 +1,91 @@
-/* Premium fullscreen layout for ADAM experience demo */
+﻿/* ═══════════════════════════════════════════════════════════════════════════
+   DemoSession.module.css — ADAM Demo UI
+   Color palette: ADAM product image
+     Studio backdrop  #eaeae8  (background)
+     Robot body       #1c1c1c  (near-black)
+     Chrome ring      #b8b8b8  (silver accent)
+     OLED white       #f8f8f8
+   3D website: CSS perspective on main layout, depth shadows, elevated panels
+   ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Shell ─────────────────────────────────────────────────────────────────*/
 .shell {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+
+  /* Studio backdrop gradient — matches product image ambient lighting */
   background:
-    radial-gradient(1600px 900px at 15% -15%, rgba(255, 255, 255, 0.1) 0%, transparent 52%),
-    radial-gradient(900px 500px at 90% 110%, rgba(74, 240, 255, 0.08) 0%, transparent 64%),
-    linear-gradient(180deg, #050608 0%, #0a0b0d 55%, #090a0b 100%);
-  color: #f0f0f0;
-  padding: 24px 24px 28px;
+    radial-gradient(1400px 640px at -8% -12%, rgba(248,248,246,0.95) 0%, rgba(236,236,234,0.7) 42%, transparent 66%),
+    radial-gradient(1000px 560px at 108% 108%, rgba(212,212,210,0.72) 0%, transparent 68%),
+    radial-gradient(700px  380px at 52%  54%,  rgba(228,228,226,0.42) 0%, transparent 78%),
+    linear-gradient(180deg, #eceae8 0%, #e4e2e0 55%, #dddbd9 100%);
+  color: #1c1c1c;
+  padding: 18px 22px 20px;
 }
 
+/* ── Grid texture — very subtle, like the matte body surface ─────────────*/
 .gridTexture {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.45;
+  opacity: 0.14;
   background-image:
-    linear-gradient(rgba(74, 240, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(74, 240, 255, 0.03) 1px, transparent 1px);
-  background-size: 54px 54px;
+    linear-gradient(rgba(28,28,28,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28,28,28,0.04) 1px, transparent 1px);
+  background-size: 56px 56px;
 }
 
+/* ── Ambient depth blobs ─────────────────────────────────────────────────*/
 .ambientTop,
 .ambientBottom {
   position: absolute;
   border-radius: 999px;
   pointer-events: none;
-  filter: blur(8px);
+  filter: blur(10px);
 }
 
 .ambientTop {
-  width: 680px;
-  height: 680px;
-  left: 28%;
-  top: -260px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.17) 0%, rgba(74, 240, 255, 0.1) 32%, transparent 70%);
+  width: 700px;
+  height: 700px;
+  left: -200px;
+  top:  -320px;
+  background: radial-gradient(circle, rgba(244,244,242,0.88) 0%, transparent 70%);
 }
 
 .ambientBottom {
-  width: 560px;
-  height: 560px;
-  right: -140px;
-  bottom: -240px;
-  background: radial-gradient(circle, rgba(74, 240, 255, 0.1) 0%, transparent 70%);
+  width: 680px;
+  height: 680px;
+  right:  -240px;
+  bottom: -340px;
+  background: radial-gradient(circle, rgba(184,184,184,0.28) 0%, transparent 74%);
 }
 
+/* ── Top bar ─────────────────────────────────────────────────────────────*/
 .topBar {
   position: relative;
   z-index: 2;
-  max-width: 1360px;
+  max-width: 1400px;
   margin: 0 auto;
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   align-items: center;
 }
 
 .brandBadge,
 .timerWrap {
-  background: rgba(14, 16, 19, 0.63);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-top-color: rgba(255, 255, 255, 0.16);
+  background: rgba(244,244,242,0.82);
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  border: 1px solid rgba(28,28,28,0.1);
+  border-top-color: rgba(255,255,255,0.88);
   border-radius: 999px;
   padding: 8px 16px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.9) inset,
+    0 12px 28px rgba(28,28,28,0.09),
+    0 2px 6px  rgba(28,28,28,0.07);
 }
 
 .brandBadge {
@@ -75,225 +94,230 @@
   gap: 8px;
 }
 
+/* Chrome dot — silver accent from product image face ring */
 .brandDot {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: #4af0ff;
-  box-shadow: 0 0 10px #4af0ff;
+  background: linear-gradient(135deg, #c8c8c6 0%, #888886 100%);
+  box-shadow: 0 0 0 2px rgba(184,184,184,0.22);
 }
 
 .brandText {
   font-family: "Share Tech Mono", monospace;
   font-size: 10px;
   letter-spacing: 0.17em;
-  color: rgba(255, 255, 255, 0.68);
+  color: rgba(28,28,28,0.72);
 }
 
+/* ── Main layout — 3D perspective grid ───────────────────────────────────*/
 .mainLayout {
   position: relative;
   z-index: 2;
-  max-width: 1360px;
-  margin: 20px auto 0;
+  max-width: 1400px;
+  margin: 14px auto 0;
+  min-height: calc(100vh - 78px);
   display: grid;
-  grid-template-columns: minmax(440px, 1.2fr) minmax(360px, 0.8fr);
-  gap: 22px;
-  min-height: calc(100vh - 95px);
+  grid-template-columns: minmax(500px, 1.35fr) minmax(360px, 0.65fr);
+  gap: 16px;
 }
 
+/* ── Stage pane (3D model + title) — elevated, floats forward ────────────*/
 .stagePane {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 52%, rgba(255, 255, 255, 0.02) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-top-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(
+    160deg,
+    rgba(248,248,246,0.88) 0%,
+    rgba(240,240,238,0.72) 48%,
+    rgba(228,228,226,0.56) 100%
+  );
+  border: 1px solid rgba(28,28,28,0.09);
+  border-top-color: rgba(255,255,255,0.95);
   border-radius: 30px;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 40px 120px rgba(0, 0, 0, 0.68),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  padding: 30px;
+    0 1px 0  rgba(255,255,255,0.95) inset,
+    0 24px 64px rgba(28,28,28,0.14),
+    0 8px  22px rgba(28,28,28,0.09),
+    0 2px  6px  rgba(28,28,28,0.07);
+  padding: 20px 22px 20px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 18px;
+  min-height: 0;
+  transition: box-shadow 0.45s ease;
+}
+
+.stagePane:hover {
+  box-shadow:
+    0 1px 0  rgba(255,255,255,0.95) inset,
+    0 32px 80px rgba(28,28,28,0.18),
+    0 12px 30px rgba(28,28,28,0.12),
+    0 3px  8px  rgba(28,28,28,0.08);
 }
 
 .stageSubhead {
   font-family: "Share Tech Mono", monospace;
   font-size: 10px;
-  letter-spacing: 0.2em;
-  color: rgba(255, 255, 255, 0.46);
-  text-align: center;
+  letter-spacing: 0.18em;
+  color: rgba(28,28,28,0.42);
+  margin: 0;
 }
 
-.chassisWrap {
+.stageTitle {
+  margin: 6px 0 14px;
+  font-family: "Rajdhani", sans-serif;
+  font-size: clamp(28px, 3.4vw, 46px);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  color: #1c1c1c;
+  font-weight: 600;
+}
+
+/* ── 3D model viewport — the main visual centrepiece ─────────────────────*/
+.modelViewport {
   position: relative;
-  width: min(100%, 560px);
-  aspect-ratio: 1 / 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.chassisHalo {
-  position: absolute;
-  width: 88%;
-  aspect-ratio: 1 / 1;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(74, 240, 255, 0.2) 0%, rgba(74, 240, 255, 0.06) 36%, transparent 70%);
-  animation: haloPulse 4.4s ease-in-out infinite;
-}
-
-.chassisBody {
-  position: relative;
-  width: 82%;
-  aspect-ratio: 1 / 1;
-  border-radius: 42% 42% 46% 46%;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.1) 23%, rgba(180, 185, 193, 0.17) 53%, rgba(130, 137, 145, 0.21) 100%),
-    radial-gradient(circle at 26% 18%, rgba(255, 255, 255, 0.75) 0%, transparent 44%),
-    linear-gradient(165deg, #b3bac2 0%, #7a828d 48%, #5d6670 100%);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  width: 100%;
+  height: 480px;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(28,28,28,0.09);
+  border-top-color: rgba(255,255,255,0.88);
+  background: linear-gradient(
+    175deg,
+    #f0f0ee 0%,
+    #eaeae8 40%,
+    #e2e2e0 100%
+  );
   box-shadow:
-    0 32px 80px rgba(0, 0, 0, 0.5),
-    inset 0 2px 8px rgba(255, 255, 255, 0.55),
-    inset 0 -12px 20px rgba(34, 38, 43, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform: perspective(1200px) rotateX(8deg);
+    0 1px 0 rgba(255,255,255,0.92) inset,
+    0 18px 44px rgba(28,28,28,0.14),
+    0 6px  16px rgba(28,28,28,0.1);
 }
 
-.chassisRim {
+/* Chrome accent ring around viewport — mirrors the face ring in product image */
+.modelViewport::before {
+  content: '';
   position: absolute;
-  inset: 6.5%;
-  border-radius: 44% 44% 46% 46%;
-  border: 1px solid rgba(12, 14, 18, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
-}
-
-.faceDock {
-  position: relative;
-  width: 68%;
-  aspect-ratio: 1 / 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.12) 0%, rgba(5, 7, 10, 0.85) 62%, rgba(4, 5, 8, 0.95) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
-    inset 0 -16px 24px rgba(0, 0, 0, 0.5),
-    0 0 38px rgba(74, 240, 255, 0.18);
-  display: grid;
-  place-items: center;
-}
-
-.chassisBase {
-  position: absolute;
-  bottom: -16px;
-  width: 50%;
-  height: 26px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(29, 32, 36, 0.75) 0%, rgba(6, 8, 10, 0.95) 100%);
-  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.45);
+  inset: 0;
+  border-radius: 22px;
+  background: linear-gradient(
+    135deg,
+    rgba(210,210,208,0.22) 0%,
+    transparent 40%,
+    transparent 60%,
+    rgba(180,180,178,0.14) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
 }
 
 .statusRow {
+  margin-top: 12px;
+  width: fit-content;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(10, 13, 17, 0.58);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  padding: 9px 18px;
+  border: 1px solid rgba(28,28,28,0.1);
+  border-top-color: rgba(255,255,255,0.85);
+  background: rgba(240,240,238,0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 8px 16px;
+  box-shadow: 0 2px 8px rgba(28,28,28,0.07);
 }
 
 .statusText {
   font-family: "Share Tech Mono", monospace;
   font-size: 10px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
 }
 
+/* ── Chat pane — slightly recessed, complementary depth ─────────────────*/
 .chatPane {
-  background: rgba(11, 13, 16, 0.72);
-  backdrop-filter: blur(22px) saturate(145%);
-  -webkit-backdrop-filter: blur(22px) saturate(145%);
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-top-color: rgba(255, 255, 255, 0.18);
+  background: rgba(236,236,234,0.82);
+  backdrop-filter: blur(20px) saturate(122%);
+  -webkit-backdrop-filter: blur(20px) saturate(122%);
+  border: 1px solid rgba(28,28,28,0.1);
+  border-top-color: rgba(255,255,255,0.9);
   border-radius: 30px;
   box-shadow:
-    0 28px 70px rgba(0, 0, 0, 0.62),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  padding: 22px;
+    0 1px 0 rgba(255,255,255,0.9) inset,
+    0 20px 52px rgba(28,28,28,0.12),
+    0 6px  18px rgba(28,28,28,0.08);
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-height: 0;
+  transition: box-shadow 0.45s ease;
 }
 
 .chatHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(28,28,28,0.09);
 }
 
 .chatTitle {
   margin: 0;
   font-family: "Rajdhani", sans-serif;
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 600;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
+  color: #1c1c1c;
 }
 
 .chatHint {
   margin: 4px 0 0;
   font-family: "DM Sans", sans-serif;
   font-size: 13px;
-  color: rgba(240, 240, 240, 0.6);
+  color: rgba(28,28,28,0.52);
 }
 
 .endSessionBtn {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(28,28,28,0.12);
+  background: rgba(230,230,228,0.86);
+  color: rgba(28,28,28,0.72);
   border-radius: 999px;
   padding: 8px 14px;
   font-family: "Share Tech Mono", monospace;
-  font-size: 11px;
-  letter-spacing: 0.11em;
+  font-size: 10px;
+  letter-spacing: 0.1em;
   cursor: pointer;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.86) inset;
 }
 
 .endSessionBtn:hover,
 .endSessionBtn:focus-visible {
-  border-color: rgba(220, 80, 80, 0.55);
-  background: rgba(220, 80, 80, 0.12);
-  color: #ff8a8a;
+  border-color: rgba(190,48,64,0.44);
+  background: rgba(190,48,64,0.07);
+  color: #be3040;
   outline: none;
 }
 
 .transcriptPanel {
   flex: 1;
-  min-height: 240px;
-  max-height: 58vh;
+  min-height: 200px;
+  max-height: 50vh;
   overflow-y: auto;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(8, 9, 12, 0.5) 100%);
-  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(28,28,28,0.1);
+  border-top-color: rgba(255,255,255,0.82);
+  background: linear-gradient(
+    180deg,
+    rgba(244,244,242,0.86) 0%,
+    rgba(232,232,230,0.76) 100%
+  );
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-shadow: 0 2px 8px rgba(28,28,28,0.06) inset;
 }
 
-.transcriptPanel::-webkit-scrollbar {
-  width: 8px;
-}
-
+.transcriptPanel::-webkit-scrollbar { width: 8px; }
 .transcriptPanel::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(28,28,28,0.16);
   border-radius: 999px;
 }
 
@@ -302,20 +326,12 @@
   text-align: center;
   font-family: "DM Sans", sans-serif;
   font-size: 13px;
-  color: rgba(240, 240, 240, 0.48);
+  color: rgba(28,28,28,0.44);
 }
 
-.msgRow {
-  display: flex;
-}
-
-.msgLeft {
-  justify-content: flex-start;
-}
-
-.msgRight {
-  justify-content: flex-end;
-}
+.msgRow    { display: flex; }
+.msgLeft   { justify-content: flex-start; }
+.msgRight  { justify-content: flex-end; }
 
 .msgBubble {
   max-width: 86%;
@@ -328,15 +344,15 @@
 }
 
 .adamBubble {
-  color: #d9dee4;
-  background: rgba(74, 240, 255, 0.07);
-  border-color: rgba(74, 240, 255, 0.24);
+  color: #1c1c1c;
+  background: rgba(244,244,242,0.94);
+  border-color: rgba(28,28,28,0.12);
 }
 
 .userBubble {
-  color: #fcfcfc;
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.16);
+  color: #f5f5f3;
+  background: #1c1c1c;
+  border-color: rgba(14,14,14,0.88);
 }
 
 .msgTag {
@@ -344,13 +360,32 @@
   margin-bottom: 4px;
   font-family: "Share Tech Mono", monospace;
   font-size: 9px;
-  letter-spacing: 0.13em;
-  color: #4af0ff;
+  letter-spacing: 0.12em;
+  /* Chrome silver accent for ADAM tag */
+  color: #848482;
 }
 
+/* Typewriter blinking cursor on in-progress ADAM messages */
+.typingCursor {
+  display: inline-block;
+  width: 2px;
+  height: 0.85em;
+  background: #848482;
+  margin-left: 3px;
+  vertical-align: middle;
+  border-radius: 1px;
+  animation: adamCursorBlink 0.8s step-end infinite;
+}
+
+@keyframes adamCursorBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────*/
 .controlsPanel {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 14px;
+  border-top: 1px solid rgba(28,28,28,0.09);
+  padding-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -360,61 +395,71 @@
   width: 100%;
   border: none;
   border-radius: 14px;
-  padding: 14px 16px;
+  padding: 13px 16px;
   font-family: "Rajdhani", sans-serif;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.14) inset;
 }
 
+/* Mic ON — near-black matching robot body */
 .micOn {
-  color: #051115;
-  background: linear-gradient(135deg, #4af0ff 0%, #8af7ff 100%);
-  box-shadow: 0 10px 28px rgba(74, 240, 255, 0.38);
+  color: #f5f5f3;
+  background: linear-gradient(135deg, #1c1c1c 0%, #383838 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.1) inset,
+    0 12px 32px rgba(28,28,28,0.3);
 }
 
+/* Mic OFF — recording active, warm red */
 .micOff {
-  color: #f8f8f8;
-  background: linear-gradient(135deg, rgba(220, 80, 80, 0.96) 0%, rgba(160, 46, 46, 0.98) 100%);
-  box-shadow: 0 10px 28px rgba(220, 80, 80, 0.45);
-  animation: recPulse 1.7s ease-in-out infinite;
+  color: #f8f5f3;
+  background: linear-gradient(135deg, #b01b30 0%, #8c1424 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 12px 30px rgba(176,27,48,0.34);
+  animation: recPulse 1.8s ease-in-out infinite;
 }
 
 .micBtn:hover,
 .micBtn:focus-visible {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   outline: none;
 }
 
+/* ── Meta grid ───────────────────────────────────────────────────────────*/
 .metaGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .metaCard {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(28,28,28,0.1);
+  border-top-color: rgba(255,255,255,0.82);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  padding: 10px 12px;
+  background: rgba(240,240,238,0.84);
+  padding: 9px 10px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.82) inset, 0 2px 6px rgba(28,28,28,0.06);
 }
 
 .metaLabel {
   font-family: "Share Tech Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.46);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  color: rgba(28,28,28,0.46);
 }
 
 .metaValue {
   font-family: "DM Sans", sans-serif;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(28,28,28,0.86);
 }
 
 .errorText {
@@ -422,109 +467,69 @@
   font-family: "Share Tech Mono", monospace;
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: rgba(255, 120, 120, 0.88);
+  color: rgba(190,48,64,0.9);
 }
 
-@keyframes haloPulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.7;
-  }
-  50% {
-    transform: scale(1.04);
-    opacity: 1;
-  }
-}
-
+/* ── Animations ──────────────────────────────────────────────────────────*/
 @keyframes recPulse {
-  0%,
-  100% {
-    box-shadow: 0 10px 28px rgba(220, 80, 80, 0.45), 0 0 0 0 rgba(220, 80, 80, 0.35);
+  0%, 100% {
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.08) inset,
+      0 12px 30px rgba(176,27,48,0.34),
+      0 0 0 0 rgba(176,27,48,0.22);
   }
   50% {
-    box-shadow: 0 10px 28px rgba(220, 80, 80, 0.45), 0 0 0 10px rgba(220, 80, 80, 0);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.08) inset,
+      0 12px 30px rgba(176,27,48,0.34),
+      0 0 0 10px rgba(176,27,48,0);
   }
 }
 
+/* ── Responsive ──────────────────────────────────────────────────────────*/
 @media (max-width: 1120px) {
+  .shell { overflow-y: auto; }
+
   .mainLayout {
-    grid-template-columns: 1fr;
     min-height: auto;
+    grid-template-columns: 1fr;
   }
 
-  .stagePane {
-    min-height: 460px;
-  }
-
-  .chatPane {
-    min-height: 420px;
-  }
-
-  .transcriptPanel {
-    max-height: 280px;
-  }
+  .stagePane { min-height: 500px; }
+  .chatPane  { min-height: 440px; }
 }
 
 @media (max-width: 700px) {
-  .shell {
-    padding: 14px 12px 18px;
-  }
-
-  .brandText {
-    font-size: 9px;
-    letter-spacing: 0.13em;
-  }
-
-  .topBar {
-    gap: 8px;
-  }
+  .shell   { padding: 12px 10px 14px; }
+  .topBar  { gap: 8px; }
 
   .brandBadge,
-  .timerWrap {
-    padding: 6px 10px;
-  }
+  .timerWrap { padding: 6px 10px; }
 
-  .mainLayout {
-    margin-top: 12px;
-    gap: 14px;
-  }
+  .brandText { font-size: 9px; letter-spacing: 0.12em; }
+
+  .mainLayout { margin-top: 10px; gap: 12px; }
 
   .stagePane,
   .chatPane {
     border-radius: 20px;
-    padding: 16px;
+    padding: 14px;
   }
 
-  .stagePane {
-    min-height: 380px;
-  }
-
-  .chassisWrap {
-    width: min(100%, 360px);
-  }
-
-  .chatTitle {
-    font-size: 22px;
-  }
-
-  .chatHint {
-    font-size: 12px;
-  }
+  .stagePane     { min-height: 380px; }
+  .stageTitle    { font-size: 28px; }
+  .modelViewport { min-height: 260px; }
+  .chatTitle     { font-size: 24px; }
+  .chatHint      { font-size: 12px; }
 
   .transcriptPanel {
-    min-height: 200px;
-    max-height: 240px;
+    min-height: 170px;
+    max-height: 220px;
   }
 
-  .metaGrid {
-    grid-template-columns: 1fr;
-  }
+  .metaGrid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chassisHalo,
-  .micOff {
-    animation: none;
-  }
+  .micOff { animation: none; }
 }

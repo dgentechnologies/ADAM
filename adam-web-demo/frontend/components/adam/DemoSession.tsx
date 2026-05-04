@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { AdamFace } from './AdamFace';
+import { AdamModelViewer } from './AdamModelViewer';
 import { AudioCapture } from './AudioCapture';
 import { SessionTimer } from './SessionTimer';
 import styles from './DemoSession.module.css';
@@ -37,39 +38,39 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
   const [endReason,      setEndReason]      = useState<string | null>(null);
   const [errorMsg,       setErrorMsg]       = useState<string | null>(null);
 
-  const wsRef         = useRef<WebSocket | null>(null);
-  const audioQueueRef = useRef<AudioBuffer[]>([]);
-  const isPlayingRef  = useRef(false);
-  const audioCtxRef   = useRef<AudioContext | null>(null);
-  const transcriptRef = useRef<HTMLDivElement>(null);
+  const wsRef            = useRef<WebSocket | null>(null);
+  const audioCtxRef      = useRef<AudioContext | null>(null);
+  const nextStartTimeRef = useRef<number>(0);
+  const transcriptRef    = useRef<HTMLDivElement>(null);
 
-  // ── Audio playback ────────────────────────────────────────────────────────
-
-  const playNextAudio = useCallback(async () => {
-    if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
-    isPlayingRef.current = true;
-    const ctx    = (audioCtxRef.current ??= new AudioContext({ sampleRate: 24000 }));
-    const buffer = audioQueueRef.current.shift()!;
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.onended = () => { isPlayingRef.current = false; playNextAudio(); };
-    source.start();
-  }, []);
+  // ── Audio playback (gapless scheduled) ──────────────────────────────────
 
   const enqueueAudio = useCallback(async (base64: string) => {
-    const ctx    = (audioCtxRef.current ??= new AudioContext({ sampleRate: 24000 }));
+    const ctx = (audioCtxRef.current ??= new AudioContext({ sampleRate: 24000 }));
+    // Resume if browser suspended the context (autoplay policy)
+    if (ctx.state === 'suspended') await ctx.resume();
+
     const binary = atob(base64);
     const bytes  = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const pcm16  = new Int16Array(bytes.buffer);
     const f32    = new Float32Array(pcm16.length);
     for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768;
+
     const buffer = ctx.createBuffer(1, f32.length, 24000);
     buffer.copyToChannel(f32, 0);
-    audioQueueRef.current.push(buffer);
-    playNextAudio();
-  }, [playNextAudio]);
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+
+    // Schedule gapless: start exactly when the previous chunk ends.
+    // A 10ms lookahead guards against scheduling jitter.
+    const now       = ctx.currentTime;
+    const startTime = Math.max(now + 0.01, nextStartTimeRef.current);
+    source.start(startTime);
+    nextStartTimeRef.current = startTime + buffer.duration;
+  }, []);
 
   // ── WS message dispatch ───────────────────────────────────────────────────
 
@@ -86,8 +87,19 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         enqueueAudio(msg.data);
         break;
       case 'transcript':
-        setTranscripts((prev) => [...prev, { role: msg.role, text: msg.text, ts: Date.now() }]);
-        if (msg.role === 'user') setTurnCount((n) => n + 1);
+        if (msg.role === 'adam') {
+          // Accumulate all fragments into a single in-progress bubble
+          setTranscripts((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'adam' && last.inProgress) {
+              return [...prev.slice(0, -1), { ...last, text: last.text + msg.text }];
+            }
+            return [...prev, { role: 'adam', text: msg.text, ts: Date.now(), inProgress: true }];
+          });
+        } else {
+          setTranscripts((prev) => [...prev, { role: 'user', text: msg.text, ts: Date.now() }]);
+          setTurnCount((n) => n + 1);
+        }
         break;
       case 'face_state':
         setFaceState(msg.state);
@@ -101,6 +113,17 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
       case 'turn_complete':
         setFaceState('idle');
         setMouthIntensity('closed');
+        // Finalize the in-progress ADAM bubble
+        setTranscripts((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          if (last.role === 'adam' && last.inProgress) {
+            return [...prev.slice(0, -1), { ...last, inProgress: false }];
+          }
+          return prev;
+        });
+        // Reset audio schedule so next response starts immediately
+        nextStartTimeRef.current = 0;
         break;
       case 'session_end':
         setState('ended');
@@ -327,9 +350,9 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
       : faceState === 'speaking' ? '▶ SPEAKING'
       : '— IDLE';
     const statusTone =
-      faceState === 'listening' ? '#4AF0FF'
-      : faceState === 'speaking' ? '#ffb347'
-      : 'rgba(255,255,255,0.26)';
+      faceState === 'listening' ? '#0a84ff'
+      : faceState === 'speaking' ? '#1d1d1f'
+      : '#6e6e73';
 
     return (
       <div className={styles.shell}>
@@ -349,17 +372,11 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
         <main className={styles.mainLayout}>
           <section className={styles.stagePane}>
-            <div className={styles.stageSubhead}>AUTONOMOUS DESKTOP AI MODULE</div>
+            <div className={styles.stageSubhead}>ADAM 3D PREVIEW</div>
+            <h2 className={styles.stageTitle}>Autonomous Desktop AI Module</h2>
 
-            <div className={styles.chassisWrap}>
-              <div className={styles.chassisHalo} />
-              <div className={styles.chassisBody}>
-                <div className={styles.chassisRim} />
-                <div className={styles.faceDock}>
-                  <AdamFace emotion={emotion} faceState={faceState} mouthIntensity={mouthIntensity} size={254} />
-                </div>
-                <div className={styles.chassisBase} />
-              </div>
+            <div className={styles.modelViewport}>
+              <AdamModelViewer modelPath="/models/adam-body.fbx" faceState={faceState} />
             </div>
 
             <div className={styles.statusRow}>
@@ -392,6 +409,9 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
                   <div className={`${styles.msgBubble} ${t.role === 'user' ? styles.userBubble : styles.adamBubble}`}>
                     {t.role === 'adam' && <span className={styles.msgTag}>ADAM</span>}
                     <span>{t.text}</span>
+                    {t.role === 'adam' && t.inProgress && (
+                      <span className={styles.typingCursor} aria-hidden="true" />
+                    )}
                   </div>
                 </article>
               ))}
@@ -463,6 +483,9 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
               }`}
             >
               {t.text}
+              {t.role === 'adam' && t.inProgress && (
+                <span aria-hidden="true" className="adam-typing-cursor" />
+              )}
             </p>
           </div>
         ))}

@@ -28,9 +28,10 @@ export type ServerMessage =
 // ── Domain types ──────────────────────────────────────────────────────────────
 
 export interface TranscriptEntry {
-  role: 'user' | 'adam';
-  text: string;
-  ts:   number;
+  role:       'user' | 'adam';
+  text:       string;
+  ts:         number;
+  inProgress?: boolean;
 }
 
 export interface WaitlistEntry {

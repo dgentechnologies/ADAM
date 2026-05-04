@@ -1,32 +1,88 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;600&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap');
+@import "tailwindcss";
 
+/* Shared keyframes */
+@keyframes adamCursorBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.adam-typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 0.85em;
+  background: #4AF0FF;
+  margin-left: 3px;
+  vertical-align: middle;
+  border-radius: 1px;
+  animation: adamCursorBlink 0.8s step-end infinite;
+}
+
+/* ─── Color system from ADAM product image ──────────────────────────────────
+   Studio backdrop: neutral warm-gray   #eaeae8
+   Robot body:      near-black matte    #1c1c1c
+   Chrome ring:     brushed silver      #b8b8b8
+   OLED eyes:       pure white          #f8f8f8
+   ─────────────────────────────────────────────────────────────────────── */
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  --dgen-blue: #0ea5e9;
-  --dgen-blue-dark: #0284c7;
-  --dgen-accent: #38bdf8;
+  /* Backgrounds — derived from studio backdrop in image */
+  --background:    #eaeae8;       /* Studio backdrop neutral warm-gray */
+  --foreground:    #1c1c1c;       /* Near-black (matches robot body) */
 
-  /* shadcn-compatible tokens for login page components */
-  --primary: #4AF0FF;
-  --primary-foreground: #0a0a0a;
-  --input: rgba(255,255,255,0.1);
-  --ring: rgba(74,240,255,0.4);
-  --border: rgba(255,255,255,0.1);
-  --muted-foreground: rgba(255,255,255,0.45);
-  --accent: rgba(255,255,255,0.06);
-  --accent-foreground: #f0f0f0;
-  --destructive: rgba(220,80,80,0.9);
-  --destructive-foreground: #f0f0f0;
-  --secondary: rgba(255,255,255,0.06);
-  --secondary-foreground: #f0f0f0;
+  /* Surface hierarchy */
+  --surface-high:  #f4f4f2;       /* Highest elevation */
+  --surface-mid:   #eaeae8;       /* Mid elevation (= background) */
+  --surface-low:   #e0e0de;       /* Inset/recessed */
+
+  /* Chrome / silver accent — from ADAM face ring */
+  --chrome:        #b8b8b8;       /* Brushed silver */
+  --chrome-light:  #d4d4d2;       /* Light chrome highlight */
+  --chrome-dark:   #848484;       /* Dark chrome shadow */
+
+  /* Interactive accent (kept from brand) */
+  --dgen-blue:     #0a84ff;
+  --dgen-blue-dark:#0066cc;
+  --dgen-accent:   #64a5ff;
+
+  /* Shadows — calibrated to image ambient light */
+  --shadow-sm:  0 2px 8px  rgba(0,0,0,0.07);
+  --shadow-md:  0 8px 24px rgba(0,0,0,0.11);
+  --shadow-lg:  0 20px 60px rgba(0,0,0,0.16);
+
+  /* shadcn-compatible tokens */
+  --primary:             #1c1c1c;
+  --primary-foreground:  #f5f5f3;
+  --input:               rgba(28,28,28,0.09);
+  --ring:                rgba(10,132,255,0.32);
+  --border:              rgba(28,28,28,0.11);
+  --muted-foreground:    rgba(28,28,28,0.52);
+  --accent:              rgba(28,28,28,0.06);
+  --accent-foreground:   #1c1c1c;
+  --destructive:         rgba(218,60,60,0.9);
+  --destructive-foreground: #f5f5f3;
+  --secondary:           rgba(28,28,28,0.07);
+  --secondary-foreground:#1c1c1c;
 }
 
 body {
-  background: var(--background);
+  /* Multi-layer radial gradient replicating the product image studio lighting */
+  background:
+    radial-gradient(1400px 640px at 8% -8%,  rgba(248,248,246,0.92), transparent 62%),
+    radial-gradient(960px  520px at 92% 108%, rgba(212,212,210,0.68), transparent 68%),
+    radial-gradient(800px  400px at 50% 55%,  rgba(230,230,228,0.45), transparent 80%),
+    var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans, system-ui, sans-serif);
+  font-family: "DM Sans", var(--font-geist-sans, system-ui, sans-serif);
+}
+
+/* ─── Global 3D / depth helpers ─────────────────────────────────────────────*/
+.depth-card {
+  transform-style: preserve-3d;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.35s ease;
+}
+.depth-card:hover {
+  transform: translateY(-3px) perspective(800px) rotateX(1.5deg);
 }
 
 /* Reduced-motion: disable all animations */

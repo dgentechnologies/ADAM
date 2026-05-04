@@ -1,6 +1,6 @@
-# AGENT 3 — Fullstack Web Demo · "Try ADAM" · DGEN Company Website
+# AGENT 3 — Fullstack ADAM Experience · Separate Embedded App
 ## ADAM — Autonomous Desktop AI Module | DGEN Technologies Pvt. Ltd.
-## Website: [dgentechnologies.com](https://dgentechnologies.com) · Next.js + Vercel (already live)
+## Experience Frontend: [adam-demo-frontend.vercel.app](https://adam-demo-frontend.vercel.app) · Separate Vercel project
 
 > **OUTPUT NOTICE:** All outputs produced by this agent will be reviewed and graded by **ChatGPT-5.4**. Write production-quality fullstack code. Every API route, every WebSocket handler, every database schema, every React component must be deployable and scalable. No skeleton files. No "implement this later" stubs. Ship it.
 
@@ -8,63 +8,51 @@
 
 ## 1. Agent Identity & Scope
 
-You are the **Fullstack Engineer** for the ADAM web demo experience. Your job is to extend the existing DGEN Technologies website to make ADAM available to the world — so potential customers can interact with ADAM from their browser before the hardware ships.
+You are the **Fullstack Engineer** for the ADAM web demo experience. Your job is to build and maintain the standalone ADAM experience app that is embedded into the company site via iframe.
 
 This is the market validation layer. It must be polished, fast, and trustworthy enough to represent DGEN Technologies in a professional context.
 
-### What already exists (do NOT rebuild or break)
-The DGEN website is already live at `dgentechnologies.com`. It is a **Next.js App Router app deployed on Vercel**, founded 2025, HQ Kolkata. The following pages are confirmed live:
+### Product context and deployment model
+The DGEN website already exists and remains separate from this app. The ADAM demo runs as its own deployment:
 
-| Route | Status | Notes |
-|---|---|---|
-| `/` | ✅ Live | ADAM hero teaser already on homepage: image `/images/adam-desktop-ai-module.png`, copy: "Something Big is Cooking — Coming Soon" |
-| `/about` | ✅ Live | Team: Tirthankar (CEO/CTO), Sukomal (CFO), Sagnik (CMO), Arpan (COO). Per-person pages at `/about/{slug}` |
-| `/services` | ✅ Live | Smart City, IoT, AI Analytics, Smart Home |
-| `/products` | ✅ Live | Lists: Auralis Ecosystem, Solar Street Light, LED Street Light. **ADAM is NOT listed here yet.** |
-| `/products/auralis-ecosystem` | ✅ Live | |
-| `/products/solar-street-light` | ✅ Live | |
-| `/products/led-street-light` | ✅ Live | |
-| `/blog` | ✅ Live | |
-| `/careers` | ✅ Live | |
-| `/contact` | ✅ Live | |
-| `/privacy-policy`, `/terms-of-service`, `/faq` | ✅ Live | |
-| `/adam` | ❌ **Build this** | ADAM product landing page |
-| `/adam/demo` | ❌ **Build this** | Voice demo (auth-gated) |
-| `/adam/waitlist` | ❌ **Build this** | Waitlist signup |
+- Standalone app URL: `https://adam-demo-frontend.vercel.app/`
+- Embedded usage: shown inside company experience pages through iframe
+- Scope boundary: do NOT redesign/rebuild the full DGEN corporate website
+- Final waitlist destination: `https://dgentechnologies.com/products/adam`
 
-### Live Site Navigation
-Current navbar: Home · About Us · Services · Products · Blog · Careers · Contact · [Get a Quote CTA]
+### Required user flow
+1. Login page is the landing screen
+2. User details form after login
+3. Main ADAM experience page with welcome message
+4. 5-minute timed session
+5. End-of-session waitlist CTA redirects to company waitlist URL
 
-When ADAM launches, add **"ADAM"** as a new nav item pointing to `/adam`.
-
-### Confirmed Social Links (use these exactly)
-- LinkedIn: `linkedin.com/company/dgentechnologies`
-- Twitter/X: `x.com/dgen_tec`
-- Instagram: `instagram.com/dgen_technologies`
-- YouTube: `youtube.com/@DGENTECHNOLOGIES`
+The visual tone must be modern, premium, and professional, aligned with the provided ADAM product image (matte-black hardware, minimal clean environment, controlled highlights).
 
 ### Your domain covers:
 **Backend:** Node.js relay server on Railway.app · Google OAuth via NextAuth.js v5 · Supabase (users, sessions, waitlist, feedback) · new Next.js API routes · env vars across Vercel + Railway
 
-**Frontend:** New pages `/adam`, `/adam/demo`, `/adam/waitlist` · `<AdamFace />` React component · `<DemoSession />` orchestrator · `<AudioCapture />` · extending existing `<Navbar />` · `/products` ADAM card (feature-flagged)
+**Frontend:** Login screen · user details form · timed demo screen · end-state waitlist CTA · `<AdamFace />` React component · `<DemoSession />` orchestrator · `<AudioCapture />`
 
-**Infrastructure:** Vercel (existing, extend) · Railway.app (new relay) · Supabase (new project)
+**Infrastructure:** Vercel (standalone experience app) · Railway.app (relay) · Supabase (project backing demo state)
 
-You do NOT own: Python ADAM runtime, Arduino firmware, physical device, `adam_face.html` on the robot.
+You do NOT own: Python ADAM runtime, Arduino firmware, physical device, `adam_face.html` on the robot, or company-wide website architecture.
 
 ---
 
 ## 2. Architecture
 
-```
-dgentechnologies.com  (Vercel — existing Next.js app, extend this)
+```raw
+adam-demo-frontend.vercel.app  (Vercel — standalone ADAM experience app)
     │
-    ├── /adam            — ADAM product landing
-    ├── /adam/demo       — Voice demo (auth required)
-    ├── /adam/waitlist   — Waitlist form
+    ├── /                — Login page (landing)
+    ├── /onboarding      — User details form
+    ├── /experience      — Voice demo (auth required)
+    └── /complete        — End state + waitlist CTA redirect
+    │
     ├── /api/auth/[...nextauth]  — Google OAuth
     ├── /api/relay-token         — Mint short-lived JWT
-    └── /api/waitlist            — Save waitlist entry
+    └── /api/session-profile     — Save user onboarding details
     │
     │  wss://  (browser → Railway)
     ▼
@@ -86,7 +74,7 @@ Supabase  (new project — adam_users, demo_sessions, waitlist, demo_feedback)
 - Node.js 20+ · `ws` (not Socket.IO) · `@google/genai` · `jose` (JWT) · `@supabase/supabase-js`
 
 ### File Structure
-```
+```raw
 relay-server/
 ├── src/
 │   ├── index.js           # WS server + /health endpoint
@@ -137,7 +125,7 @@ export const SESSION_CAPS = {
 ```
 
 ### System Prompt (web demo — injected by relay)
-Adapted from hardware `system_prompt.txt`. No camera, no servo, no clipboard. Aware it's running on `dgentechnologies.com`.
+Adapted from hardware `system_prompt.txt`. No camera, no servo, no clipboard. Aware it's running on `adam-demo-frontend.vercel.app`.
 
 ```javascript
 // geminiSession.js
@@ -148,7 +136,7 @@ DGEN products: Auralis smart city lighting (ESP-MESH + 4G LTE, 80% energy saving
 DGEN team: Tirthankar Dasgupta (CEO/CTO), Sukomal Debnath (CFO), Sagnik Mandal (CMO), Arpan Bairagi (COO).
 Website: dgentechnologies.com
 
-CONTEXT: This is a live web browser demo running at dgentechnologies.com/adam/demo.
+CONTEXT: This is a live web browser demo running at adam-demo-frontend.vercel.app/experience.
 You are on DGEN's servers. You have NO camera — you cannot see the user.
 You are NOT the physical ADAM unit — that ships separately with a camera, servo neck, and OLED face.
 
@@ -164,7 +152,7 @@ Call set_emotion() frequently. Mirror the user's emotional state.
 
 THIS IS A 5-MINUTE / 20-TURN DEMO. After ~15 turns, you may naturally mention
 that the physical ADAM unit ships soon — camera, servo neck, persistent memory, local vision.
-Direct interested users to dgentechnologies.com/adam/waitlist. Keep it organic, not a sales pitch.
+Direct interested users to dgentechnologies.com/products/adam. Keep it organic, not a sales pitch.
 
 Never end with: "Is there anything else?", "Let me know if you need anything", "Feel free to ask".
 `;
@@ -206,32 +194,33 @@ GOOGLE_API_KEY=           # Gemini API key — NEVER expose to browser
 SUPABASE_URL=             # Supabase project URL
 SUPABASE_SERVICE_KEY=     # Service role key — server only
 NEXTAUTH_SECRET=          # Must match Vercel deployment exactly
-ALLOWED_ORIGIN=https://dgentechnologies.com
+ALLOWED_ORIGIN=https://adam-demo-frontend.vercel.app
 PORT=8080
 NODE_ENV=production
 ```
 
 ---
 
-## 4. Frontend — New Pages in Existing Next.js App
+## 4. Frontend — Screens in Standalone Experience App
 
-### New Files (do not touch existing pages)
-```
+### App Structure
+```raw
 app/
-├── adam/
-│   ├── page.tsx                   # /adam — ADAM product landing
-│   ├── demo/
-│   │   └── page.tsx               # /adam/demo — voice demo (auth required)
-│   └── waitlist/
-│       └── page.tsx               # /adam/waitlist — signup form
+├── page.tsx                       # / — Login page (landing)
+├── onboarding/
+│   └── page.tsx                   # /onboarding — user details form
+├── experience/
+│   └── page.tsx                   # /experience — voice demo (auth required)
+├── complete/
+│   └── page.tsx                   # /complete — timeout screen + waitlist CTA
 ├── api/
 │   ├── auth/
 │   │   └── [...nextauth]/
 │   │       └── route.ts           # NextAuth v5 Google OAuth
 │   ├── relay-token/
 │   │   └── route.ts               # Mint 60s JWT for relay auth
-│   └── waitlist/
-│       └── route.ts               # POST: save entry to Supabase
+│   └── session-profile/
+│       └── route.ts               # POST: save onboarding data to Supabase
 └── components/
     ├── adam/
     │   ├── AdamFace.tsx           # Face animation (ported from adam_face.html)
@@ -239,13 +228,14 @@ app/
     │   ├── DemoSession.tsx        # WS connection + state orchestrator
     │   ├── AudioCapture.tsx       # MediaRecorder → PCM 16kHz → base64 → WS
     │   └── SessionTimer.tsx       # Countdown display + turn counter
-    └── waitlist/
-        └── WaitlistForm.tsx       # Form with Supabase insert
+    └── onboarding/
+        └── UserDetailsForm.tsx    # Form with Supabase insert
 ```
 
-### Existing files to extend (minimally):
-- `components/Navbar.tsx` — add ADAM link. Keep existing links intact.
-- `app/products/page.tsx` — add ADAM product card behind `NEXT_PUBLIC_SHOW_ADAM_PRODUCT` env flag
+### Integration constraints:
+- This app is iframe-embedded in the company website
+- UI must be iframe-safe (no dependence on parent-window navigation)
+- Keep standalone auth/session flow fully functional without parent context
 
 ### `/api/relay-token/route.ts`
 ```typescript
@@ -272,21 +262,23 @@ export async function GET() {
 ```
 
 ### Authentication Flow
-```
-1. User visits /adam/demo
-2. Not signed in → redirect to /api/auth/signin?callbackUrl=/adam/demo (Google OAuth)
+```raw
+1. User visits / (login page)
+2. Not signed in → continue via Google OAuth
 3. Auth completes → NextAuth session cookie set
-4. Demo page mounts → fetch /api/relay-token → short-lived JWT
-5. ws = new WebSocket('wss://adam-relay.railway.app')
-6. ws.send({ type: 'auth', token })
-7. Relay validates → { type: 'session_ready' }
-8. Demo begins
+4. User completes onboarding form at /onboarding
+5. Experience page mounts at /experience → fetch /api/relay-token → short-lived JWT
+6. ws = new WebSocket('wss://adam-relay.railway.app')
+7. ws.send({ type: 'auth', token })
+8. Relay validates → { type: 'session_ready' }
+9. Demo begins with visible 5-minute timeout
+10. On timeout/session end, navigate to /complete with CTA to https://dgentechnologies.com/products/adam
 ```
 
 ### Vercel Environment Variables
 ```bash
 # Auth
-NEXTAUTH_URL=https://dgentechnologies.com
+NEXTAUTH_URL=https://adam-demo-frontend.vercel.app
 NEXTAUTH_SECRET=                     # openssl rand -base64 32
 GOOGLE_CLIENT_ID=                    # console.cloud.google.com
 GOOGLE_CLIENT_SECRET=
@@ -299,8 +291,8 @@ SUPABASE_URL=                        # Supabase project Settings > API
 SUPABASE_ANON_KEY=                   # Public — safe in browser
 SUPABASE_SERVICE_KEY=                # NEVER client-side — API routes only
 
-# Feature flags
-NEXT_PUBLIC_SHOW_ADAM_PRODUCT=false  # Set true when ready to list ADAM on /products
+# App
+NEXT_PUBLIC_WAITLIST_URL=https://dgentechnologies.com/products/adam
 ```
 
 ---
@@ -375,27 +367,23 @@ CREATE POLICY "waitlist_anon_insert"
 
 ---
 
-## 6. `/adam` Landing Page — Content Spec
+## 6. Experience Screens — Content Spec
 
-Must integrate seamlessly with the existing site structure (same navbar, same footer with Company/Legal/Connect sections, same logo `/images/logo.png`).
+The app must be modern, premium, and professional, and must remain focused on the ADAM experience funnel only.
 
-### Page sections (in order):
-1. **Hero** — ADAM name + "Autonomous Desktop AI Module" + tagline "Not a chatbot. Not a speaker. A presence." + two CTAs: "Try ADAM (Beta)" → `/adam/demo` and "Join Waitlist" → `/adam/waitlist`
-2. **What is ADAM?** — 2–3 sentences. Reference: built by DGEN (founded 2025, Kolkata), Gemini Live powered, physical desk robot with camera and voice.
-3. **Feature tease cards** (3 cards, suspense — no pricing, no ship date):
-   - "Sees You" — real-time camera vision, face recognition
-   - "Remembers You" — persistent memory across sessions
-   - "Made in India" — DGEN Technologies, Kolkata
-4. **"Try it in your browser"** — CTA block with small ADAM face animation preview
-5. **Team** — links to existing `/about/tirthankar-dasgupta`, `/about/sukomal-debnath`, `/about/sagnik-mandal`, `/about/arpan-bairagi`
-6. **Waitlist CTA** — email capture, links to `/adam/waitlist`
-7. **Footer** — same as rest of site (pulled from shared `<Footer />` component)
+### Screen sequence (in order):
+1. **Login Screen (`/`)** — premium first impression and clear sign-in action
+2. **User Details Screen (`/onboarding`)** — capture required profile fields before demo
+3. **Experience Screen (`/experience`)** — welcome message first, then live session UI
+4. **Completion Screen (`/complete`)** — shown at timeout/end with clear waitlist CTA
+5. **Waitlist redirect** — CTA navigates to `https://dgentechnologies.com/products/adam`
 
-### `/adam/demo` Page Layout:
-```
+### `/experience` Page Layout:
+```raw
 ┌────────────────────────────────────────────┐
-│ DGEN Navbar (existing — extended)          │
+│ ADAM Experience Shell (iframe-safe)         │
 ├────────────────────────────────────────────┤
+│ Welcome back, {userName}                    │
 │         [ADAM Face Component]              │
 │         Status: LISTENING                  │
 │                                            │
@@ -414,26 +402,18 @@ Must integrate seamlessly with the existing site structure (same navbar, same fo
 
 ---
 
-## 7. ADAM Product Card (for `/products` page)
+## 7. End-of-Session Waitlist Rule
 
-Feature-flagged via `NEXT_PUBLIC_SHOW_ADAM_PRODUCT`. When true, add alongside Auralis/Solar/LED:
+At the end of the 5-minute session (or cap end), the app must show a strong CTA and redirect users to:
+`https://dgentechnologies.com/products/adam`
+Do not replace this with an internal waitlist page unless explicitly requested.
 
-```tsx
-// Matches existing ProductCard pattern on /products
-<ProductCard
-  href="/adam"
-  image="/images/adam-desktop-ai-module.png"
-  title="ADAM"
-  subtitle="Autonomous Desktop AI Module"
-  tags={['AI', 'Vision', 'Voice']}
-  features={[
-    'Real-time camera vision & face recognition',
-    'Persistent memory across sessions',
-    'Gemini Live API voice interaction',
-  ]}
-  badge="Coming Soon"
-  ctaLabel="Learn More"
-/>
+```raw
+Completion copy example:
+"That wraps your 5-minute ADAM preview."
+[★★★★☆ Rate this experience]
+[→ Join the ADAM Waitlist]
+Redirect target: https://dgentechnologies.com/products/adam
 ```
 
 ---
@@ -450,6 +430,8 @@ Feature-flagged via `NEXT_PUBLIC_SHOW_ADAM_PRODUCT`. When true, add alongside Au
 - TypeScript strict mode
 - Server components for static + data-fetching; `'use client'` only for WS/audio/face
 - `SUPABASE_SERVICE_KEY` only in server-only files — never in client components or `NEXT_PUBLIC_` vars
+- Implement complete funnel: login -> onboarding -> welcome -> 5-minute experience -> completion CTA
+- Must be iframe-safe for embedding on the company website
 
 ### SQL migrations:
 - Sequential naming: `001_...`, `002_...`
@@ -460,12 +442,11 @@ Feature-flagged via `NEXT_PUBLIC_SHOW_ADAM_PRODUCT`. When true, add alongside Au
 1. Railway relay (health endpoint first, then Gemini integration)
 2. Supabase schema (`001_adam_demo_schema.sql`)
 3. NextAuth + Google OAuth (`/api/auth/[...nextauth]`)
-4. `/api/relay-token` and `/api/waitlist` routes
+4. `/api/relay-token` and `/api/session-profile` routes
 5. `<AdamFace />` + `<DemoSession />` + `<AudioCapture />`
-6. `/adam/demo` page
-7. `/adam/waitlist` page
-8. `/adam` landing page
-9. Navbar extension + `/products` card (feature-flagged off initially)
+6. Login + onboarding pages
+7. `/experience` page
+8. `/complete` page + external waitlist redirect
 
 ---
 
