@@ -13,6 +13,17 @@ if (!getApps().length) {
   });
 }
 
-// Re-export getFirestore so other modules import from here
-export { getFirestore } from 'firebase-admin/firestore';
-export { getAuth }      from 'firebase-admin/auth';
+import { getFirestore as adminGetFirestore } from 'firebase-admin/firestore';
+import { getAuth as adminGetAuth } from 'firebase-admin/auth';
+
+function getAdminApp() {
+  return getApps()[0];
+}
+
+export function getFirestore() {
+  return adminGetFirestore(getAdminApp(), CONFIG.FIREBASE.DATABASE_ID);
+}
+
+export function getAuth() {
+  return adminGetAuth(getAdminApp());
+}

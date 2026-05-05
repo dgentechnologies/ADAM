@@ -7,6 +7,14 @@ import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getAuth, Auth }           from 'firebase-admin/auth';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 
+function getAdminDatabaseId(): string {
+  const databaseId = process.env.FIREBASE_WEBSITE_DATABASE_ID;
+  if (!databaseId) {
+    throw new Error('Missing FIREBASE_WEBSITE_DATABASE_ID');
+  }
+  return databaseId;
+}
+
 function getAdminApp(): App {
   if (getApps().length) return getApps()[0];
 
@@ -35,7 +43,7 @@ export const adminAuth = new Proxy({} as Auth, {
 
 export const adminDb = new Proxy({} as Firestore, {
   get(_target, prop: string) {
-    const db = getFirestore(getAdminApp());
+    const db = getFirestore(getAdminApp(), getAdminDatabaseId());
     const value = (db as unknown as Record<string, unknown>)[prop];
     return typeof value === 'function'
       ? (value as (...args: unknown[]) => unknown).bind(db)

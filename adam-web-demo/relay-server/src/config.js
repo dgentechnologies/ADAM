@@ -5,6 +5,7 @@ const REQUIRED_ENV = [
   'FIREBASE_ADMIN_PROJECT_ID',
   'FIREBASE_ADMIN_CLIENT_EMAIL',
   'FIREBASE_ADMIN_PRIVATE_KEY',
+  'FIREBASE_WEBSITE_DATABASE_ID',
   'RELAY_JWT_SECRET',
   'ALLOWED_ORIGIN',
 ];
@@ -68,6 +69,7 @@ export const CONFIG = {
   FIREBASE: {
     PROJECT_ID:    process.env.FIREBASE_ADMIN_PROJECT_ID,
     CLIENT_EMAIL:  process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+    DATABASE_ID:   process.env.FIREBASE_WEBSITE_DATABASE_ID,
     // Railway stores the key with literal \n — replace them with real newlines
     PRIVATE_KEY:   process.env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, '\n'),
   },
@@ -88,7 +90,8 @@ const envTesters = (process.env.TESTER_UIDS ?? '')
   .filter(Boolean);
 
 export const TESTER_UIDS = new Set([
-  'J60GwuaTv6RTfpE7kw3NVBWzBQP2', // internal tester
+  'DUHBEYpqD1W0oInXMvVIrgN5pfG2',
+  'J18eb5xtHMVGTTOHoAguFfOgU7p2', // internal tester
   ...envTesters,
 ]);
 

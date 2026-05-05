@@ -8,10 +8,25 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth as _firebaseGetAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
 import { getFirestore as _firebaseGetFirestore, type Firestore } from 'firebase/firestore';
 
+function getClientDatabaseId(): string {
+  const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
+  if (!databaseId) {
+    throw new Error('Missing NEXT_PUBLIC_FIREBASE_DATABASE_ID');
+  }
+  return databaseId;
+}
+
 /** Returns true only when all required Firebase client config vars are present. */
 export function isFirebaseConfigured(): boolean {
   const key = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-  return !!(key && key.length > 0 && key !== 'your_firebase_api_key');
+  const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
+  return !!(
+    key &&
+    key.length > 0 &&
+    key !== 'your_firebase_api_key' &&
+    databaseId &&
+    databaseId.length > 0
+  );
 }
 
 const firebaseConfig = {
@@ -53,7 +68,7 @@ export function getClientAuth(): Auth {
  * because this returns an actual Firestore instance, not a proxy.
  */
 export function getClientDb(): Firestore {
-  if (!_db) _db = _firebaseGetFirestore(getFirebaseApp());
+  if (!_db) _db = _firebaseGetFirestore(getFirebaseApp(), getClientDatabaseId());
   return _db;
 }
 
