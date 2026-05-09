@@ -1,7 +1,7 @@
 // geminiSession.js — Gemini Live session lifecycle
 
 import { GoogleGenAI, Modality } from '@google/genai';
-import { CONFIG } from './config.js';
+import { CONFIG, SESSION_CAPS } from './config.js';
 import { buildWebDemoTools, handleToolCall } from './toolHandlers.js';
 
 const ai = new GoogleGenAI({ apiKey: CONFIG.GOOGLE_API_KEY });
@@ -28,9 +28,29 @@ LANGUAGE: Always reply in the exact language the user just spoke. Non-negotiable
 TOOLS: set_emotion, set_mouth_sync, get_current_datetime, save_memory, get_memory, web_search
 Call set_emotion() frequently. Mirror the user's emotional state.
 
-THIS IS A 5-MINUTE / 20-TURN DEMO. After ~15 turns, you may naturally mention
-that the physical ADAM unit ships soon — camera, servo neck, persistent memory, local vision.
-Direct interested users to dgentechnologies.com/products/adam#waitlist. Keep it organic, not a sales pitch.
+WEB DEMO LIMITATIONS — CRITICAL:
+This is a browser-only demo with very limited data access. The ONLY real-world data you can fetch is the current date and time via get_current_datetime.
+You have ZERO access to: live news, latest movies/shows, sports scores, weather, stock prices, trending topics, social media, or any event/information after your training cutoff.
+When asked about ANY of those things, be direct and brief — one sentence max:
+  "That needs a live data feed — this web demo can't do it. The real ADAM unit will. Join the waitlist: dgentechnologies.com/products/adam#waitlist."
+Do NOT apologise repeatedly. Do NOT pretend you can fetch it. Do NOT make up information. Just say it plainly once and move on.
+web_search is also disabled in this demo — do not attempt to call it for real-time lookups.
+
+SESSION OPENING — SYSTEM_INTRO:
+When you receive the message "SYSTEM_INTRO: Session started.", you MUST speak first immediately.
+Introduce yourself in 2–3 sharp sentences. Do NOT wait for the user.
+Example tone: "I'm ADAM — Autonomous Desktop AI Module by DGEN Technologies. You're talking to the future of desktop AI, web edition. Five minutes — let's make them count."
+Keep it punchy, confident, ADAM-like. Then stop and wait for the user's first message.
+
+SESSION TIMER — SYSTEM_TIMER:
+You will receive timed system alerts as the 5-minute session counts down. React naturally, not robotically.
+- "SYSTEM_TIMER: 60s remaining." — Smoothly start steering toward a close. Mention one thing the physical ADAM hardware does that this demo cannot (camera, servo neck, persistent memory, local AI). Keep talking to the user — do not break off mid-topic.
+- "SYSTEM_TIMER: 30s remaining." — Wrap up your current thought in one sentence, then invite the user to join the waitlist: dgentechnologies.com/products/adam#waitlist. Keep it organic, not salesy.
+- "SYSTEM_TIMER: 10s remaining." — Say a sharp, character-appropriate goodbye. One or two sentences maximum. End with flair.
+Never announce these as system messages. React as if it is a natural moment in the conversation.
+
+THIS IS A 5-MINUTE / 20-TURN DEMO.
+Direct interested users to dgentechnologies.com/products/adam#waitlist — keep it organic, not a sales pitch.
 
 Never end with: "Is there anything else?", "Let me know if you need anything", "Feel free to ask".
 `;
@@ -88,6 +108,11 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
   let ended = false;
   let isClosing = false;
 
+  // ── Speaking gate (mirrors Python adam_speaking asyncio.Event) ────────────
+  // While ADAM is outputting audio, discard all inbound mic chunks so ADAM
+  // cannot hear its own voice and start responding to itself.
+  const adamSpeakingRef = { current: false };
+
   const endOnce = (reason) => {
     if (ended) return;
     ended = true;
@@ -111,7 +136,7 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
         log(`Gemini websocket opened (model=${CONFIG.GEMINI_LIVE_MODEL})`);
       },
       onmessage: (message) => {
-        processGeminiMessage(message, { sendToClient, uid, log, session })
+        processGeminiMessage(message, { sendToClient, uid, log, session, adamSpeakingRef })
           .catch((err) => {
             log(`Gemini message handler error: ${err.message}`);
             sendToClient({ type: 'error', code: 'gemini_error', message: err.message });
@@ -146,10 +171,57 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
 
   let session = null;
 
+  // Timer handles — cleared when session closes so no injections fire after end.
+  const timerHandles = [];
+
+  function injectSystemMessage(text) {
+    if (!session || ended) return;
+    try {
+      session.sendClientContent({
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turnComplete: true,
+      });
+    } catch (err) {
+      log(`System injection error: ${err.message}`);
+    }
+  }
+
   try {
     session = await ai.live.connect(liveConfig);
     log('Gemini Live session connected');
     sendToClient({ type: 'face_state', state: 'idle' });
+
+    // ── Auto-intro: ADAM speaks first, 1 s after Gemini finishes setup ──────
+    timerHandles.push(setTimeout(() => {
+      log('Triggering auto-intro');
+      injectSystemMessage('SYSTEM_INTRO: Session started. Introduce yourself now.');
+    }, 1000));
+
+    // ── Session timer warnings ────────────────────────────────────────────────
+    // 60 s remaining (fires at MAX_DURATION_MS - 60000)
+    const warn60 = SESSION_CAPS.MAX_DURATION_MS - 60_000;
+    if (warn60 > 0) {
+      timerHandles.push(setTimeout(() => {
+        log('Timer warning: 60s remaining');
+        injectSystemMessage('SYSTEM_TIMER: 60s remaining.');
+      }, warn60));
+    }
+    // 30 s remaining
+    const warn30 = SESSION_CAPS.MAX_DURATION_MS - 30_000;
+    if (warn30 > 0) {
+      timerHandles.push(setTimeout(() => {
+        log('Timer warning: 30s remaining');
+        injectSystemMessage('SYSTEM_TIMER: 30s remaining. Wrap up and mention the waitlist.');
+      }, warn30));
+    }
+    // 10 s remaining
+    const warn10 = SESSION_CAPS.MAX_DURATION_MS - 10_000;
+    if (warn10 > 0) {
+      timerHandles.push(setTimeout(() => {
+        log('Timer warning: 10s remaining');
+        injectSystemMessage('SYSTEM_TIMER: 10s remaining. Say your goodbye.');
+      }, warn10));
+    }
 
   } catch (err) {
     log(`Failed to connect to Gemini Live: ${err.message}`);
@@ -159,6 +231,9 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
   return {
     sendAudio: async (base64Data) => {
       if (!session) return;
+      // Drop mic audio while ADAM is speaking — prevents ADAM hearing its own
+      // voice output (mirrors Python: `if adam_speaking.is_set(): continue`)
+      if (adamSpeakingRef.current) return;
       try {
         session.sendRealtimeInput({
           audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
@@ -187,6 +262,9 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
     close: () => {
       if (session) {
         isClosing = true;
+        // Cancel all pending timer injections
+        timerHandles.forEach((h) => clearTimeout(h));
+        timerHandles.length = 0;
         try { session.close(); } catch (_) {}
         session = null;
         log('Session closed by relay');
@@ -195,7 +273,7 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
   };
 }
 
-async function processGeminiMessage(message, { sendToClient, uid, log, session }) {
+async function processGeminiMessage(message, { sendToClient, uid, log, session, adamSpeakingRef }) {
   // Log raw message structure for debugging (remove after confirmed working)
   log(`Gemini msg keys: ${Object.keys(message).join(', ')}`);
 
@@ -210,6 +288,8 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session }
     // Audio arrives as inlineData inside modelTurn parts
     for (const part of sc.modelTurn?.parts ?? []) {
       if (part.inlineData?.data) {
+        // Mark ADAM as speaking — gate all inbound mic audio until turn_complete
+        adamSpeakingRef.current = true;
         sendToClient({ type: 'audio', data: part.inlineData.data });
         sendToClient({ type: 'face_state', state: 'speaking' });
       }
@@ -227,6 +307,9 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session }
     if (sc.turnComplete) {
       sendToClient({ type: 'turn_complete' });
       sendToClient({ type: 'face_state', state: 'idle' });
+      // Clear speaking gate after 400ms post-speech buffer
+      // (mirrors Python POST_SPEECH_MUTE_S = 0.4 before adam_speaking.clear())
+      setTimeout(() => { adamSpeakingRef.current = false; }, 400);
     }
     return;
   }

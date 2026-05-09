@@ -103,6 +103,9 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         break;
       case 'face_state':
         setFaceState(msg.state);
+        // Mute microphone while ADAM is speaking so ADAM cannot hear its own
+        // voice output (mirrors Python: adam_speaking.is_set() gate in send())
+        if (msg.state === 'speaking') setIsRecording(false);
         break;
       case 'emotion':
         setEmotion(msg.emotion);
@@ -124,6 +127,11 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         });
         // Reset audio schedule so next response starts immediately
         nextStartTimeRef.current = 0;
+        // Re-enable mic after 400ms post-speech buffer
+        // (mirrors Python POST_SPEECH_MUTE_S = 0.4 before mic re-open)
+        setTimeout(() => {
+          if (stateRef.current === 'active') setIsRecording(true);
+        }, 400);
         break;
       case 'session_end':
         setState('ended');
