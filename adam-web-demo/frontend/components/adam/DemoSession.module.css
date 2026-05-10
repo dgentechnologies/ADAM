@@ -391,43 +391,24 @@
   gap: 10px;
 }
 
-.micBtn {
+.micStatusPanel {
   width: 100%;
-  border: none;
   border-radius: 14px;
-  padding: 13px 16px;
-  font-family: "Rajdhani", sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.14) inset;
+  border: 1px solid rgba(28,28,28,0.12);
+  border-top-color: rgba(255,255,255,0.9);
+  background: rgba(240,240,238,0.92);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.86) inset, 0 6px 16px rgba(28,28,28,0.08);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
-/* Mic ON — near-black matching robot body */
-.micOn {
-  color: #f5f5f3;
-  background: linear-gradient(135deg, #1c1c1c 0%, #383838 100%);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.1) inset,
-    0 12px 32px rgba(28,28,28,0.3);
-}
-
-/* Mic OFF — recording active, warm red */
-.micOff {
-  color: #f8f5f3;
-  background: linear-gradient(135deg, #b01b30 0%, #8c1424 100%);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.08) inset,
-    0 12px 30px rgba(176,27,48,0.34);
-  animation: recPulse 1.8s ease-in-out infinite;
-}
-
-.micBtn:hover,
-.micBtn:focus-visible {
-  transform: translateY(-2px);
-  outline: none;
+.micStatusText {
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: rgba(28,28,28,0.78);
 }
 
 /* ── Meta grid ───────────────────────────────────────────────────────────*/
@@ -471,20 +452,6 @@
 }
 
 /* ── Animations ──────────────────────────────────────────────────────────*/
-@keyframes recPulse {
-  0%, 100% {
-    box-shadow:
-      0 1px 0 rgba(255,255,255,0.08) inset,
-      0 12px 30px rgba(176,27,48,0.34),
-      0 0 0 0 rgba(176,27,48,0.22);
-  }
-  50% {
-    box-shadow:
-      0 1px 0 rgba(255,255,255,0.08) inset,
-      0 12px 30px rgba(176,27,48,0.34),
-      0 0 0 10px rgba(176,27,48,0);
-  }
-}
 
 /* ── Responsive ──────────────────────────────────────────────────────────*/
 @media (max-width: 1120px) {

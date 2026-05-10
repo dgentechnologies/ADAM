@@ -37,12 +37,14 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
   const [durationMs,     setDurationMs]     = useState(300_000);
   const [endReason,      setEndReason]      = useState<string | null>(null);
   const [errorMsg,       setErrorMsg]       = useState<string | null>(null);
+  const [micPermission,  setMicPermission]  = useState<'requesting' | 'granted' | 'denied'>('requesting');
+  const [adamSpeaking,   setAdamSpeaking]   = useState(false);
 
   const wsRef            = useRef<WebSocket | null>(null);
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
+  const speechEndTimerRef= useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptRef    = useRef<HTMLDivElement>(null);
-  const manualMicOffRef  = useRef(false);
 
   // ── Audio playback (gapless scheduled) ──────────────────────────────────
 
@@ -50,6 +52,10 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
     const ctx = (audioCtxRef.current ??= new AudioContext({ sampleRate: 24000 }));
     // Resume if browser suspended the context (autoplay policy)
     if (ctx.state === 'suspended') await ctx.resume();
+
+    adamSpeakingRef.current = true;
+    setAdamSpeaking(true);
+    setIsRecording(false);
 
     const binary = atob(base64);
     const bytes  = new Uint8Array(binary.length);
@@ -71,6 +77,16 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
     const startTime = Math.max(now + 0.01, nextStartTimeRef.current);
     source.start(startTime);
     nextStartTimeRef.current = startTime + buffer.duration;
+
+    if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
+    const msUntilSpeechEnds = Math.max(0, (nextStartTimeRef.current - ctx.currentTime) * 1000) + 420;
+    speechEndTimerRef.current = setTimeout(() => {
+      adamSpeakingRef.current = false;
+      setAdamSpeaking(false);
+      if (stateRef.current === 'active' && micPermissionRef.current === 'granted') {
+        setIsRecording(true);
+      }
+    }, msUntilSpeechEnds);
   }, []);
 
   // ── WS message dispatch ───────────────────────────────────────────────────
@@ -81,8 +97,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         setState('active');
         setTurnsAllowed(msg.turnsAllowed);
         setDurationMs(msg.durationMs);
-        manualMicOffRef.current = false;
-        setIsRecording(true);
+        setIsRecording(micPermissionRef.current === 'granted');
         setFaceState('listening');
         break;
       case 'audio':
@@ -105,10 +120,17 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         break;
       case 'face_state':
         setFaceState(msg.state);
-        // Mute microphone while ADAM is speaking so ADAM cannot hear its own
-        // voice output (mirrors Python: adam_speaking.is_set() gate in send())
-        if (msg.state === 'speaking') setIsRecording(false);
-        if ((msg.state === 'idle' || msg.state === 'listening') && !manualMicOffRef.current && stateRef.current === 'active') {
+        if (msg.state === 'speaking') {
+          adamSpeakingRef.current = true;
+          setAdamSpeaking(true);
+          setIsRecording(false);
+        }
+        if (
+          (msg.state === 'idle' || msg.state === 'listening')
+          && !adamSpeakingRef.current
+          && micPermissionRef.current === 'granted'
+          && stateRef.current === 'active'
+        ) {
           setIsRecording(true);
         }
         break;
@@ -132,16 +154,23 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         });
         // Reset audio schedule so next response starts immediately
         nextStartTimeRef.current = 0;
-        // Re-enable mic after 400ms post-speech buffer
-        // (mirrors Python POST_SPEECH_MUTE_S = 0.4 before mic re-open)
         setTimeout(() => {
-          if (stateRef.current === 'active' && !manualMicOffRef.current) setIsRecording(true);
+          if (
+            stateRef.current === 'active'
+            && !adamSpeakingRef.current
+            && micPermissionRef.current === 'granted'
+          ) {
+            setIsRecording(true);
+          }
         }, 400);
         break;
       case 'session_end':
         setState('ended');
         setEndReason(msg.reason);
         setIsRecording(false);
+        adamSpeakingRef.current = false;
+        setAdamSpeaking(false);
+        if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
         break;
       case 'error':
         setErrorMsg(`${msg.code}: ${msg.message}`);
@@ -151,10 +180,24 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
   }, [enqueueAudio]);
 
   const stateRef = useRef<SessionState>('connecting');
+  const adamSpeakingRef = useRef(false);
+  const micPermissionRef = useRef<'requesting' | 'granted' | 'denied'>('requesting');
 
   // Keep stateRef in sync so ws.onclose can read the current value without a
   // stale closure (the useEffect has empty deps, so `state` would be frozen).
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { adamSpeakingRef.current = adamSpeaking; }, [adamSpeaking]);
+  useEffect(() => {
+    micPermissionRef.current = micPermission;
+    if (stateRef.current !== 'active') return;
+    if (micPermission === 'denied') {
+      setIsRecording(false);
+      return;
+    }
+    if (micPermission === 'granted' && !adamSpeakingRef.current) {
+      setIsRecording(true);
+    }
+  }, [micPermission]);
 
   // ── Connect on mount ──────────────────────────────────────────────────────
 
@@ -223,6 +266,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
     return () => {
       ws?.close();
+      if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
       audioCtxRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -245,16 +289,17 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
   const send = (msg: ClientMessage) => wsRef.current?.send(JSON.stringify(msg));
 
-  const toggleRecording = () => {
-    setIsRecording((prev) => {
-      const next = !prev;
-      manualMicOffRef.current = !next;
-      if (!next) setFaceState('idle');
-      return next;
-    });
-  };
   const endSession     = () => { send({ type: 'disconnect' }); setState('ended'); setEndReason('user_disconnect'); };
-  const sendAudioChunk = (base64: string) => send({ type: 'audio', data: base64 });
+  const sendAudioChunk = (base64: string) => {
+    if (
+      stateRef.current !== 'active'
+      || micPermissionRef.current !== 'granted'
+      || adamSpeakingRef.current
+    ) {
+      return;
+    }
+    send({ type: 'audio', data: base64 });
+  };
 
   // ── Render states ─────────────────────────────────────────────────────────
 
@@ -367,6 +412,15 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
       faceState === 'listening' ? '#0a84ff'
       : faceState === 'speaking' ? '#1d1d1f'
       : '#6e6e73';
+    const micPermissionLabel =
+      micPermission === 'requesting' ? 'MIC PERMISSION: REQUESTING'
+      : micPermission === 'granted' ? 'MIC PERMISSION: GRANTED'
+      : 'MIC PERMISSION: DENIED';
+    const micStateLabel =
+      micPermission !== 'granted' ? 'MIC STATE: BLOCKED'
+      : adamSpeaking || faceState === 'speaking' ? 'MIC STATE: SPEAKING (MIC OFF)'
+      : isRecording ? 'MIC STATE: LISTENING'
+      : 'MIC STATE: LISTENING (INITIALIZING)';
 
     return (
       <div className={styles.shell}>
@@ -416,7 +470,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
             <div ref={transcriptRef} className={styles.transcriptPanel} aria-live="polite">
               {recentTranscripts.length === 0 && (
-                <p className={styles.emptyState}>Tap the mic and start speaking to ADAM.</p>
+                <p className={styles.emptyState}>Mic activates automatically after permission is granted.</p>
               )}
               {recentTranscripts.map((t, i) => (
                 <article key={i} className={`${styles.msgRow} ${t.role === 'user' ? styles.msgRight : styles.msgLeft}`}>
@@ -432,13 +486,10 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
             </div>
 
             <div className={styles.controlsPanel}>
-              <button
-                onClick={toggleRecording}
-                aria-label={isRecording ? 'Turn microphone off' : 'Turn microphone on'}
-                className={`${styles.micBtn} ${isRecording ? styles.micOn : styles.micOff}`}
-              >
-                {isRecording ? 'Mic On • Auto Listen' : 'Mic Off'}
-              </button>
+              <div className={styles.micStatusPanel} role="status" aria-live="polite">
+                <span className={styles.micStatusText}>{micPermissionLabel}</span>
+                <span className={styles.micStatusText}>{micStateLabel}</span>
+              </div>
 
               <div className={styles.metaGrid}>
                 <div className={styles.metaCard}>
@@ -456,7 +507,11 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
           </aside>
         </main>
 
-        <AudioCapture isRecording={isRecording} onAudioChunk={sendAudioChunk} />
+        <AudioCapture
+          isRecording={isRecording}
+          onAudioChunk={sendAudioChunk}
+          onPermissionChange={setMicPermission}
+        />
       </div>
     );
   }
@@ -507,17 +562,28 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-4">
-        <button
-          onClick={toggleRecording}
-          className={`flex items-center gap-2 px-8 py-3 rounded-xl text-sm font-bold transition select-none ${
-            isRecording
-              ? 'bg-sky-500 hover:bg-sky-400 text-white shadow-lg shadow-sky-500/20'
-              : 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-          }`}
+        <div
+          className="w-full max-w-xl rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-gray-200"
+          role="status"
+          aria-live="polite"
         >
-          <span>{isRecording ? '🎤' : '🔇'}</span>
-          {isRecording ? 'Mic On (Auto Listen)' : 'Mic Off'}
-        </button>
+          <p className="font-mono text-xs tracking-wider text-gray-400">
+            {micPermission === 'requesting'
+              ? 'MIC PERMISSION: REQUESTING'
+              : micPermission === 'granted'
+              ? 'MIC PERMISSION: GRANTED'
+              : 'MIC PERMISSION: DENIED'}
+          </p>
+          <p className="mt-1 font-mono text-xs tracking-wider text-sky-300">
+            {micPermission !== 'granted'
+              ? 'MIC STATE: BLOCKED'
+              : adamSpeaking || faceState === 'speaking'
+              ? 'MIC STATE: SPEAKING (MIC OFF)'
+              : isRecording
+              ? 'MIC STATE: LISTENING'
+              : 'MIC STATE: LISTENING (INITIALIZING)'}
+          </p>
+        </div>
         <button
           onClick={endSession}
           className="px-4 py-3 border border-white/20 hover:border-red-500/50 hover:text-red-400 text-gray-400 rounded-xl text-sm font-semibold transition"
@@ -528,7 +594,11 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
       {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
 
-      <AudioCapture isRecording={isRecording} onAudioChunk={sendAudioChunk} />
+      <AudioCapture
+        isRecording={isRecording}
+        onAudioChunk={sendAudioChunk}
+        onPermissionChange={setMicPermission}
+      />
     </div>
   );
 }
