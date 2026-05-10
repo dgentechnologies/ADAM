@@ -109,9 +109,16 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
   let isClosing = false;
 
   // ── Speaking gate (mirrors Python adam_speaking asyncio.Event) ────────────
-  // While ADAM is outputting audio, discard all inbound mic chunks so ADAM
-  // cannot hear its own voice and start responding to itself.
-  const adamSpeakingRef = { current: false };
+  // While ADAM is outputting audio, discard inbound mic chunks so ADAM
+  // cannot hear its own voice and respond to itself.
+  //
+  // Important: Live streams can occasionally miss turnComplete; this gate is
+  // therefore self-healing via blockUntilMs so mic audio is never blocked
+  // forever after the intro or any long response.
+  const adamSpeakingRef = {
+    current: false,
+    blockUntilMs: 0,
+  };
 
   const endOnce = (reason) => {
     if (ended) return;
@@ -233,7 +240,11 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
       if (!session) return;
       // Drop mic audio while ADAM is speaking — prevents ADAM hearing its own
       // voice output (mirrors Python: `if adam_speaking.is_set(): continue`)
-      if (adamSpeakingRef.current) return;
+      if (adamSpeakingRef.current) {
+        // Fallback recovery: if the gate outlived its expected window, reopen.
+        if (Date.now() < adamSpeakingRef.blockUntilMs) return;
+        adamSpeakingRef.current = false;
+      }
       try {
         session.sendRealtimeInput({
           audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
@@ -277,6 +288,16 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session, 
   // Log raw message structure for debugging (remove after confirmed working)
   log(`Gemini msg keys: ${Object.keys(message).join(', ')}`);
 
+  const holdSpeakingGate = (ms) => {
+    adamSpeakingRef.current = true;
+    adamSpeakingRef.blockUntilMs = Date.now() + ms;
+  };
+
+  const releaseSpeakingGate = () => {
+    adamSpeakingRef.current = false;
+    adamSpeakingRef.blockUntilMs = 0;
+  };
+
   if (message.setupComplete) {
     log('Gemini setup complete');
     return;
@@ -289,7 +310,8 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session, 
     for (const part of sc.modelTurn?.parts ?? []) {
       if (part.inlineData?.data) {
         // Mark ADAM as speaking — gate all inbound mic audio until turn_complete
-        adamSpeakingRef.current = true;
+        // Keep extending the block window while audio chunks continue.
+        holdSpeakingGate(1500);
         sendToClient({ type: 'audio', data: part.inlineData.data });
         sendToClient({ type: 'face_state', state: 'speaking' });
       }
@@ -309,7 +331,15 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session, 
       sendToClient({ type: 'face_state', state: 'idle' });
       // Clear speaking gate after 400ms post-speech buffer
       // (mirrors Python POST_SPEECH_MUTE_S = 0.4 before adam_speaking.clear())
-      setTimeout(() => { adamSpeakingRef.current = false; }, 400);
+      setTimeout(() => { releaseSpeakingGate(); }, 400);
+    }
+
+    // Some streams can end a generation without emitting turnComplete.
+    // Treat these as safe points to release the speaking gate as a fallback.
+    if ((sc.generationComplete || sc.interrupted) && adamSpeakingRef.current) {
+      sendToClient({ type: 'turn_complete' });
+      sendToClient({ type: 'face_state', state: 'idle' });
+      setTimeout(() => { releaseSpeakingGate(); }, 400);
     }
     return;
   }

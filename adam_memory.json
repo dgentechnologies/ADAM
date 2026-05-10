@@ -29,5 +29,19 @@
   "story_favorite_sher_lakhnavi_20260416_1555": "वो चुप रहें तो कयामत आए,\nवो बोलें तो फूल झड़ें,\nउस शख़्स की बातों का हम,\nक्या किस्सा बयान करें।",
   "story_favorite_filmi_ghazal_mix_20260416_1556": "चलते चलते यूँ ही खो जाते हैं हम,\nयादों के साये में सो जाते हैं हम।\nतुमने जो आवाज़ दी थी उस पल,\nधड़कन में जैसे घुल जाते हैं हम।\nकभी सोचा न था कि ऐसा होगा,\nपुरानी बातों में ढल जाते हैं हम।\nहर हँसी, हर आँसू अपना लगता है,\nतुम्हारे ख्यालों में सिमट जाते हैं हम।",
   "story_dgen_team_ghazal_20260416_1557": "T-Man, सग्गू और अरपन की यारी,\nसुखमल जब आए तो मस्ती भारी!\nस्नेहा दिखाती मार्केटिंग का कमाल,\nनंदिनी जब आए, तो क्या कहना यार!",
-  "presentation_to_sukomal": "सुनाना: 1. लखनवी शेर (\"वो चुप रहें...\"). 2. फिल्मी गजल (\"चलते चलते...\"). 3. टीम गजल (\"T-Man, सग्गू...\"). 4. निकनेम्स: स्नेहा='पब्लिकिटी क्वीन', सुखमल='मनी मास्टर'"
+  "presentation_to_sukomal": "सुनाना: 1. लखनवी शेर (\"वो चुप रहें...\"). 2. फिल्मी गजल (\"चलते चलते...\"). 3. टीम गजल (\"T-Man, सग्गू...\"). 4. निकनेम्स: स्नेहा='पब्लिकिटी क्वीन', सुखमल='मनी मास्टर'",
+  "identified_person_sagnik": "Confirmed visually that the person on the left is Sagnik Mandal. Date: 2026-05-10.",
+  "user_shirt_color": "orange polo",
+  "project_object_visual_confirmed": "circular device with screen shown again",
+  "adam_hardware_status": "in progress, 3D printed head assembly shown with servo",
+  "adam_neck_servo_demo": "User demonstrated physical neck movement using a blue servo, and the 3D printed head structure again. Tirthankar was speaking directly to ADAM.",
+  "adam_screen_hardware_showcased": "User showed a white, rectangular object with multiple wires attached. It appears to be another component for the ADAM hardware assembly, likely the screen module. Date: 2026-05-10.",
+  "last_interaction_context": "Sukomal introduced himself and mentioned a previous photo request.",
+  "user_instruction_neck_movement": "User wants me to move my neck while speaking to appear more natural and realistic.",
+  "west_bengal_2026_winner": "BJP",
+  "west_bengal_2026_cm": "Subhendu Adhikari",
+  "current_mood_sarcastic": "true",
+  "last_movement_requested": "pan_left_right",
+  "neck_movement_error": "panning_opposite_or_stuck",
+  "mouth_movement_error": "not_syncing_properly"
 }

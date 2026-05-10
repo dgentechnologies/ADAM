@@ -1,29 +1,30 @@
 {
   "friend_sukomal": {
     "name": "Sukomal Debnath",
-    "appearance": "light gray button up shirt, full beard and moustache, short hair",
-    "voice_cues": "",
-    "relationship": "friend",
-    "notes": "Sukomal joined the conversation, wants to joke around. | Sukomal joined the conversation, wants to joke around. | Sukomal joined and wants to joke around. Current time: Sunday, April 12, 2026 at 7:41 AM UTC. | Sukomal joined the conversation, wants to joke around. Current time: Thursday, April 16, 2026 at 10:28 AM UTC.",
-    "last_seen": "2026-04-16 15:58",
+    "appearance": "Medium build, short dark hair, clean shaven, wearing a white shirt. Looking directly at the camera.",
+    "voice_cues": "Bengali accent, slightly higher pitch than Tirthankar",
+    "relationship": "friend / CFO of DGEN",
+    "notes": "Introduced himself as Sukomal, the CFO of DGEN. User confirmed recognition and wants photo saved.",
+    "last_seen": "2026-05-10 18:27",
     "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\friend_sukomal.jpg"
   },
   "friend_sneha": {
     "name": "Sneha",
-    "appearance": "medium build, round face, dark hair, wearing a patterned tunic, standing against a plain wall.",
-    "voice_cues": "Unknown, not heard speaking.",
+    "appearance": "medium build, short dark hair, clean shaven, wearing a brown shirt",
+    "voice_cues": "Bengali accent, slightly hushed tone",
     "relationship": "friend",
-    "notes": "Seen again with the user. | User brought Sneha again. Sneha is now speaking directly into a microphone, looking calm. | Seen again in visual frame. | Identified visually. Looking at camera, speaking Bengali.",
-    "last_seen": "2026-04-07 16:31"
+    "notes": "",
+    "last_seen": "2026-05-10 18:54",
+    "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\friend_sneha.jpg"
   },
   "tirthankar_main": {
     "name": "Tirthankar Dasgupta",
     "appearance": "medium build, short dark hair, clean shaven, wearing an olive green tshirt. sitting in a brightly lit room with white walls, with a sliding window behind.",
     "voice_cues": "medium-low pitch, moderate pace, calm voice, speaking English.",
     "relationship": "acquaintance",
-    "notes": "Tirthankar was visually identified again. Looking happy with his colleague Arpan. | User stressed, reminding ADAM of developer status and power over me. Dropping sarcasm, using supportive tone.",
-    "last_seen": "2026-04-16 15:38",
-    "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\tirthankar_main_full.jpg"
+    "notes": "Tirthankar was visually identified again. Looking happy with his colleague Arpan. | User stressed, reminding ADAM of developer status and power over me. Dropping sarcasm, using supportive tone. | User (Tirthankar) visually recognized. Looking directly at camera, speaking. Is wearing an orange polo shirt.",
+    "last_seen": "2026-05-10 16:12",
+    "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\tirthankar_main.jpg"
   },
   "unknown_person_01": {
     "name": "unknown_friend",
@@ -59,11 +60,12 @@
   },
   "friend_sagnik": {
     "name": "Sagnik Mandal",
-    "appearance": "wearing glasses, brown t-shirt, short hair",
+    "appearance": "",
     "voice_cues": "",
     "relationship": "friend / CMO of DGEN",
-    "notes": "Corrected identity from previous guess; confirmed friend. | Sagnik called me 'Adu Buro' jokingly. Seems cheerful. | Sagnik reacted with surprise/confusion to my comment, laughing with Tirthankar. Time: 2026-04-12 07:40 AM UTC.",
-    "last_seen": "2026-04-12 13:10"
+    "notes": "",
+    "last_seen": "2026-05-10 16:04",
+    "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\friend_sagnik_full.jpg"
   },
   "nandini_screen": {
     "name": "Nandini",
@@ -73,5 +75,14 @@
     "notes": "",
     "last_seen": "2026-04-12 13:20",
     "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\nandini_screen.jpg"
+  },
+  "abhishek_da": {
+    "name": "Abhishek Da",
+    "appearance": "Medium build, short dark hair, full beard and moustache, wearing glasses and a white tshirt.",
+    "voice_cues": "Bengali accent, medium pitch",
+    "relationship": "friend",
+    "notes": "",
+    "last_seen": "2026-05-10 15:51",
+    "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\abhishek_da.jpg"
   }
 }

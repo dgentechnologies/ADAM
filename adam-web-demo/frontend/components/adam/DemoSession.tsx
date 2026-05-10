@@ -42,6 +42,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const transcriptRef    = useRef<HTMLDivElement>(null);
+  const manualMicOffRef  = useRef(false);
 
   // ── Audio playback (gapless scheduled) ──────────────────────────────────
 
@@ -80,6 +81,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         setState('active');
         setTurnsAllowed(msg.turnsAllowed);
         setDurationMs(msg.durationMs);
+        manualMicOffRef.current = false;
         setIsRecording(true);
         setFaceState('listening');
         break;
@@ -106,6 +108,9 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         // Mute microphone while ADAM is speaking so ADAM cannot hear its own
         // voice output (mirrors Python: adam_speaking.is_set() gate in send())
         if (msg.state === 'speaking') setIsRecording(false);
+        if ((msg.state === 'idle' || msg.state === 'listening') && !manualMicOffRef.current && stateRef.current === 'active') {
+          setIsRecording(true);
+        }
         break;
       case 'emotion':
         setEmotion(msg.emotion);
@@ -130,7 +135,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         // Re-enable mic after 400ms post-speech buffer
         // (mirrors Python POST_SPEECH_MUTE_S = 0.4 before mic re-open)
         setTimeout(() => {
-          if (stateRef.current === 'active') setIsRecording(true);
+          if (stateRef.current === 'active' && !manualMicOffRef.current) setIsRecording(true);
         }, 400);
         break;
       case 'session_end':
@@ -243,6 +248,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
   const toggleRecording = () => {
     setIsRecording((prev) => {
       const next = !prev;
+      manualMicOffRef.current = !next;
       if (!next) setFaceState('idle');
       return next;
     });

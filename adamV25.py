@@ -122,8 +122,19 @@ FACE_DETECT_MIN_NEIGHBORS   = 4
 MOUTH_MOVEMENT_SENSITIVITY  = 6.0  # brightness delta to count as "speaking"
 SPEAKER_INERTIA_FRAMES      = 10   # frames before switching active speaker
 
-# Physical neck tracking — pan toward speaker if off-centre by this many degrees
-NECK_TRACK_DEADZONE = 12   # degrees from centre before moving
+# Physical neck tracking
+PAN_CENTER              = 90   # servo centre for pan
+TILT_CENTER             = 85   # servo centre for tilt
+NECK_TRACK_DEADZONE     = 8    # pan deadband (degrees)
+NECK_TILT_DEADZONE      = 6    # tilt deadband (degrees)
+NECK_TRACK_INTERVAL_S   = 0.20 # tracking update interval
+NECK_TRACK_MAX_STEP_DEG = 6    # max degrees moved per tracking update
+NECK_CENTER_HOLD_S      = 2.5  # no-face delay before gently recentering
+
+NECK_PAN_MIN            = 30
+NECK_PAN_MAX            = 150
+NECK_TILT_MIN           = 50
+NECK_TILT_MAX           = 120
 
 WAKE_WORDS      = ["adam", "hey adam", "ok adam", "okay adam"]
 VOSK_MODEL_PATH = "vosk-model-small-en-in-0.4"
@@ -1171,8 +1182,10 @@ async def run_session(
                 consec_fail = 0
                 MAX_FAIL    = 10
                 last_sent   = 0.0
-                last_pan_t  = 0.0          # throttle physical neck panning
-                PAN_INTERVAL = 0.5         # seconds between neck pan updates
+                last_track_t = 0.0
+                last_face_t  = time.time()
+                current_pan  = PAN_CENTER
+                current_tilt = TILT_CENTER
 
                 try:
                     cap = cv2.VideoCapture(CAMERA_INDEX)
@@ -1220,20 +1233,79 @@ async def run_session(
                                     and elapsed > 8.0):
                                 await attention.deactivate("no-face-in-frame")
 
-                        # Physical head tracking: pan toward active speaker
+                        # Physical head tracking: smooth pan + tilt toward active speaker.
+                        # Keep this active even while ADAM is speaking.
                         now = time.time()
                         if (neck_is_ready()
-                                and not adam_speaking.is_set()
-                                and now - last_pan_t >= PAN_INTERVAL):
+                                and now - last_track_t >= NECK_TRACK_INTERVAL_S):
                             spk_idx = tr.get("active_speaker_idx")
                             faces_  = tr.get("faces", [])
-                            if spk_idx is not None and spk_idx < len(faces_):
-                                cx = faces_[spk_idx]["cx_norm"]  # 0.0=left … 1.0=right
-                                # Camera is mirrored: invert mapping
-                                target_pan = int(150 - cx * (150 - 30))
-                                if abs(target_pan - 90) > NECK_TRACK_DEADZONE:
-                                    await asyncio.to_thread(pan, target_pan)
-                                    last_pan_t = now
+
+                            target_pan = None
+                            target_tilt = None
+
+                            if faces_:
+                                # Prefer active speaker; fallback to first visible face.
+                                if spk_idx is not None and spk_idx < len(faces_):
+                                    tf = faces_[spk_idx]
+                                else:
+                                    tf = faces_[0]
+
+                                cx = float(tf["cx_norm"])  # 0.0=left … 1.0=right
+                                cy = float(tf["cy_norm"])  # 0.0=top  … 1.0=bottom
+
+                                # Camera is mirrored horizontally: invert pan mapping.
+                                target_pan = int(round(
+                                    NECK_PAN_MAX - cx * (NECK_PAN_MAX - NECK_PAN_MIN)
+                                ))
+                                target_tilt = int(round(
+                                    NECK_TILT_MIN + cy * (NECK_TILT_MAX - NECK_TILT_MIN)
+                                ))
+                                last_face_t = now
+                            elif now - last_face_t >= NECK_CENTER_HOLD_S:
+                                # If faces are absent for a while, drift back to neutral.
+                                target_pan = PAN_CENTER
+                                target_tilt = TILT_CENTER
+
+                            if target_pan is not None and target_tilt is not None:
+                                target_pan = int(np.clip(target_pan, NECK_PAN_MIN, NECK_PAN_MAX))
+                                target_tilt = int(np.clip(target_tilt, NECK_TILT_MIN, NECK_TILT_MAX))
+
+                                pan_err = target_pan - current_pan
+                                tilt_err = target_tilt - current_tilt
+
+                                pan_step = 0
+                                tilt_step = 0
+                                if abs(pan_err) > NECK_TRACK_DEADZONE:
+                                    pan_step = int(np.clip(
+                                        pan_err,
+                                        -NECK_TRACK_MAX_STEP_DEG,
+                                        NECK_TRACK_MAX_STEP_DEG,
+                                    ))
+                                if abs(tilt_err) > NECK_TILT_DEADZONE:
+                                    tilt_step = int(np.clip(
+                                        tilt_err,
+                                        -NECK_TRACK_MAX_STEP_DEG,
+                                        NECK_TRACK_MAX_STEP_DEG,
+                                    ))
+
+                                if pan_step != 0:
+                                    current_pan = int(np.clip(
+                                        current_pan + pan_step,
+                                        NECK_PAN_MIN,
+                                        NECK_PAN_MAX,
+                                    ))
+                                    await asyncio.to_thread(pan, current_pan)
+
+                                if tilt_step != 0:
+                                    current_tilt = int(np.clip(
+                                        current_tilt + tilt_step,
+                                        NECK_TILT_MIN,
+                                        NECK_TILT_MAX,
+                                    ))
+                                    await asyncio.to_thread(tilt, current_tilt)
+
+                            last_track_t = now
 
                         # Send annotated frame to Gemini at 1 FPS when active
                         if (now - last_sent >= CAMERA_FPS_INTERVAL
