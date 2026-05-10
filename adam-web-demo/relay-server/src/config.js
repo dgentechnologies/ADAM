@@ -76,10 +76,10 @@ export const CONFIG = {
 };
 
 export const SESSION_CAPS = {
-  MAX_DURATION_MS:       5 * 60 * 1000,  // 5 minutes per session
-  MAX_TURNS:             20,              // 20 conversation turns
-  MAX_SESSIONS_PER_DAY:  3,              // per Firebase UID
-  COOLDOWN_MS:           10 * 60 * 1000, // 10 min between sessions
+  MAX_DURATION_MS:         5 * 60 * 1000,  // 5 minutes per session
+  MAX_TURNS:               20,             // 20 conversation turns
+  // Regular users get exactly ONE lifetime session (no repeats, no daily resets).
+  MAX_SESSIONS_LIFETIME:   1,
 };
 
 // UIDs that bypass all session caps (internal testers / devs).

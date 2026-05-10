@@ -30,6 +30,7 @@ export async function upsertUser({ uid, email, name }) {
       createdAt:           FieldValue.serverTimestamp(),
       lastSeenAt:          FieldValue.serverTimestamp(),
       demoSessionsToday:   0,
+      totalDemoSessions:   0,
       lastSessionDate:     null,
       waitlisted:          false,
     });
@@ -91,8 +92,9 @@ export async function incrementSessionsToday(uid) {
     const isSameDay = data.lastSessionDate === today;
 
     tx.update(ref, {
-      demoSessionsToday: isSameDay ? FieldValue.increment(1) : 1,
-      lastSessionDate:   today,
+      demoSessionsToday:  isSameDay ? FieldValue.increment(1) : 1,
+      totalDemoSessions:  FieldValue.increment(1),
+      lastSessionDate:    today,
     });
   });
 }

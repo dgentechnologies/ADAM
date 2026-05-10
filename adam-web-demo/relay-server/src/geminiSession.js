@@ -306,37 +306,43 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session, 
   if (message.serverContent) {
     const sc = message.serverContent;
 
-    // Audio arrives as inlineData inside modelTurn parts
+    // Audio arrives as inlineData inside modelTurn parts.
+    // NOTE: do NOT send part.text as an ADAM transcript here — outputTranscription
+    // is the canonical transcript of the audio response. Sending both causes
+    // duplicate ADAM bubbles on the client.
     for (const part of sc.modelTurn?.parts ?? []) {
       if (part.inlineData?.data) {
-        // Mark ADAM as speaking — gate all inbound mic audio until turn_complete
+        // Mark ADAM as speaking — gate all inbound mic audio until turn_complete.
         // Keep extending the block window while audio chunks continue.
         holdSpeakingGate(1500);
         sendToClient({ type: 'audio', data: part.inlineData.data });
         sendToClient({ type: 'face_state', state: 'speaking' });
       }
-      if (part.text) {
-        sendToClient({ type: 'transcript', text: part.text, role: 'adam' });
-      }
+      // part.text in AUDIO-only mode is internal tool/annotation text — skip it.
     }
 
     if (sc.inputTranscription?.text) {
       sendToClient({ type: 'transcript', text: sc.inputTranscription.text, role: 'user' });
     }
+    // Canonical ADAM transcript: transcription of the audio output only.
     if (sc.outputTranscription?.text) {
       sendToClient({ type: 'transcript', text: sc.outputTranscription.text, role: 'adam' });
     }
+
+    // Guard flag: prevents generationComplete from emitting a duplicate turn_complete
+    // when turnComplete is already present in the same message.
+    let turnCompleteEmitted = false;
+
     if (sc.turnComplete) {
+      turnCompleteEmitted = true;
       sendToClient({ type: 'turn_complete' });
       sendToClient({ type: 'face_state', state: 'idle' });
-      // Clear speaking gate after 400ms post-speech buffer
-      // (mirrors Python POST_SPEECH_MUTE_S = 0.4 before adam_speaking.clear())
       setTimeout(() => { releaseSpeakingGate(); }, 400);
     }
 
-    // Some streams can end a generation without emitting turnComplete.
-    // Treat these as safe points to release the speaking gate as a fallback.
-    if ((sc.generationComplete || sc.interrupted) && adamSpeakingRef.current) {
+    // Some streams end a generation without emitting turnComplete.
+    // Only emit here if we haven't already done so above.
+    if ((sc.generationComplete || sc.interrupted) && adamSpeakingRef.current && !turnCompleteEmitted) {
       sendToClient({ type: 'turn_complete' });
       sendToClient({ type: 'face_state', state: 'idle' });
       setTimeout(() => { releaseSpeakingGate(); }, 400);

@@ -6,7 +6,6 @@ import { AdamFace } from './AdamFace';
 import { AdamModelViewer } from './AdamModelViewer';
 import { AudioCapture } from './AudioCapture';
 import { SessionTimer } from './SessionTimer';
-import styles from './DemoSession.module.css';
 import type {
   ClientMessage,
   ServerMessage,
@@ -401,111 +400,172 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
     );
   }
 
-  // ── Fullscreen active layout ──────────────────────────────────────────────
+  // ── Fullscreen active layout — full-viewport dark with floating glass panels ──
   if (fullscreen) {
     const recentTranscripts = transcripts.slice(-8);
+
     const statusLabel =
-      faceState === 'listening' ? '● LISTENING'
-      : faceState === 'speaking' ? '▶ SPEAKING'
-      : '— IDLE';
-    const statusTone =
-      faceState === 'listening' ? '#0a84ff'
-      : faceState === 'speaking' ? '#1d1d1f'
-      : '#6e6e73';
+      faceState === 'listening' ? 'LISTENING'
+      : faceState === 'speaking' ? 'SPEAKING'
+      : 'IDLE';
+    const statusColor =
+      faceState === 'listening' ? '#4AF0FF'
+      : faceState === 'speaking' ? '#ff9f0a'
+      : '#555';
+
     const micPermissionLabel =
       micPermission === 'requesting' ? 'MIC PERMISSION: REQUESTING'
-      : micPermission === 'granted' ? 'MIC PERMISSION: GRANTED'
+      : micPermission === 'granted'   ? 'MIC PERMISSION: GRANTED'
       : 'MIC PERMISSION: DENIED';
     const micStateLabel =
-      micPermission !== 'granted' ? 'MIC STATE: BLOCKED'
-      : adamSpeaking || faceState === 'speaking' ? 'MIC STATE: SPEAKING (MIC OFF)'
-      : isRecording ? 'MIC STATE: LISTENING'
+      micPermission !== 'granted'                        ? 'MIC STATE: BLOCKED'
+      : adamSpeaking || faceState === 'speaking'         ? 'MIC STATE: SPEAKING (MIC OFF)'
+      : isRecording                                      ? 'MIC STATE: LISTENING'
       : 'MIC STATE: LISTENING (INITIALIZING)';
 
-    return (
-      <div className={styles.shell}>
-        <div className={styles.ambientTop} />
-        <div className={styles.ambientBottom} />
-        <div className={styles.gridTexture} />
+    // Shared glass morphism style object
+    const glass: React.CSSProperties = {
+      background: 'rgba(10, 14, 18, 0.58)',
+      backdropFilter: 'blur(24px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderTop: '1px solid rgba(255,255,255,0.13)',
+      borderRadius: 18,
+      boxShadow: '0 0 0 1px rgba(255,255,255,0.03), 0 20px 60px rgba(0,0,0,0.7)',
+    };
 
-        <div className={styles.topBar}>
-          <div className={styles.brandBadge}>
-            <span className={styles.brandDot} />
-            <span className={styles.brandText}>ADAM LIVE DEMO</span>
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: '#080a0c', overflow: 'hidden', fontFamily: '"DM Sans", sans-serif' }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap');
+          @keyframes adamCursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
+          @keyframes statusGlow { 0%,100%{opacity:0.7} 50%{opacity:1} }
+          ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+        `}</style>
+
+        {/* ── Full-viewport 3D model as background, left-aligned ── */}
+        <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+          <AdamModelViewer modelPath="/models/adam-body.fbx" faceState={faceState} />
+        </div>
+
+        {/* ── Right-side gradient vignette — darkens the right to contrast panels ── */}
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
+          background: 'linear-gradient(to right, transparent 18%, rgba(8,10,12,0.45) 44%, rgba(8,10,12,0.82) 66%, rgba(8,10,12,0.97) 85%)',
+        }} />
+        {/* Top vignette */}
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none', background: 'linear-gradient(to bottom, rgba(8,10,12,0.55) 0%, transparent 12%)' }} />
+
+        {/* ── Top bar (floats over everything) ── */}
+        <div style={{ position: 'absolute', top: 16, left: 20, right: 20, zIndex: 30, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          {/* Brand badge */}
+          <div style={{ ...glass, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 999 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4AF0FF', boxShadow: '0 0 8px #4AF0FF', flexShrink: 0 }} />
+            <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.18em' }}>ADAM LIVE DEMO</span>
           </div>
-          <div className={styles.timerWrap}>
+          {/* Timer pill */}
+          <div style={{ ...glass, padding: '6px 14px', borderRadius: 999 }}>
             <SessionTimer durationMs={durationMs} turnsAllowed={turnsAllowed} turnCount={turnCount} onExpire={endSession} compact />
           </div>
         </div>
 
-        <main className={styles.mainLayout}>
-          <section className={styles.stagePane}>
-            <div className={styles.stageSubhead}>ADAM 3D PREVIEW</div>
-            <h2 className={styles.stageTitle}>Autonomous Desktop AI Module</h2>
+        {/* ── Status badge — bottom-left, over model ── */}
+        <div style={{ position: 'absolute', bottom: 28, left: 28, zIndex: 20 }}>
+          <div style={{ ...glass, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderRadius: 999 }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: statusColor, boxShadow: `0 0 10px ${statusColor}`,
+              flexShrink: 0,
+              animation: faceState === 'listening' ? 'statusGlow 1.6s ease-in-out infinite' : 'none',
+            }} />
+            <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 10, letterSpacing: '0.16em', color: statusColor }}>{statusLabel}</span>
+          </div>
+        </div>
 
-            <div className={styles.modelViewport}>
-              <AdamModelViewer modelPath="/models/adam-body.fbx" faceState={faceState} />
-            </div>
+        {/* ── Right floating panel column ── */}
+        <div style={{
+          position: 'absolute', top: 76, right: 18, bottom: 18,
+          width: 'clamp(300px, 28vw, 400px)', maxWidth: 'calc(100vw - 40px)',
+          zIndex: 20, display: 'flex', flexDirection: 'column', gap: 10,
+        }}>
 
-            <div className={styles.statusRow}>
-              <span className={styles.statusText} style={{ color: statusTone }}>{statusLabel}</span>
-            </div>
-          </section>
-
-          <aside className={styles.chatPane}>
-            <header className={styles.chatHeader}>
+          {/* Conversation card */}
+          <div style={{ ...glass, flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 16px', gap: 10, minHeight: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
               <div>
-                <p className={styles.chatTitle}>Live Conversation</p>
-                <p className={styles.chatHint}>Your messages and ADAM responses appear in real time.</p>
+                <p style={{ margin: 0, fontFamily: '"Rajdhani", sans-serif', fontSize: 24, fontWeight: 600, letterSpacing: '0.02em', color: '#f0f0f0', lineHeight: 1.1 }}>Live Conversation</p>
+                <p style={{ margin: '3px 0 0', fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.1em' }}>REAL-TIME VOICE TRANSCRIPT</p>
               </div>
               <button
                 onClick={endSession}
                 title="End session"
                 aria-label="End session"
-                className={styles.endSessionBtn}
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.45)', borderRadius: 10, padding: '6px 14px', fontFamily: '"Share Tech Mono", monospace', fontSize: 9, letterSpacing: '0.1em', cursor: 'pointer', flexShrink: 0, transition: 'background 0.15s, color 0.15s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,80,80,0.12)'; e.currentTarget.style.color = '#ff6b6b'; e.currentTarget.style.borderColor = 'rgba(255,80,80,0.3)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.45)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                onFocus={(e) => { e.currentTarget.style.outline = '2px solid rgba(255,80,80,0.5)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
               >
-                End
+                END
               </button>
-            </header>
+            </div>
 
-            <div ref={transcriptRef} className={styles.transcriptPanel} aria-live="polite">
+            {/* Transcript scroll area */}
+            <div
+              ref={transcriptRef}
+              style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, minHeight: 0 }}
+              aria-live="polite"
+            >
               {recentTranscripts.length === 0 && (
-                <p className={styles.emptyState}>Mic activates automatically after permission is granted.</p>
+                <p style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.18)', letterSpacing: '0.08em', textAlign: 'center', marginTop: 24, padding: '0 12px' }}>
+                  Mic activates automatically after permission is granted.
+                </p>
               )}
               {recentTranscripts.map((t, i) => (
-                <article key={i} className={`${styles.msgRow} ${t.role === 'user' ? styles.msgRight : styles.msgLeft}`}>
-                  <div className={`${styles.msgBubble} ${t.role === 'user' ? styles.userBubble : styles.adamBubble}`}>
-                    {t.role === 'adam' && <span className={styles.msgTag}>ADAM</span>}
-                    <span>{t.text}</span>
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: t.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                  {t.role === 'adam' && (
+                    <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 8, letterSpacing: '0.14em', color: '#4AF0FF', marginBottom: 4, paddingLeft: 2 }}>ADAM</span>
+                  )}
+                  <div style={{
+                    maxWidth: '88%',
+                    padding: '9px 13px',
+                    borderRadius: t.role === 'adam' ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                    background: t.role === 'adam' ? 'rgba(74,240,255,0.07)' : 'rgba(255,255,255,0.06)',
+                    border: t.role === 'adam' ? '1px solid rgba(74,240,255,0.14)' : '1px solid rgba(255,255,255,0.07)',
+                    fontSize: 13, color: t.role === 'adam' ? '#dff6ff' : '#c8c8c8', lineHeight: 1.6,
+                  }}>
+                    {t.text}
                     {t.role === 'adam' && t.inProgress && (
-                      <span className={styles.typingCursor} aria-hidden="true" />
+                      <span aria-hidden="true" style={{ display: 'inline-block', width: 2, height: '0.85em', background: '#4AF0FF', marginLeft: 3, verticalAlign: 'middle', borderRadius: 1, animation: 'adamCursorBlink 0.8s step-end infinite' }} />
                     )}
                   </div>
-                </article>
+                </div>
               ))}
             </div>
+          </div>
 
-            <div className={styles.controlsPanel}>
-              <div className={styles.micStatusPanel} role="status" aria-live="polite">
-                <span className={styles.micStatusText}>{micPermissionLabel}</span>
-                <span className={styles.micStatusText}>{micStateLabel}</span>
-              </div>
+          {/* Mic status card */}
+          <div style={{ ...glass, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 4 }} role="status" aria-live="polite">
+            <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, letterSpacing: '0.1em', color: micPermission === 'denied' ? '#ff453a' : micPermission === 'granted' ? 'rgba(74,240,255,0.65)' : 'rgba(255,255,255,0.3)' }}>{micPermissionLabel}</span>
+            <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, letterSpacing: '0.1em', color: isRecording && !adamSpeaking ? '#4AF0FF' : 'rgba(255,255,255,0.28)' }}>{micStateLabel}</span>
+          </div>
 
-              <div className={styles.metaGrid}>
-                <div className={styles.metaCard}>
-                  <span className={styles.metaLabel}>Turns</span>
-                  <span className={styles.metaValue}>{turnCount}/{turnsAllowed}</span>
-                </div>
-                <div className={styles.metaCard}>
-                  <span className={styles.metaLabel}>Connection</span>
-                  <span className={styles.metaValue}>{state === 'active' ? 'Stable' : 'Pending'}</span>
-                </div>
-              </div>
-
-              {errorMsg && <p className={styles.errorText}>{errorMsg}</p>}
+          {/* Meta cards row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ ...glass, padding: '10px 14px' }}>
+              <p style={{ margin: 0, fontFamily: '"Share Tech Mono", monospace', fontSize: 8, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)' }}>TURNS</p>
+              <p style={{ margin: '5px 0 0', fontFamily: '"DM Sans", sans-serif', fontSize: 15, fontWeight: 500, color: '#f0f0f0' }}>{turnCount} <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>/ {turnsAllowed}</span></p>
             </div>
-          </aside>
-        </main>
+            <div style={{ ...glass, padding: '10px 14px' }}>
+              <p style={{ margin: 0, fontFamily: '"Share Tech Mono", monospace', fontSize: 8, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)' }}>CONNECTION</p>
+              <p style={{ margin: '5px 0 0', fontFamily: '"DM Sans", sans-serif', fontSize: 15, fontWeight: 500, color: state === 'active' ? '#32d74b' : '#ff9f0a' }}>{state === 'active' ? 'Stable' : 'Pending'}</p>
+            </div>
+          </div>
+
+          {errorMsg && (
+            <p style={{ margin: 0, fontFamily: '"Share Tech Mono", monospace', fontSize: 10, color: '#ff453a', letterSpacing: '0.06em', paddingLeft: 4 }}>{errorMsg}</p>
+          )}
+        </div>
 
         <AudioCapture
           isRecording={isRecording}

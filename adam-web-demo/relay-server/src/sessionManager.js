@@ -5,31 +5,24 @@ import { SESSION_CAPS, isTester } from './config.js';
 // Map<uid, { sessionId, startedAt, turnCount, timerHandle }>
 const activeSessions = new Map();
 
-// Map<uid, cooldownEndTimestamp>
-const cooldownMap = new Map();
-
 /**
  * Check whether a user can start a new session.
  * @param {string} uid
- * @param {number} dailySessions - count from Firestore for today
+ * @param {number} totalSessions - lifetime session count from Firestore
  * @returns {{ allowed: boolean, reason?: string }}
  */
-export function canStartSession(uid, dailySessions) {
-  // Testers are always allowed — no cooldown, no daily cap, no active-session block.
+export function canStartSession(uid, totalSessions) {
+  // Testers bypass every cap — no limit of any kind.
   if (isTester(uid)) return { allowed: true };
 
+  // Block if a session is already in progress for this account.
   if (activeSessions.has(uid)) {
     return { allowed: false, reason: 'session_active' };
   }
 
-  const cooldownEnd = cooldownMap.get(uid);
-  if (cooldownEnd && Date.now() < cooldownEnd) {
-    const waitSec = Math.ceil((cooldownEnd - Date.now()) / 1000);
-    return { allowed: false, reason: `cooldown_${waitSec}s` };
-  }
-
-  if (dailySessions >= SESSION_CAPS.MAX_SESSIONS_PER_DAY) {
-    return { allowed: false, reason: 'daily_cap_reached' };
+  // Each non-tester account gets exactly one lifetime session.
+  if (totalSessions >= SESSION_CAPS.MAX_SESSIONS_LIFETIME) {
+    return { allowed: false, reason: 'lifetime_cap_reached' };
   }
 
   return { allowed: true };
@@ -40,7 +33,10 @@ export function canStartSession(uid, dailySessions) {
  */
 export function registerSession(uid, sessionId, onExpire) {
   const startedAt = Date.now();
-  const timerHandle = setTimeout(() => onExpire('timeout'), SESSION_CAPS.MAX_DURATION_MS);
+  // Testers have no time limit — their session runs until they disconnect.
+  const timerHandle = isTester(uid)
+    ? null
+    : setTimeout(() => onExpire('timeout'), SESSION_CAPS.MAX_DURATION_MS);
   activeSessions.set(uid, { sessionId, startedAt, turnCount: 0, timerHandle });
 }
 
@@ -73,10 +69,7 @@ export function removeSession(uid) {
     clearTimeout(session.timerHandle);
     activeSessions.delete(uid);
   }
-  // Testers have no cooldown.
-  if (!isTester(uid)) {
-    cooldownMap.set(uid, Date.now() + SESSION_CAPS.COOLDOWN_MS);
-  }
+  // No cooldown for anyone — regular users are blocked by the lifetime cap instead.
 }
 
 export function activeSessionCount() {

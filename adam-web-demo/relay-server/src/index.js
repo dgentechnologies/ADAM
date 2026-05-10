@@ -99,9 +99,8 @@ wss.on('connection', (ws, req) => {
   };
 
   const normalizeCapError = (reason) => {
-    if (reason === 'session_active') return 'An active session is already running.';
-    if (reason === 'daily_cap_reached') return 'Daily session limit reached. Please come back tomorrow.';
-    if (reason?.startsWith('cooldown_')) return `Please wait before starting another session (${reason.replace('cooldown_', '')}).`;
+    if (reason === 'session_active') return 'An active session is already running on this account.';
+    if (reason === 'lifetime_cap_reached') return 'You have already used your ADAM demo session. Join the waitlist to get the full experience: dgentechnologies.com/products/adam#waitlist';
     return 'Session unavailable right now. Please try again shortly.';
   };
 
@@ -170,12 +169,9 @@ wss.on('connection', (ws, req) => {
         // Upsert user doc in Firestore
         const userDoc = await upsertUser({ uid, email: userEmail, name: userName });
 
-        // Check capacity
-        const today           = new Date().toISOString().slice(0, 10);
-        const sessionsToday = userDoc.lastSessionDate === today
-          ? Number(userDoc.demoSessionsToday ?? 0)
-          : 0;
-        const { allowed, reason } = canStartSession(uid, sessionsToday);
+        // Check capacity — testers are unlimited; regular users get one lifetime session.
+        const totalSessions = Number(userDoc.totalDemoSessions ?? 0);
+        const { allowed, reason } = canStartSession(uid, totalSessions);
 
         if (!allowed) {
           send({ type: 'error', code: 'cap_exceeded', message: normalizeCapError(reason) });
