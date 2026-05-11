@@ -16,55 +16,58 @@
   }
   .label {
     color: #fff;
-    font-size: 13px;
-    letter-spacing: 4px;
+    font-size: 11px;
+    letter-spacing: 6px;
     text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0.4;
+    margin-bottom: 28px;
+    opacity: 0.3;
   }
-  svg { width: 320px; height: 200px; overflow: visible; }
-  .face { animation: sag 3s ease-in-out infinite; transform-origin: 160px 100px; }
-  .tear-l { animation: tear-drop-l 3s ease-in-out 1s infinite; }
-  .tear-r { animation: tear-drop-r 3s ease-in-out 1.5s infinite; }
-  .glow { animation: glow-sad 3s ease-in-out infinite; }
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .face { animation: sag 4s ease-in-out infinite; transform-origin: 160px 100px; }
+  .tear-l { animation: tear-drop 3.5s ease-in-out 1.2s infinite; }
+  .tear-r { animation: tear-drop 3.5s ease-in-out 2s infinite; }
+  .tear-trail-l { animation: tear-trail 3.5s ease-in-out 1.2s infinite; }
+  .tear-trail-r { animation: tear-trail 3.5s ease-in-out 2s infinite; }
+
   @keyframes sag {
     0%,100% { transform: translateY(0); }
-    50% { transform: translateY(3px); }
+    50% { transform: translateY(4px); }
   }
-  @keyframes tear-drop-l {
-    0%,60% { transform: translateY(0); opacity: 0; }
-    70% { opacity: 0.9; }
-    100% { transform: translateY(28px); opacity: 0; }
-  }
-  @keyframes tear-drop-r {
+  @keyframes tear-drop {
     0%,55% { transform: translateY(0); opacity: 0; }
-    65% { opacity: 0.9; }
-    100% { transform: translateY(28px); opacity: 0; }
+    62% { opacity: 1; }
+    100% { transform: translateY(35px); opacity: 0; }
   }
-  @keyframes glow-sad {
-    0%,100% { opacity: 0.06; }
-    50% { opacity: 0.12; }
+  @keyframes tear-trail {
+    0%,60% { opacity: 0; transform: scaleY(0); }
+    70% { opacity: 0.4; transform: scaleY(1); }
+    100% { opacity: 0; }
   }
 </style>
 </head>
 <body>
 <div class="label">ADAM · Sad</div>
 <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
   <g class="face">
-    <!-- Left eye: downward arc (U shape) -->
-    <path d="M 80 88 Q 105 112 130 88"
+    <!-- Left eye ∪ arc down -->
+    <path d="M 78 86 Q 105 112 132 86"
       stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <!-- Right eye: downward arc -->
-    <path d="M 190 88 Q 215 112 240 88"
+    <!-- Right eye ∪ arc down -->
+    <path d="M 188 86 Q 215 112 242 86"
       stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <!-- Sad mouth: small downward curve (frown) -->
-    <path d="M 148 142 Q 160 132 172 142"
+    <!-- Sad small frown -->
+    <path d="M 147 143 Q 160 133 173 143"
       stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
   </g>
+
   <!-- Tears -->
-  <ellipse class="tear-l" cx="105" cy="115" rx="3" ry="4.5" fill="#fff" opacity="0"/>
-  <ellipse class="tear-r" cx="215" cy="115" rx="3" ry="4.5" fill="#fff" opacity="0"/>
+  <ellipse class="tear-l" cx="105" cy="116" rx="3.5" ry="5" fill="#fff" opacity="0"/>
+  <ellipse class="tear-r" cx="215" cy="116" rx="3.5" ry="5" fill="#fff" opacity="0"/>
+
+  <!-- Tear trails (thin lines) -->
+  <line class="tear-trail-l" x1="105" y1="122" x2="103" y2="135" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0"/>
+  <line class="tear-trail-r" x1="215" y1="122" x2="213" y2="135" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0"/>
 </svg>
 </body>
 </html>

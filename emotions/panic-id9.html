@@ -16,37 +16,48 @@
   }
   .label {
     color: #fff;
-    font-size: 13px;
-    letter-spacing: 4px;
+    font-size: 11px;
+    letter-spacing: 6px;
     text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0.4;
+    margin-bottom: 28px;
+    opacity: 0.3;
   }
-  svg { width: 320px; height: 200px; overflow: visible; }
-  .face { animation: panic-shake 0.08s ease-in-out infinite; }
-  .stress-l { animation: stress-flash 0.6s ease-in-out infinite; }
-  .stress-r { animation: stress-flash 0.6s ease-in-out infinite 0.3s; }
-  .mouth { animation: mouth-panic 0.15s ease-in-out infinite; transform-origin: 160px 140px; }
-  .sweat { animation: sweat-drop 2s ease-in infinite; }
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .face { animation: panic-shake 0.07s ease-in-out infinite; }
+  .stress-l { animation: stress-flash 0.55s ease-in-out infinite; }
+  .stress-r { animation: stress-flash 0.55s ease-in-out infinite 0.28s; }
+  .mouth { animation: mouth-panic 0.14s ease-in-out infinite; transform-origin: 160px 143px; }
+  .sweat-1 { animation: sweat-drop 2.2s ease-in infinite 0.2s; }
+  .sweat-2 { animation: sweat-drop 2.2s ease-in infinite 1.3s; }
+  .eye-inner-l { animation: pupil-dart 0.3s steps(1) infinite; }
+  .eye-inner-r { animation: pupil-dart 0.3s steps(1) infinite 0.15s; }
+
   @keyframes panic-shake {
     0%,100% { transform: translate(0,0); }
-    20% { transform: translate(-2px,1px); }
-    40% { transform: translate(2px,-1px); }
-    60% { transform: translate(-1px,2px); }
-    80% { transform: translate(1px,-2px); }
+    20% { transform: translate(-2.5px, 1.5px); }
+    40% { transform: translate(2.5px, -1.5px); }
+    60% { transform: translate(-1px, 2.5px); }
+    80% { transform: translate(1.5px, -2px); }
   }
   @keyframes stress-flash {
     0%,100% { opacity: 1; }
-    50% { opacity: 0.2; }
+    50% { opacity: 0.1; }
   }
   @keyframes mouth-panic {
     0%,100% { transform: scaleX(1) scaleY(1); }
-    50% { transform: scaleX(1.06) scaleY(0.9); }
+    50% { transform: scaleX(1.07) scaleY(0.88); }
   }
   @keyframes sweat-drop {
-    0%,40% { transform: translateY(0); opacity: 0; }
-    50% { opacity: 0.8; }
-    100% { transform: translateY(40px); opacity: 0; }
+    0%,35% { transform: translateY(0); opacity: 0; }
+    45% { opacity: 0.85; }
+    100% { transform: translateY(44px); opacity: 0; }
+  }
+  @keyframes pupil-dart {
+    0%,40% { transform: translate(0,0); }
+    45% { transform: translate(4px, -2px); }
+    55% { transform: translate(-4px, 2px); }
+    60%,100% { transform: translate(0,0); }
   }
 </style>
 </head>
@@ -54,26 +65,40 @@
 <div class="label">ADAM · Panic</div>
 <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
   <g class="face">
-    <!-- Left eye: large oval O -->
-    <ellipse cx="103" cy="88" rx="22" ry="28" stroke="#fff" stroke-width="5" fill="none"/>
-    <!-- Stress mark left (small comma/dash beside eye) -->
+    <!-- Left eye: large oval -->
+    <ellipse cx="103" cy="88" rx="23" ry="29" stroke="#fff" stroke-width="5" fill="none"/>
+    <!-- Left inner pupil dot -->
+    <g class="eye-inner-l">
+      <circle cx="103" cy="88" r="5" fill="#fff" opacity="0.8"/>
+    </g>
+    <!-- Stress marks beside left eye -->
     <g class="stress-l">
-      <path d="M 68 72 Q 62 80 65 88" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M 64 70 Q 57 79 61 88" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M 58 76 Q 52 78 55 83" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
     </g>
+
     <!-- Right eye: large oval -->
-    <ellipse cx="217" cy="88" rx="22" ry="28" stroke="#fff" stroke-width="5" fill="none"/>
-    <!-- Stress mark right -->
-    <g class="stress-r">
-      <path d="M 252 72 Q 258 80 255 88" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <ellipse cx="217" cy="88" rx="23" ry="29" stroke="#fff" stroke-width="5" fill="none"/>
+    <!-- Right inner pupil dot -->
+    <g class="eye-inner-r">
+      <circle cx="217" cy="88" r="5" fill="#fff" opacity="0.8"/>
     </g>
-    <!-- Mouth: small zigzag (nervous) -->
+    <!-- Stress marks beside right eye -->
+    <g class="stress-r">
+      <path d="M 256 70 Q 263 79 259 88" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M 262 76 Q 268 78 265 83" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
+    </g>
+
+    <!-- Nervous zigzag mouth -->
     <g class="mouth">
-      <path d="M 130 140 Q 140 133 150 140 Q 160 147 170 140 Q 180 133 190 140"
+      <path d="M 128 143 Q 138 135 148 143 Q 158 151 168 143 Q 178 135 188 143 Q 196 149 200 145"
         stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
   </g>
-  <!-- Sweat drop -->
-  <ellipse class="sweat" cx="103" cy="62" rx="4" ry="6" fill="#fff" opacity="0"/>
+
+  <!-- Sweat drops -->
+  <ellipse class="sweat-1" cx="103" cy="60" rx="4" ry="6" fill="#fff" opacity="0"/>
+  <ellipse class="sweat-2" cx="217" cy="60" rx="3.5" ry="5" fill="#fff" opacity="0"/>
 </svg>
 </body>
 </html>

@@ -16,48 +16,75 @@
   }
   .label {
     color: #fff;
-    font-size: 13px;
-    letter-spacing: 4px;
+    font-size: 11px;
+    letter-spacing: 6px;
     text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0.4;
+    margin-bottom: 28px;
+    opacity: 0.3;
   }
-  svg { width: 320px; height: 200px; overflow: visible; }
-  .face { animation: rage-shake 0.12s ease-in-out infinite; }
-  .mouth { animation: mouth-rage 0.5s ease-in-out infinite; transform-origin: 160px 140px; }
-  .glow { animation: glow-rage 0.4s ease-in-out infinite; }
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .face { animation: rage-shake 0.1s ease-in-out infinite; }
+  .mouth { animation: mouth-rage 0.45s ease-in-out infinite; transform-origin: 160px 142px; }
+  .vein-l { animation: vein-pulse 0.6s ease-in-out infinite; }
+  .vein-r { animation: vein-pulse 0.6s ease-in-out infinite 0.3s; }
+  .heat-l { animation: heat-rise 1.2s ease-in-out infinite; }
+  .heat-r { animation: heat-rise 1.2s ease-in-out infinite 0.4s; }
+
   @keyframes rage-shake {
     0%,100% { transform: translate(0,0); }
-    25% { transform: translate(-1.5px, 1px); }
-    75% { transform: translate(1.5px, -1px); }
+    25% { transform: translate(-2px, 1.5px); }
+    75% { transform: translate(2px, -1.5px); }
   }
   @keyframes mouth-rage {
     0%,100% { transform: scaleX(1); }
-    50% { transform: scaleX(1.05); }
+    50% { transform: scaleX(1.06); }
   }
-  @keyframes glow-rage {
-    0%,100% { opacity: 0.08; }
-    50% { opacity: 0.2; }
+  @keyframes vein-pulse {
+    0%,100% { opacity: 0.3; }
+    50% { opacity: 0.9; }
+  }
+  @keyframes heat-rise {
+    0% { transform: translateY(0); opacity: 0; }
+    30% { opacity: 0.5; }
+    100% { transform: translateY(-30px); opacity: 0; }
   }
 </style>
 </head>
 <body>
 <div class="label">ADAM · Angry</div>
 <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
   <g class="face">
-    <!-- Left eye: sharp inward slant (^ tilted aggressively) -->
-    <!-- Left brow slash going inward-down: top-right to bottom-left -->
-    <path d="M 88 75 L 128 95"
+    <!-- Left eye slash (aggressive inward slant) -->
+    <path d="M 82 72 L 128 96"
       stroke="#fff" stroke-width="5.5" fill="none" stroke-linecap="round"/>
-    <!-- Right eye: mirror slash inward -->
-    <path d="M 232 75 L 192 95"
+    <!-- Right eye mirror slash -->
+    <path d="M 238 72 L 192 96"
       stroke="#fff" stroke-width="5.5" fill="none" stroke-linecap="round"/>
-    <!-- Mouth: aggressive zigzag wwww -->
+
+    <!-- Angry zigzag mouth -->
     <g class="mouth">
-      <path d="M 110 140 Q 122 130 134 140 Q 146 150 158 140 Q 170 130 182 140 Q 194 150 206 140 Q 216 132 225 138"
+      <path d="M 108 142 Q 120 131 133 142 Q 146 153 159 142 Q 172 131 185 142 Q 197 153 208 142 Q 216 135 222 139"
         stroke="#fff" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
+  </g>
+
+  <!-- Vein marks on forehead -->
+  <g class="vein-l">
+    <path d="M 88 58 Q 82 50 86 42 Q 90 38 94 44" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </g>
+  <g class="vein-r">
+    <path d="M 232 58 Q 238 50 234 42 Q 230 38 226 44" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Heat shimmer lines rising from eyes -->
+  <g class="heat-l">
+    <line x1="100" y1="68" x2="100" y2="80" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
+    <line x1="108" y1="62" x2="107" y2="75" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
+  </g>
+  <g class="heat-r">
+    <line x1="220" y1="68" x2="220" y2="80" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
+    <line x1="212" y1="62" x2="213" y2="75" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
   </g>
 </svg>
 </body>

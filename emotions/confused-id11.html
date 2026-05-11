@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAM — Confused</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: monospace;
+  }
+  .label {
+    color: #fff;
+    font-size: 11px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    opacity: 0.3;
+  }
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .spiral-l { animation: spin-slow-l 3s linear infinite; transform-origin: 105px 88px; }
+  .spiral-r { animation: spin-slow-r 3s linear infinite; transform-origin: 215px 88px; }
+  .mouth { animation: mouth-flat 2.5s ease-in-out infinite; transform-origin: 160px 140px; }
+  .question { animation: question-bob 2.5s ease-in-out infinite; transform-origin: 290px 55px; }
+  .face-tilt { animation: head-tilt 3s ease-in-out infinite; transform-origin: 160px 100px; }
+
+  @keyframes spin-slow-l {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes spin-slow-r {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(-360deg); }
+  }
+  @keyframes mouth-flat {
+    0%,100% { transform: scaleX(1); opacity: 0.7; }
+    50% { transform: scaleX(0.9); opacity: 1; }
+  }
+  @keyframes question-bob {
+    0%,100% { transform: translateY(0) rotate(0deg); opacity: 0.5; }
+    50% { transform: translateY(-6px) rotate(8deg); opacity: 0.9; }
+  }
+  @keyframes head-tilt {
+    0%,100% { transform: rotate(0deg); }
+    50% { transform: rotate(-4deg); }
+  }
+</style>
+</head>
+<body>
+<div class="label">ADAM · Confused</div>
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Question mark floating -->
+  <g class="question">
+    <text x="282" y="62" fill="#fff" font-size="22" font-family="monospace" font-weight="bold" opacity="0.6">?</text>
+  </g>
+
+  <g class="face-tilt">
+    <!-- Left spiral eye -->
+    <g class="spiral-l">
+      <!-- Inward spiral approximated with arcs -->
+      <path d="M 105 88 m 22 0 a 22 22 0 1 1 -44 0 a 16 16 0 1 0 32 0 a 10 10 0 1 1 -20 0 a 4 4 0 1 0 8 0"
+        stroke="#fff" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    </g>
+    <!-- Right spiral eye -->
+    <g class="spiral-r">
+      <path d="M 215 88 m 22 0 a 22 22 0 1 1 -44 0 a 16 16 0 1 0 32 0 a 10 10 0 1 1 -20 0 a 4 4 0 1 0 8 0"
+        stroke="#fff" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    </g>
+
+    <!-- Flat mouth -->
+    <g class="mouth">
+      <line x1="135" y1="140" x2="185" y2="140" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>
+</body>
+</html>

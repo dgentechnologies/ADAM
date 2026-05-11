@@ -16,55 +16,61 @@
   }
   .label {
     color: #fff;
-    font-size: 13px;
-    letter-spacing: 4px;
+    font-size: 11px;
+    letter-spacing: 6px;
     text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0.4;
+    margin-bottom: 28px;
+    opacity: 0.3;
   }
-  svg { width: 320px; height: 200px; overflow: visible; }
-  .eye-l { animation: breathe-l 4s ease-in-out infinite; transform-origin: 105px 95px; }
-  .eye-r { animation: breathe-r 4s ease-in-out infinite; transform-origin: 215px 95px; }
-  .zzz { animation: zzz-float 3s ease-in-out infinite; }
-  .glow { animation: glow-soft 4s ease-in-out infinite; }
-  @keyframes breathe-l {
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .face { animation: breathe 5s ease-in-out infinite; transform-origin: 160px 100px; }
+  .zzz-1 { animation: zzz-float 4s ease-in-out infinite; }
+  .zzz-2 { animation: zzz-float 4s ease-in-out infinite 0.5s; }
+  .zzz-3 { animation: zzz-float 4s ease-in-out infinite 1s; }
+  .glow { animation: glow-soft 5s ease-in-out infinite; }
+
+  @keyframes breathe {
     0%,100% { transform: scaleY(1) translateY(0); }
-    50% { transform: scaleY(0.9) translateY(2px); }
-  }
-  @keyframes breathe-r {
-    0%,100% { transform: scaleY(1) translateY(0); }
-    50% { transform: scaleY(0.9) translateY(2px); }
+    50% { transform: scaleY(0.96) translateY(2px); }
   }
   @keyframes zzz-float {
-    0%,100% { transform: translate(0,0); opacity: 0.3; }
-    50% { transform: translate(8px,-12px); opacity: 0.8; }
+    0% { transform: translate(0, 0); opacity: 0; }
+    15% { opacity: 0.7; }
+    80% { opacity: 0.3; }
+    100% { transform: translate(14px, -38px); opacity: 0; }
   }
   @keyframes glow-soft {
-    0%,100% { opacity: 0.04; }
-    50% { opacity: 0.1; }
+    0%,100% { opacity: 0.03; }
+    50% { opacity: 0.09; }
   }
 </style>
 </head>
 <body>
 <div class="label">ADAM · Sleep</div>
 <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
-  <!-- Left eye: downward arc (U shape - closed) -->
-  <g class="eye-l">
-    <path d="M 80 88 Q 105 112 130 88"
+
+  <!-- Ambient breath glow -->
+  <ellipse class="glow" cx="160" cy="100" rx="130" ry="80" fill="#fff"/>
+
+  <g class="face">
+    <!-- Left eye closed arc ∪ -->
+    <path d="M 78 85 Q 105 110 132 85"
+      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- Right eye closed arc -->
+    <path d="M 188 85 Q 215 110 242 85"
       stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
   </g>
-  <!-- Right eye: downward arc -->
-  <g class="eye-r">
-    <path d="M 190 88 Q 215 112 240 88"
-      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+
+  <!-- ZZZ floating sequence -->
+  <g class="zzz-1">
+    <text x="250" y="76" fill="#fff" font-size="16" font-family="monospace" opacity="0.8" font-weight="bold">z</text>
   </g>
-  <!-- No mouth (sleep) -->
-  <!-- ZZZ floating -->
-  <g class="zzz">
-    <text x="252" y="72" fill="#fff" font-size="14" font-family="monospace" opacity="0.7">z</text>
-    <text x="265" y="58" fill="#fff" font-size="11" font-family="monospace" opacity="0.5">z</text>
-    <text x="275" y="46" fill="#fff" font-size="9" font-family="monospace" opacity="0.3">z</text>
+  <g class="zzz-2">
+    <text x="264" y="60" fill="#fff" font-size="12" font-family="monospace" opacity="0.55">z</text>
+  </g>
+  <g class="zzz-3">
+    <text x="276" y="48" fill="#fff" font-size="9" font-family="monospace" opacity="0.3">z</text>
   </g>
 </svg>
 </body>

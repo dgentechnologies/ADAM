@@ -16,28 +16,42 @@
   }
   .label {
     color: #fff;
-    font-size: 13px;
-    letter-spacing: 4px;
+    font-size: 11px;
+    letter-spacing: 6px;
     text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0.4;
+    margin-bottom: 28px;
+    opacity: 0.3;
   }
-  svg { width: 320px; height: 200px; overflow: visible; }
-  .face { animation: shy-bob 2.5s ease-in-out infinite; transform-origin: 160px 100px; }
-  .blush-l { animation: blush-pulse 2s ease-in-out infinite; }
-  .blush-r { animation: blush-pulse 2s ease-in-out infinite 0.3s; }
-  .mouth { animation: mouth-shy 2.5s ease-in-out infinite; transform-origin: 160px 140px; }
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .face { animation: shy-bob 3s ease-in-out infinite; transform-origin: 160px 105px; }
+  .blush-l { animation: blush-pulse 2.5s ease-in-out infinite; }
+  .blush-r { animation: blush-pulse 2.5s ease-in-out infinite 0.4s; }
+  .mouth { animation: mouth-shy 3s ease-in-out infinite; transform-origin: 160px 141px; }
+  .eye-l { animation: blink-shy 5s ease-in-out infinite; transform-origin: 105px 90px; }
+  .eye-r { animation: blink-shy 5s ease-in-out infinite 0.3s; transform-origin: 215px 90px; }
+  .heart { animation: heart-float 3s ease-in-out infinite 1.5s; }
+
   @keyframes shy-bob {
     0%,100% { transform: translateY(0) rotate(0deg); }
-    50% { transform: translateY(4px) rotate(-2deg); }
+    50% { transform: translateY(5px) rotate(-1.5deg); }
   }
   @keyframes blush-pulse {
-    0%,100% { opacity: 0.25; rx: 14; ry: 8; }
-    50% { opacity: 0.55; rx: 17; ry: 10; }
+    0%,100% { opacity: 0.2; r: 16; }
+    50% { opacity: 0.5; r: 20; }
   }
   @keyframes mouth-shy {
     0%,100% { transform: scale(1); }
-    50% { transform: scale(0.9); }
+    50% { transform: scale(0.88); }
+  }
+  @keyframes blink-shy {
+    0%,90%,100% { transform: scaleY(1); }
+    94% { transform: scaleY(0.05); }
+  }
+  @keyframes heart-float {
+    0% { transform: translate(0,0); opacity: 0; }
+    20% { opacity: 0.6; }
+    100% { transform: translate(8px, -28px); opacity: 0; }
   }
 </style>
 </head>
@@ -45,21 +59,37 @@
 <div class="label">ADAM · Shy</div>
 <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
   <g class="face">
-    <!-- Left eye: happy arc ^ -->
-    <path d="M 80 92 Q 105 70 130 92"
-      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <!-- Left blush oval below eye -->
-    <ellipse class="blush-l" cx="105" cy="115" rx="18" ry="9" fill="#fff" opacity="0.3"/>
-    <!-- Right eye: happy arc -->
-    <path d="M 190 92 Q 215 70 240 92"
-      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <!-- Right blush oval -->
-    <ellipse class="blush-r" cx="215" cy="115" rx="18" ry="9" fill="#fff" opacity="0.3"/>
-    <!-- Mouth: tiny smile -->
+    <!-- Left eye happy arc ^ -->
+    <g class="eye-l">
+      <path d="M 78 93 Q 105 68 132 93"
+        stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    </g>
+    <!-- Left blush dots cluster -->
+    <ellipse class="blush-l" cx="86" cy="116" rx="18" ry="9" fill="#fff" opacity="0.25"/>
+    <circle cx="80" cy="113" r="2" fill="#fff" opacity="0.15"/>
+    <circle cx="92" cy="120" r="1.5" fill="#fff" opacity="0.12"/>
+
+    <!-- Right eye happy arc -->
+    <g class="eye-r">
+      <path d="M 188 93 Q 215 68 242 93"
+        stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    </g>
+    <!-- Right blush dots cluster -->
+    <ellipse class="blush-r" cx="234" cy="116" rx="18" ry="9" fill="#fff" opacity="0.25"/>
+    <circle cx="240" cy="113" r="2" fill="#fff" opacity="0.15"/>
+    <circle cx="228" cy="120" r="1.5" fill="#fff" opacity="0.12"/>
+
+    <!-- Tiny shy smile -->
     <g class="mouth">
-      <path d="M 150 138 Q 160 147 170 138"
+      <path d="M 150 139 Q 160 149 170 139"
         stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
     </g>
+  </g>
+
+  <!-- Floating tiny heart -->
+  <g class="heart">
+    <path d="M 272 78 C 272 75 268 72 265 75 C 262 72 258 75 258 78 C 258 82 265 87 265 87 C 265 87 272 82 272 78 Z"
+      fill="#fff" opacity="0.5"/>
   </g>
 </svg>
 </body>

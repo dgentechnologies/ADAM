@@ -16,76 +16,75 @@
   }
   .label {
     color: #fff;
-    font-size: 13px;
-    letter-spacing: 4px;
+    font-size: 11px;
+    letter-spacing: 6px;
     text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0.4;
+    margin-bottom: 28px;
+    opacity: 0.3;
   }
-  svg {
-    width: 320px;
-    height: 200px;
-    overflow: visible;
-  }
-  /* Left eye arc */
-  .eye-l {
-    animation: blink-l 3.5s ease-in-out infinite;
-    transform-origin: 105px 88px;
-  }
-  /* Right eye arc */
-  .eye-r {
-    animation: blink-r 3.5s ease-in-out infinite;
-    transform-origin: 215px 88px;
-  }
-  /* Mouth smile bounce */
-  .mouth {
-    animation: smile-bounce 2s ease-in-out infinite;
-    transform-origin: 160px 135px;
-  }
-  /* Face glow pulse */
-  .glow {
-    animation: glow-pulse 2s ease-in-out infinite;
-  }
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .eye-l { animation: blink-l 4s ease-in-out infinite; transform-origin: 105px 90px; }
+  .eye-r { animation: blink-r 4s ease-in-out infinite 0.2s; transform-origin: 215px 90px; }
+  .mouth { animation: smile-bounce 2.2s ease-in-out infinite; transform-origin: 160px 138px; }
+  .sparkle-1 { animation: sparkle 2.2s ease-in-out infinite 0.3s; transform-origin: 58px 55px; }
+  .sparkle-2 { animation: sparkle 2.2s ease-in-out infinite 0.9s; transform-origin: 262px 60px; }
+  .sparkle-3 { animation: sparkle 2.2s ease-in-out infinite 1.5s; transform-origin: 280px 130px; }
+
   @keyframes blink-l {
-    0%,92%,100% { transform: scaleY(1); }
-    95% { transform: scaleY(0.05); }
+    0%,88%,100% { transform: scaleY(1); }
+    93% { transform: scaleY(0.04); }
   }
   @keyframes blink-r {
-    0%,90%,100% { transform: scaleY(1); }
-    93% { transform: scaleY(0.05); }
+    0%,86%,100% { transform: scaleY(1); }
+    91% { transform: scaleY(0.04); }
   }
   @keyframes smile-bounce {
-    0%,100% { transform: translateY(0); }
-    50% { transform: translateY(-3px); }
+    0%,100% { transform: translateY(0) scaleX(1); }
+    50% { transform: translateY(-2px) scaleX(1.04); }
   }
-  @keyframes glow-pulse {
-    0%,100% { opacity: 0.08; }
-    50% { opacity: 0.18; }
+  @keyframes sparkle {
+    0%,100% { opacity: 0; transform: scale(0) rotate(0deg); }
+    40%,60% { opacity: 1; transform: scale(1) rotate(45deg); }
   }
 </style>
 </head>
 <body>
 <div class="label">ADAM · Happy</div>
 <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-  <!-- Ambient glow -->
-  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
-  <!-- Left eye: upward curved arc (^ shape) -->
+
+  <!-- Sparkles -->
+  <g class="sparkle-1">
+    <line x1="58" y1="48" x2="58" y2="62" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+    <line x1="51" y1="55" x2="65" y2="55" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+    <line x1="53" y1="50" x2="63" y2="60" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
+    <line x1="63" y1="50" x2="53" y2="60" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
+  </g>
+  <g class="sparkle-2">
+    <line x1="262" y1="53" x2="262" y2="67" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+    <line x1="255" y1="60" x2="269" y2="60" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+    <line x1="257" y1="55" x2="267" y2="65" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
+    <line x1="267" y1="55" x2="257" y2="65" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
+  </g>
+  <g class="sparkle-3">
+    <line x1="280" y1="123" x2="280" y2="133" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+    <line x1="275" y1="128" x2="285" y2="128" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+  </g>
+
+  <!-- Left eye arc ^ -->
   <g class="eye-l">
-    <path d="M 80 95 Q 105 68 130 95"
-      stroke="#fff" stroke-width="5" fill="none"
-      stroke-linecap="round"/>
+    <path d="M 78 95 Q 105 66 132 95"
+      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
   </g>
-  <!-- Right eye: upward curved arc -->
+  <!-- Right eye arc ^ -->
   <g class="eye-r">
-    <path d="M 190 95 Q 215 68 240 95"
-      stroke="#fff" stroke-width="5" fill="none"
-      stroke-linecap="round"/>
+    <path d="M 188 95 Q 215 66 242 95"
+      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
   </g>
-  <!-- Mouth: tiny upward smile -->
+  <!-- Mouth: tiny smile -->
   <g class="mouth">
-    <path d="M 148 133 Q 160 143 172 133"
-      stroke="#fff" stroke-width="4" fill="none"
-      stroke-linecap="round"/>
+    <path d="M 146 133 Q 160 145 174 133"
+      stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
   </g>
 </svg>
 </body>

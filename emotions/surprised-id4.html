@@ -16,52 +16,76 @@
   }
   .label {
     color: #fff;
-    font-size: 13px;
-    letter-spacing: 4px;
+    font-size: 11px;
+    letter-spacing: 6px;
     text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0.4;
+    margin-bottom: 28px;
+    opacity: 0.3;
   }
-  svg { width: 320px; height: 200px; overflow: visible; }
-  .eye-l { animation: widen-l 2.5s ease-in-out infinite; transform-origin: 103px 92px; }
-  .eye-r { animation: widen-r 2.5s ease-in-out infinite; transform-origin: 217px 92px; }
-  .mouth { animation: mouth-open 2.5s ease-in-out infinite; transform-origin: 160px 140px; }
-  .glow { animation: glow-shock 0.4s ease-in-out 0.1s 3; }
-  @keyframes widen-l {
-    0% { transform: scale(0.3); opacity: 0; }
-    15%,85% { transform: scale(1); opacity: 1; }
-    100% { transform: scale(1); opacity: 1; }
+  svg { width: 340px; height: 220px; overflow: visible; }
+
+  .eye-l { animation: pop-in-l 2.8s ease-out infinite; transform-origin: 103px 88px; }
+  .eye-r { animation: pop-in-r 2.8s ease-out infinite 0.1s; transform-origin: 217px 88px; }
+  .mouth { animation: mouth-o 2.8s ease-in-out infinite; transform-origin: 160px 143px; }
+  .shock-l { animation: shock-line 2.8s ease-out infinite; transform-origin: 45px 60px; }
+  .shock-r { animation: shock-line 2.8s ease-out infinite 0.15s; transform-origin: 275px 60px; }
+  .flash { animation: flash-bg 0.18s ease-out 0.05s 2; }
+
+  @keyframes pop-in-l {
+    0% { transform: scale(0.1); opacity: 0; }
+    18% { transform: scale(1.15); opacity: 1; }
+    28%,100% { transform: scale(1); opacity: 1; }
   }
-  @keyframes widen-r {
-    0% { transform: scale(0.3); opacity: 0; }
-    20%,85% { transform: scale(1); opacity: 1; }
-    100% { transform: scale(1); opacity: 1; }
+  @keyframes pop-in-r {
+    0% { transform: scale(0.1); opacity: 0; }
+    20% { transform: scale(1.15); opacity: 1; }
+    30%,100% { transform: scale(1); opacity: 1; }
   }
-  @keyframes mouth-open {
-    0%,100% { transform: scaleY(1); }
-    50% { transform: scaleY(1.12); }
+  @keyframes mouth-o {
+    0%,100% { transform: scaleY(0.3); opacity: 0; }
+    20%,85% { transform: scaleY(1); opacity: 1; }
   }
-  @keyframes glow-shock {
-    0%,100% { opacity: 0.05; }
-    50% { opacity: 0.35; }
+  @keyframes shock-line {
+    0%,15% { opacity: 0; transform: scaleX(0); }
+    25%,60% { opacity: 0.6; transform: scaleX(1); }
+    80%,100% { opacity: 0; }
+  }
+  @keyframes flash-bg {
+    0%,100% { opacity: 0; }
+    50% { opacity: 0.07; }
   }
 </style>
 </head>
 <body>
 <div class="label">ADAM · Surprised</div>
 <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
-  <!-- Left eye: large vertical oval (O) -->
+
+  <!-- Flash overlay -->
+  <rect class="flash" x="0" y="0" width="320" height="200" fill="#fff"/>
+
+  <!-- Shock lines radiating outward -->
+  <g class="shock-l">
+    <line x1="68" y1="52" x2="48" y2="38" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="60" y1="65" x2="36" y2="60" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+    <line x1="72" y1="78" x2="50" y2="82" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.3"/>
+  </g>
+  <g class="shock-r">
+    <line x1="252" y1="52" x2="272" y2="38" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="260" y1="65" x2="284" y2="60" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+    <line x1="248" y1="78" x2="270" y2="82" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.3"/>
+  </g>
+
+  <!-- Left eye: large vertical oval -->
   <g class="eye-l">
-    <ellipse cx="103" cy="88" rx="22" ry="30" stroke="#fff" stroke-width="5" fill="none"/>
+    <ellipse cx="103" cy="88" rx="23" ry="31" stroke="#fff" stroke-width="5" fill="none"/>
   </g>
   <!-- Right eye: large vertical oval -->
   <g class="eye-r">
-    <ellipse cx="217" cy="88" rx="22" ry="30" stroke="#fff" stroke-width="5" fill="none"/>
+    <ellipse cx="217" cy="88" rx="23" ry="31" stroke="#fff" stroke-width="5" fill="none"/>
   </g>
-  <!-- Mouth: tiny dot / small horizontal oval -->
+  <!-- Mouth: small O -->
   <g class="mouth">
-    <ellipse cx="160" cy="140" rx="7" ry="5" stroke="#fff" stroke-width="4" fill="none"/>
+    <ellipse cx="160" cy="143" rx="8" ry="6" stroke="#fff" stroke-width="4" fill="none"/>
   </g>
 </svg>
 </body>
