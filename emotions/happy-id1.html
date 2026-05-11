@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAM — Happy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: monospace;
+  }
+  .label {
+    color: #fff;
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    opacity: 0.4;
+  }
+  svg {
+    width: 320px;
+    height: 200px;
+    overflow: visible;
+  }
+  /* Left eye arc */
+  .eye-l {
+    animation: blink-l 3.5s ease-in-out infinite;
+    transform-origin: 105px 88px;
+  }
+  /* Right eye arc */
+  .eye-r {
+    animation: blink-r 3.5s ease-in-out infinite;
+    transform-origin: 215px 88px;
+  }
+  /* Mouth smile bounce */
+  .mouth {
+    animation: smile-bounce 2s ease-in-out infinite;
+    transform-origin: 160px 135px;
+  }
+  /* Face glow pulse */
+  .glow {
+    animation: glow-pulse 2s ease-in-out infinite;
+  }
+  @keyframes blink-l {
+    0%,92%,100% { transform: scaleY(1); }
+    95% { transform: scaleY(0.05); }
+  }
+  @keyframes blink-r {
+    0%,90%,100% { transform: scaleY(1); }
+    93% { transform: scaleY(0.05); }
+  }
+  @keyframes smile-bounce {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  @keyframes glow-pulse {
+    0%,100% { opacity: 0.08; }
+    50% { opacity: 0.18; }
+  }
+</style>
+</head>
+<body>
+<div class="label">ADAM · Happy</div>
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ambient glow -->
+  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
+  <!-- Left eye: upward curved arc (^ shape) -->
+  <g class="eye-l">
+    <path d="M 80 95 Q 105 68 130 95"
+      stroke="#fff" stroke-width="5" fill="none"
+      stroke-linecap="round"/>
+  </g>
+  <!-- Right eye: upward curved arc -->
+  <g class="eye-r">
+    <path d="M 190 95 Q 215 68 240 95"
+      stroke="#fff" stroke-width="5" fill="none"
+      stroke-linecap="round"/>
+  </g>
+  <!-- Mouth: tiny upward smile -->
+  <g class="mouth">
+    <path d="M 148 133 Q 160 143 172 133"
+      stroke="#fff" stroke-width="4" fill="none"
+      stroke-linecap="round"/>
+  </g>
+</svg>
+</body>
+</html>

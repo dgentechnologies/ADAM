@@ -445,7 +445,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
         {/* ── Full-viewport 3D model as background, left-aligned ── */}
         <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-          <AdamModelViewer modelPath="/models/adam-body.fbx" faceState={faceState} />
+          <AdamModelViewer modelPath="/models/adam-body.glb" faceState={faceState} />
         </div>
 
         {/* ── Right-side gradient vignette — darkens the right to contrast panels ── */}
@@ -482,15 +482,16 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
           </div>
         </div>
 
-        {/* ── Right floating panel column ── */}
+        {/* ── Right floating panel column (updated layout to match chat panel) ── */}
         <div style={{
-          position: 'absolute', top: 76, right: 18, bottom: 18,
-          width: 'clamp(300px, 28vw, 400px)', maxWidth: 'calc(100vw - 40px)',
-          zIndex: 20, display: 'flex', flexDirection: 'column', gap: 10,
+          position: 'fixed', top: '50%', right: '3vw', transform: 'translateY(-50%)',
+          width: 340, height: '76vh', zIndex: 20, display: 'flex', flexDirection: 'column', gap: 12,
+          padding: 14, borderRadius: 24, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.09)',
+          background: 'rgba(10,10,16,0.45)', backdropFilter: 'blur(32px) saturate(1.6)'
         }}>
 
           {/* Conversation card */}
-          <div style={{ ...glass, flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 16px', gap: 10, minHeight: 0 }}>
+          <div style={{ ...glass, flex: 1, display: 'flex', flexDirection: 'column', padding: '20px 18px', gap: 10, minHeight: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
               <div>
                 <p style={{ margin: 0, fontFamily: '"Rajdhani", sans-serif', fontSize: 24, fontWeight: 600, letterSpacing: '0.02em', color: '#f0f0f0', lineHeight: 1.1 }}>Live Conversation</p>
@@ -513,7 +514,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
             {/* Transcript scroll area */}
             <div
               ref={transcriptRef}
-              style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, minHeight: 0 }}
+              style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, minHeight: 0, paddingRight: 4 }}
               aria-live="polite"
             >
               {recentTranscripts.length === 0 && (
@@ -545,18 +546,18 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
           </div>
 
           {/* Mic status card */}
-          <div style={{ ...glass, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 4 }} role="status" aria-live="polite">
+          <div style={{ ...glass, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 4 }} role="status" aria-live="polite">
             <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, letterSpacing: '0.1em', color: micPermission === 'denied' ? '#ff453a' : micPermission === 'granted' ? 'rgba(74,240,255,0.65)' : 'rgba(255,255,255,0.3)' }}>{micPermissionLabel}</span>
             <span style={{ fontFamily: '"Share Tech Mono", monospace', fontSize: 9, letterSpacing: '0.1em', color: isRecording && !adamSpeaking ? '#4AF0FF' : 'rgba(255,255,255,0.28)' }}>{micStateLabel}</span>
           </div>
 
           {/* Meta cards row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div style={{ ...glass, padding: '10px 14px' }}>
+            <div style={{ ...glass, padding: '12px 16px' }}>
               <p style={{ margin: 0, fontFamily: '"Share Tech Mono", monospace', fontSize: 8, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)' }}>TURNS</p>
               <p style={{ margin: '5px 0 0', fontFamily: '"DM Sans", sans-serif', fontSize: 15, fontWeight: 500, color: '#f0f0f0' }}>{turnCount} <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>/ {turnsAllowed}</span></p>
             </div>
-            <div style={{ ...glass, padding: '10px 14px' }}>
+            <div style={{ ...glass, padding: '12px 16px' }}>
               <p style={{ margin: 0, fontFamily: '"Share Tech Mono", monospace', fontSize: 8, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)' }}>CONNECTION</p>
               <p style={{ margin: '5px 0 0', fontFamily: '"DM Sans", sans-serif', fontSize: 15, fontWeight: 500, color: state === 'active' ? '#32d74b' : '#ff9f0a' }}>{state === 'active' ? 'Stable' : 'Pending'}</p>
             </div>

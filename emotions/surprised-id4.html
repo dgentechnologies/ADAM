@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAM — Surprised</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: monospace;
+  }
+  .label {
+    color: #fff;
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    opacity: 0.4;
+  }
+  svg { width: 320px; height: 200px; overflow: visible; }
+  .eye-l { animation: widen-l 2.5s ease-in-out infinite; transform-origin: 103px 92px; }
+  .eye-r { animation: widen-r 2.5s ease-in-out infinite; transform-origin: 217px 92px; }
+  .mouth { animation: mouth-open 2.5s ease-in-out infinite; transform-origin: 160px 140px; }
+  .glow { animation: glow-shock 0.4s ease-in-out 0.1s 3; }
+  @keyframes widen-l {
+    0% { transform: scale(0.3); opacity: 0; }
+    15%,85% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes widen-r {
+    0% { transform: scale(0.3); opacity: 0; }
+    20%,85% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes mouth-open {
+    0%,100% { transform: scaleY(1); }
+    50% { transform: scaleY(1.12); }
+  }
+  @keyframes glow-shock {
+    0%,100% { opacity: 0.05; }
+    50% { opacity: 0.35; }
+  }
+</style>
+</head>
+<body>
+<div class="label">ADAM · Surprised</div>
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
+  <!-- Left eye: large vertical oval (O) -->
+  <g class="eye-l">
+    <ellipse cx="103" cy="88" rx="22" ry="30" stroke="#fff" stroke-width="5" fill="none"/>
+  </g>
+  <!-- Right eye: large vertical oval -->
+  <g class="eye-r">
+    <ellipse cx="217" cy="88" rx="22" ry="30" stroke="#fff" stroke-width="5" fill="none"/>
+  </g>
+  <!-- Mouth: tiny dot / small horizontal oval -->
+  <g class="mouth">
+    <ellipse cx="160" cy="140" rx="7" ry="5" stroke="#fff" stroke-width="4" fill="none"/>
+  </g>
+</svg>
+</body>
+</html>

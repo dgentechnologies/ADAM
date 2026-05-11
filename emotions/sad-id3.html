@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAM — Sad</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: monospace;
+  }
+  .label {
+    color: #fff;
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    opacity: 0.4;
+  }
+  svg { width: 320px; height: 200px; overflow: visible; }
+  .face { animation: sag 3s ease-in-out infinite; transform-origin: 160px 100px; }
+  .tear-l { animation: tear-drop-l 3s ease-in-out 1s infinite; }
+  .tear-r { animation: tear-drop-r 3s ease-in-out 1.5s infinite; }
+  .glow { animation: glow-sad 3s ease-in-out infinite; }
+  @keyframes sag {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(3px); }
+  }
+  @keyframes tear-drop-l {
+    0%,60% { transform: translateY(0); opacity: 0; }
+    70% { opacity: 0.9; }
+    100% { transform: translateY(28px); opacity: 0; }
+  }
+  @keyframes tear-drop-r {
+    0%,55% { transform: translateY(0); opacity: 0; }
+    65% { opacity: 0.9; }
+    100% { transform: translateY(28px); opacity: 0; }
+  }
+  @keyframes glow-sad {
+    0%,100% { opacity: 0.06; }
+    50% { opacity: 0.12; }
+  }
+</style>
+</head>
+<body>
+<div class="label">ADAM · Sad</div>
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
+  <g class="face">
+    <!-- Left eye: downward arc (U shape) -->
+    <path d="M 80 88 Q 105 112 130 88"
+      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- Right eye: downward arc -->
+    <path d="M 190 88 Q 215 112 240 88"
+      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- Sad mouth: small downward curve (frown) -->
+    <path d="M 148 142 Q 160 132 172 142"
+      stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- Tears -->
+  <ellipse class="tear-l" cx="105" cy="115" rx="3" ry="4.5" fill="#fff" opacity="0"/>
+  <ellipse class="tear-r" cx="215" cy="115" rx="3" ry="4.5" fill="#fff" opacity="0"/>
+</svg>
+</body>
+</html>

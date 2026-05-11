@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAM — Angry</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: monospace;
+  }
+  .label {
+    color: #fff;
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    opacity: 0.4;
+  }
+  svg { width: 320px; height: 200px; overflow: visible; }
+  .face { animation: rage-shake 0.12s ease-in-out infinite; }
+  .mouth { animation: mouth-rage 0.5s ease-in-out infinite; transform-origin: 160px 140px; }
+  .glow { animation: glow-rage 0.4s ease-in-out infinite; }
+  @keyframes rage-shake {
+    0%,100% { transform: translate(0,0); }
+    25% { transform: translate(-1.5px, 1px); }
+    75% { transform: translate(1.5px, -1px); }
+  }
+  @keyframes mouth-rage {
+    0%,100% { transform: scaleX(1); }
+    50% { transform: scaleX(1.05); }
+  }
+  @keyframes glow-rage {
+    0%,100% { opacity: 0.08; }
+    50% { opacity: 0.2; }
+  }
+</style>
+</head>
+<body>
+<div class="label">ADAM · Angry</div>
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <ellipse class="glow" cx="160" cy="100" rx="140" ry="90" fill="#fff"/>
+  <g class="face">
+    <!-- Left eye: sharp inward slant (^ tilted aggressively) -->
+    <!-- Left brow slash going inward-down: top-right to bottom-left -->
+    <path d="M 88 75 L 128 95"
+      stroke="#fff" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+    <!-- Right eye: mirror slash inward -->
+    <path d="M 232 75 L 192 95"
+      stroke="#fff" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+    <!-- Mouth: aggressive zigzag wwww -->
+    <g class="mouth">
+      <path d="M 110 140 Q 122 130 134 140 Q 146 150 158 140 Q 170 130 182 140 Q 194 150 206 140 Q 216 132 225 138"
+        stroke="#fff" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
+</body>
+</html>

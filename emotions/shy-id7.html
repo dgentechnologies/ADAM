@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAM — Shy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: monospace;
+  }
+  .label {
+    color: #fff;
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    opacity: 0.4;
+  }
+  svg { width: 320px; height: 200px; overflow: visible; }
+  .face { animation: shy-bob 2.5s ease-in-out infinite; transform-origin: 160px 100px; }
+  .blush-l { animation: blush-pulse 2s ease-in-out infinite; }
+  .blush-r { animation: blush-pulse 2s ease-in-out infinite 0.3s; }
+  .mouth { animation: mouth-shy 2.5s ease-in-out infinite; transform-origin: 160px 140px; }
+  @keyframes shy-bob {
+    0%,100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(4px) rotate(-2deg); }
+  }
+  @keyframes blush-pulse {
+    0%,100% { opacity: 0.25; rx: 14; ry: 8; }
+    50% { opacity: 0.55; rx: 17; ry: 10; }
+  }
+  @keyframes mouth-shy {
+    0%,100% { transform: scale(1); }
+    50% { transform: scale(0.9); }
+  }
+</style>
+</head>
+<body>
+<div class="label">ADAM · Shy</div>
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <g class="face">
+    <!-- Left eye: happy arc ^ -->
+    <path d="M 80 92 Q 105 70 130 92"
+      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- Left blush oval below eye -->
+    <ellipse class="blush-l" cx="105" cy="115" rx="18" ry="9" fill="#fff" opacity="0.3"/>
+    <!-- Right eye: happy arc -->
+    <path d="M 190 92 Q 215 70 240 92"
+      stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- Right blush oval -->
+    <ellipse class="blush-r" cx="215" cy="115" rx="18" ry="9" fill="#fff" opacity="0.3"/>
+    <!-- Mouth: tiny smile -->
+    <g class="mouth">
+      <path d="M 150 138 Q 160 147 170 138"
+        stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>
+</body>
+</html>
