@@ -107,6 +107,7 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
   const log = (msg) => console.log(`[${new Date().toISOString()}] [GEMINI] [${uid}] ${msg}`);
   let ended = false;
   let isClosing = false;
+  const pendingSystemMessages = [];
 
   // ── Speaking gate (mirrors Python adam_speaking asyncio.Event) ────────────
   // While ADAM is outputting audio, discard inbound mic chunks so ADAM
@@ -193,6 +194,19 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
     }
   }
 
+  function flushPendingSystemMessages() {
+    if (ended || isClosing || !session || adamSpeakingRef.current) return;
+    const next = pendingSystemMessages.shift();
+    if (!next) return;
+    injectSystemMessage(next);
+  }
+
+  function enqueueSystemMessage(text) {
+    if (ended || isClosing) return;
+    pendingSystemMessages.push(text);
+    flushPendingSystemMessages();
+  }
+
   try {
     session = await ai.live.connect(liveConfig);
     log('Gemini Live session connected');
@@ -201,7 +215,7 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
     // ── Auto-intro: ADAM speaks first, 1 s after Gemini finishes setup ──────
     timerHandles.push(setTimeout(() => {
       log('Triggering auto-intro');
-      injectSystemMessage('SYSTEM_INTRO: Session started. Introduce yourself now.');
+      enqueueSystemMessage('SYSTEM_INTRO: Session started. Introduce yourself now.');
     }, 1000));
 
     // ── Session timer warnings ────────────────────────────────────────────────
@@ -210,7 +224,7 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
     if (warn60 > 0) {
       timerHandles.push(setTimeout(() => {
         log('Timer warning: 60s remaining');
-        injectSystemMessage('SYSTEM_TIMER: 60s remaining.');
+        enqueueSystemMessage('SYSTEM_TIMER: 60s remaining.');
       }, warn60));
     }
     // 30 s remaining
@@ -218,7 +232,7 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
     if (warn30 > 0) {
       timerHandles.push(setTimeout(() => {
         log('Timer warning: 30s remaining');
-        injectSystemMessage('SYSTEM_TIMER: 30s remaining. Wrap up and mention the waitlist.');
+        enqueueSystemMessage('SYSTEM_TIMER: 30s remaining. Wrap up and mention the waitlist.');
       }, warn30));
     }
     // 10 s remaining
@@ -226,7 +240,7 @@ export async function createGeminiSession({ uid, userName, userEmail, userProfil
     if (warn10 > 0) {
       timerHandles.push(setTimeout(() => {
         log('Timer warning: 10s remaining');
-        injectSystemMessage('SYSTEM_TIMER: 10s remaining. Say your goodbye.');
+        enqueueSystemMessage('SYSTEM_TIMER: 10s remaining. Say your goodbye.');
       }, warn10));
     }
 
@@ -296,6 +310,7 @@ async function processGeminiMessage(message, { sendToClient, uid, log, session, 
   const releaseSpeakingGate = () => {
     adamSpeakingRef.current = false;
     adamSpeakingRef.blockUntilMs = 0;
+    flushPendingSystemMessages();
   };
 
   if (message.setupComplete) {

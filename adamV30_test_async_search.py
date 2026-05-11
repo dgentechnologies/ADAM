@@ -1667,16 +1667,19 @@ async def handle_tool_call(tc, memory: dict, faces: dict,
                 pan_a  = args.get("pan_angle")
                 tilt_a = args.get("tilt_angle")
                 move   = args.get("movement", "").upper().strip()
+                _speed_map = {"slow": 2, "normal": 5, "fast": 9}
+                speed_str = args.get("speed", "")
+                speed_int = _speed_map.get(speed_str.lower(), None) if speed_str else None
 
                 if pan_a is not None:
-                    await asyncio.to_thread(pan, int(pan_a))
-                    result = {"status": "ok", "pan": pan_a}
+                    await asyncio.to_thread(pan, int(pan_a), speed_int)
+                    result = {"status": "ok", "pan": pan_a, "speed": speed_str or "default"}
                 elif tilt_a is not None:
-                    await asyncio.to_thread(tilt, int(tilt_a))
-                    result = {"status": "ok", "tilt": tilt_a}
+                    await asyncio.to_thread(tilt, int(tilt_a), speed_int)
+                    result = {"status": "ok", "tilt": tilt_a, "speed": speed_str or "default"}
                 elif move:
-                    await asyncio.to_thread(named_move, move)
-                    result = {"status": "ok", "move": move}
+                    await asyncio.to_thread(named_move, move, speed_int)
+                    result = {"status": "ok", "move": move, "speed": speed_str or "default"}
                 else:
                     result = {"status": "error", "reason": "no valid argument provided"}
 
@@ -1847,15 +1850,19 @@ def build_tools() -> list[types.Tool]:
             description=(
                 "Move ADAM's physical servo neck for emphasis, curiosity, greeting, or "
                 "to look toward a person in frame. Call alongside set_emotion() for full "
-                "physical expression. Do NOT call on every response — use for emphasis."
+                "physical expression. Do NOT call on every response — use for emphasis. "
+                "Use speed='fast' for snappy reactions and greetings, 'slow' for thinking "
+                "or sad/gentle moments, 'normal' for everyday movement."
             ),
             parameters=S(type=T.OBJECT, properties={
                 "movement": S(
                     type=T.STRING,
-                    enum=["NOD", "SHAKE", "RESET", "LOOK_UP", "LOOK_DOWN",
+                    enum=["NOD", "NOD_FAST", "SHAKE", "RESET", "LOOK_UP", "LOOK_DOWN",
                           "LOOK_LEFT", "LOOK_RIGHT", "TILT_CURIOUS"],
                     description=(
-                        "Named movement preset. Use this OR pan_angle/tilt_angle, not both.")
+                        "Named movement preset. Use this OR pan_angle/tilt_angle, not both. "
+                        "NOD_FAST is a quick double-nod for excitement."
+                    )
                 ),
                 "pan_angle": S(
                     type=T.INTEGER,
@@ -1864,6 +1871,14 @@ def build_tools() -> list[types.Tool]:
                 "tilt_angle": S(
                     type=T.INTEGER,
                     description="Direct tilt angle 50–120 (centre=85). Up=50, Down=120."
+                ),
+                "speed": S(
+                    type=T.STRING,
+                    enum=["slow", "normal", "fast"],
+                    description=(
+                        "Movement speed. 'slow'=2, 'normal'=5, 'fast'=9. "
+                        "Overrides the move's default speed. Omit to use contextual default."
+                    )
                 ),
             })),
 

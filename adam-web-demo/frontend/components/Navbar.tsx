@@ -19,21 +19,21 @@ export function Navbar() {
   const { user, loading, signOut } = useAuth();
 
   return (
-    <header className="sticky top-0 z-50 bg-[rgba(225,227,233,0.82)] backdrop-blur-md border-b border-[rgba(29,29,31,0.12)]">
-      <nav className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-[rgba(8,10,12,0.78)] backdrop-blur-xl">
+      <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-6">
         {/* Logo */}
         <Link href="/" className="shrink-0">
           <Image src="/images/logo.png" alt="DGEN Technologies" width={120} height={40} priority />
         </Link>
 
         {/* Desktop links */}
-        <ul className="hidden lg:flex items-center gap-6 text-sm font-medium text-[rgba(29,29,31,0.72)]">
+        <ul className="hidden items-center gap-6 text-sm font-medium text-white/58 lg:flex">
           {NAV_LINKS.map(({ label, href }) => (
             <li key={href}>
               <Link
                 href={href}
-                className={`hover:text-[rgba(29,29,31,0.95)] transition ${
-                  label === 'ADAM' ? 'text-[#0a84ff] hover:text-[#0066cc]' : ''
+                className={`transition hover:text-white ${
+                  label === 'ADAM' ? 'text-[#4af0ff] hover:text-[#8af6ff]' : ''
                 }`}
               >
                 {label}
@@ -46,13 +46,13 @@ export function Navbar() {
         <div className="flex items-center gap-3 shrink-0">
           <Link
             href="/adam/demo"
-            className="hidden md:inline-block px-4 py-2 bg-[#1d1d1f] hover:bg-[#3a3a3c] text-[#f5f5f7] rounded-lg text-sm font-semibold transition"
+            className="hidden rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 shadow-[0_0_0_1px_rgba(74,240,255,0.08)] transition hover:border-cyan-200/30 hover:bg-cyan-300/15 md:inline-block"
           >
             Try ADAM
           </Link>
 
           {!loading && user ? (
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden items-center gap-2 md:flex">
               {user.photoURL && (
                 <Image
                   src={user.photoURL}
@@ -64,7 +64,7 @@ export function Navbar() {
               )}
               <button
                 onClick={signOut}
-                className="text-xs text-[rgba(29,29,31,0.6)] hover:text-[rgba(29,29,31,0.95)] transition"
+                className="text-xs text-white/52 transition hover:text-white"
               >
                 Sign out
               </button>
@@ -72,7 +72,7 @@ export function Navbar() {
           ) : (
             <Link
               href="/contact"
-              className="hidden md:inline-block px-4 py-2 border border-[rgba(29,29,31,0.2)] hover:border-[rgba(29,29,31,0.4)] text-[rgba(29,29,31,0.9)] rounded-lg text-sm font-semibold transition"
+              className="hidden rounded-full border border-white/10 px-4 py-2 text-sm font-semibold text-white/78 transition hover:border-white/22 hover:text-white md:inline-block"
             >
               Get a Quote
             </Link>

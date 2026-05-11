@@ -9,8 +9,19 @@ import { SignJWT } from 'jose';
 import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'crypto';
 
-const MAX_SESSIONS_PER_DAY = 3;
+const MAX_SESSIONS_LIFETIME = 1;  // regular users: one session ever
 const MAX_ID_TOKEN_LENGTH = 8192;
+
+function parseTesterUids(raw: string | undefined): Set<string> {
+  return new Set(
+    String(raw ?? '')
+      .split(',')
+      .map((uid) => uid.trim())
+      .filter(Boolean),
+  );
+}
+
+const TESTER_UIDS = parseTesterUids(process.env.TESTER_UIDS);
 
 function getRelaySecret(): Uint8Array {
   const value = process.env.RELAY_JWT_SECRET;
@@ -59,14 +70,12 @@ export async function POST(req: NextRequest) {
     const safeName = normalizeDisplayName(name);
     const signInProvider = firebase?.sign_in_provider ?? 'unknown';
 
-    // Check daily session cap in Firestore
+    // Check session cap in Firestore
     const userRef  = adminDb.collection('adamUsers').doc(uid);
     const userSnap = await userRef.get();
-    const today    = new Date().toISOString().slice(0, 10);
 
     if (userSnap.exists) {
       const data = userSnap.data()!;
-      const sessionsToday = data.lastSessionDate === today ? (data.demoSessionsToday ?? 0) : 0;
 
       await userRef.set({
         uid,
@@ -79,9 +88,11 @@ export async function POST(req: NextRequest) {
         lastSeenAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      if (sessionsToday >= MAX_SESSIONS_PER_DAY) {
+      // Testers bypass all session caps.
+      const totalSessions = Number(data.totalDemoSessions ?? 0);
+      if (!TESTER_UIDS.has(uid) && totalSessions >= MAX_SESSIONS_LIFETIME) {
         return Response.json(
-          { error: 'Daily session limit reached. Come back tomorrow.' },
+          { error: 'You have already used your ADAM demo session. Join the waitlist to get the full experience: dgentechnologies.com/products/adam#waitlist' },
           { status: 429 },
         );
       }
@@ -98,6 +109,7 @@ export async function POST(req: NextRequest) {
         createdAt:           FieldValue.serverTimestamp(),
         lastSeenAt:          FieldValue.serverTimestamp(),
         demoSessionsToday:   0,
+        totalDemoSessions:   0,
         lastSessionDate:     null,
         waitlisted:          false,
       });

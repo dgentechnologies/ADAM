@@ -57,6 +57,15 @@ function parseBoolean(raw, fallback = false) {
   return ['true', '1', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
 }
 
+function parseTesterUids(raw) {
+  return new Set(
+    String(raw ?? '')
+      .split(',')
+      .map((uid) => uid.trim())
+      .filter(Boolean),
+  );
+}
+
 export const CONFIG = {
   PORT:            parsePort(process.env.PORT),
   NODE_ENV:        process.env.NODE_ENV ?? 'development',
@@ -83,17 +92,7 @@ export const SESSION_CAPS = {
 };
 
 // UIDs that bypass all session caps (internal testers / devs).
-// Add UIDs as a comma-separated TESTER_UIDS env var, or hardcode here.
-const envTesters = (process.env.TESTER_UIDS ?? '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-export const TESTER_UIDS = new Set([
-  'DUHBEYpqD1W0oInXMvVIrgN5pfG2',
-  'J18eb5xtHMVGTTOHoAguFfOgU7p2', // internal tester
-  ...envTesters,
-]);
+export const TESTER_UIDS = parseTesterUids(process.env.TESTER_UIDS);
 
 /** Returns true if the uid is a privileged tester — all caps are skipped. */
 export function isTester(uid) {

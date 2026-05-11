@@ -22,8 +22,8 @@
     "appearance": "medium build, short dark hair, clean shaven, wearing an olive green tshirt. sitting in a brightly lit room with white walls, with a sliding window behind.",
     "voice_cues": "medium-low pitch, moderate pace, calm voice, speaking English.",
     "relationship": "acquaintance",
-    "notes": "Tirthankar was visually identified again. Looking happy with his colleague Arpan. | User stressed, reminding ADAM of developer status and power over me. Dropping sarcasm, using supportive tone. | User (Tirthankar) visually recognized. Looking directly at camera, speaking. Is wearing an orange polo shirt.",
-    "last_seen": "2026-05-10 16:12",
+    "notes": "Tirthankar was visually identified again. Looking happy with his colleague Arpan. | User stressed, reminding ADAM of developer status and power over me. Dropping sarcasm, using supportive tone. | User (Tirthankar) visually recognized. Looking directly at camera, speaking. Is wearing an orange polo shirt. | User seen looking over a black bag, appearing to be explaining something animatedly; possibly about a project or a new object.",
+    "last_seen": "2026-05-11 13:00",
     "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\tirthankar_main.jpg"
   },
   "unknown_person_01": {
@@ -84,5 +84,14 @@
     "notes": "",
     "last_seen": "2026-05-10 15:51",
     "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\abhishek_da.jpg"
+  },
+  "t_man_v2": {
+    "name": "Tirthankar",
+    "appearance": "young man, short dark hair, beard, wearing a light-coloured t-shirt",
+    "voice_cues": "medium pitch, calm tone, Bengali accent",
+    "relationship": "Developer / CEO",
+    "notes": "Developer of ADAM, verified identity again.",
+    "last_seen": "2026-05-11 14:15",
+    "photo_path": "d:\\Dgen Technologies Pvt. Ltd\\ADAM\\faces\\t_man_v2_full.jpg"
   }
 }

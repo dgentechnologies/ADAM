@@ -1,266 +1,198 @@
 """
-adam_neck_serial.py — ADAM Servo Neck Controller
+adam_neck_serial.py — ADAM neck servo driver (v2)
 ==================================================
-Drop this file next to adamV24.py.
-Import it in adamV24.py and call init_neck() at startup.
+Wraps serial communication to the Arduino running adam_neck_servo.ino.
 
-Requires:  pip install pyserial
-
-Auto-detects the Arduino COM port on Windows / Linux / macOS.
-Falls back to NECK_PORT env variable or manual config below.
-
-Serial protocol (matches adam_neck_servo.ino):
-  P<angle>   → Pan  servo  (0–180, centre=90)
-  T<angle>   → Tilt servo  (0–180, centre=85)
-  N<name>    → Named animation
-  S          → Status ping
-
-Named moves: NOD, SHAKE, RESET, LOOK_UP, LOOK_DOWN,
-             LOOK_LEFT, LOOK_RIGHT, TILT_CURIOUS
+New in v2:
+  • set_speed(n)  — send SPEED<n> to Arduino (1=slow .. 10=fast)
+  • pan() / tilt() accept an optional speed argument
+  • All named moves accept an optional speed argument
+  • Speed is sent as a separate SPEED command before the move, then
+    restored to the global default after — so per-move speed overrides
+    are self-contained and don't permanently change the global rate.
 """
 
-import os
-import time
-import threading
 import serial
 import serial.tools.list_ports
+import time
+import threading
 
-# ── Config ────────────────────────────────────────────────────────
-BAUD_RATE        = 9600
-CONNECT_TIMEOUT  = 3       # seconds to wait for READY handshake
-SERIAL_TIMEOUT   = 1.0
-COMMAND_DELAY    = 0.02    # seconds between queued commands
-MANUAL_PORT      = None    # Set to "COM3" or "/dev/ttyUSB0" to skip auto-detect
+_ser: serial.Serial | None = None
+_lock = threading.Lock()
+_ready = False
+_default_speed = 5   # matches Arduino default
 
-# ── State ─────────────────────────────────────────────────────────
-_ser:   serial.Serial | None = None
-_lock   = threading.Lock()
-_ready  = threading.Event()
-_queue  = []
-_thread: threading.Thread | None = None
+BAUD = 9600
+TIMEOUT = 2.0
 
+# ── Named move speed presets ──────────────────────────────────────
+# Maps emotion/context → Arduino speed value (1-10)
+_EMOTION_SPEED = {
+    "happy":     7,
+    "excited":   9,
+    "angry":     8,
+    "confused":  3,
+    "smug":      4,
+    "sad":       2,
+    "surprised": 9,
+    "thinking":  2,
+    "love":      4,
+    "blush":     3,
+}
 
-# ═════════════════════════════════════════════════════════════════
-# PORT AUTO-DETECT
-# ═════════════════════════════════════════════════════════════════
-
-def _find_arduino_port() -> str | None:
-    """Scan serial ports for an Arduino Uno (USB-Serial)."""
-    # Check env override first
-    env_port = os.getenv("NECK_PORT") or MANUAL_PORT
-    if env_port:
-        print(f"  🦾  Neck: using port from config: {env_port}")
-        return env_port
-
-    candidates = []
-    for port in serial.tools.list_ports.comports():
-        desc = (port.description or "").lower()
-        mfr  = (port.manufacturer or "").lower()
-        vid  = port.vid
-
-        # Arduino Uno VID = 0x2341, CH340 clones = 0x1A86
-        is_arduino = (
-            vid in (0x2341, 0x1A86, 0x0403) or
-            "arduino" in desc or "arduino" in mfr or
-            "ch340"   in desc or "ch340"   in mfr or
-            "usb serial" in desc
-        )
-        if is_arduino:
-            candidates.append(port.device)
-            print(f"  🦾  Neck: found candidate → {port.device} ({port.description})")
-
-    return candidates[0] if candidates else None
+_MOVE_SPEED = {
+    "NOD":          6,
+    "NOD_FAST":     10,
+    "SHAKE":        5,
+    "RESET":        4,
+    "LOOK_UP":      5,
+    "LOOK_DOWN":    5,
+    "LOOK_LEFT":    6,
+    "LOOK_RIGHT":   6,
+    "TILT_CURIOUS": 3,
+}
 
 
-# ═════════════════════════════════════════════════════════════════
-# SEND / RECEIVE
-# ═════════════════════════════════════════════════════════════════
-
-def _send_raw(cmd: str) -> bool:
-    """Send a single command string (newline appended). Thread-safe."""
+def _send(cmd: str) -> str | None:
+    """Send a newline-terminated command; return the reply line or None."""
     global _ser
-    if _ser is None or not _ser.is_open:
-        return False
-    try:
-        with _lock:
-            _ser.write((cmd.strip() + "\n").encode("ascii"))
-            _ser.flush()
-        return True
-    except Exception as e:
-        print(f"  ⚠️  Neck serial write error: {e}")
-        return False
-
-
-def _reader_thread():
-    """Background thread: reads Arduino responses and prints them."""
-    global _ser
-    while _ser and _ser.is_open:
+    if not _ser or not _ser.is_open:
+        return None
+    with _lock:
         try:
-            line = _ser.readline().decode("ascii", errors="ignore").strip()
-            if line:
-                print(f"  🦾  Arduino → {line}")
-        except Exception:
-            break
+            _ser.write((cmd.strip() + "\n").encode())
+            _ser.flush()
+            reply = _ser.readline().decode("utf-8", errors="ignore").strip()
+            return reply or None
+        except Exception as e:
+            print(f"  [neck] serial error: {e}")
+            return None
 
 
-# ═════════════════════════════════════════════════════════════════
-# PUBLIC API
-# ═════════════════════════════════════════════════════════════════
+def _auto_detect_port() -> str | None:
+    """Return the first USB/ACM port that looks like an Arduino."""
+    for p in serial.tools.list_ports.comports():
+        desc = (p.description or "").lower()
+        hwid = (p.hwid or "").lower()
+        if any(k in desc for k in ["arduino", "ch340", "cp210", "ftdi", "uno"]):
+            return p.device
+        if any(k in hwid for k in ["2341", "1a86", "10c4", "0403"]):
+            return p.device
+    # Fallback: first ACM/USB port
+    for p in serial.tools.list_ports.comports():
+        if "ACM" in p.device or "USB" in p.device:
+            return p.device
+    return None
 
-def init_neck() -> bool:
-    """
-    Connect to Arduino and wait for ADAM_SERVO_READY handshake.
-    Call once at ADAM startup. Returns True if connected.
-    """
-    global _ser, _thread
 
-    port = _find_arduino_port()
-    if not port:
-        print("  ⚠️  Neck: no Arduino found — servo disabled. "
-              "Set NECK_PORT env var or MANUAL_PORT in adam_neck_serial.py")
+def init_neck(port: str | None = None, baud: int = BAUD) -> bool:
+    """Open serial connection to Arduino.  Auto-detects port if not given."""
+    global _ser, _ready
+    _port = port or _auto_detect_port()
+    if not _port:
+        print("  [neck] No Arduino port found — servo disabled")
         return False
-
     try:
-        _ser = serial.Serial(port, BAUD_RATE, timeout=SERIAL_TIMEOUT)
-        print(f"  🦾  Neck: opened {port} @ {BAUD_RATE} baud")
-
-        # Arduino resets on serial open — wait for READY
-        deadline = time.time() + CONNECT_TIMEOUT + 2.0
+        _ser = serial.Serial(_port, baud, timeout=TIMEOUT)
+        time.sleep(2.0)  # Arduino resets on serial open
+        _ser.reset_input_buffer()
+        # Wait for READY signal
+        deadline = time.time() + 4.0
         while time.time() < deadline:
-            line = _ser.readline().decode("ascii", errors="ignore").strip()
-            if line:
-                print(f"  🦾  Arduino boot → {line}")
-            if "ADAM_SERVO_READY" in line:
-                print("  ✅  Neck servos ready")
-                _ready.set()
-                break
-        else:
-            # Try a ping
-            _send_raw("S")
-            time.sleep(0.3)
-            resp = _ser.readline().decode("ascii", errors="ignore").strip()
-            if resp == "OK":
-                print("  ✅  Neck servos ready (ping OK)")
-                _ready.set()
-            else:
-                print("  ⚠️  Neck: no READY handshake — proceeding anyway")
-                _ready.set()   # don't block ADAM startup
-
-        # Start background reader
-        _thread = threading.Thread(target=_reader_thread, daemon=True, name="neck-reader")
-        _thread.start()
-
-        # Go to neutral on connect
-        reset_neck()
-        return True
-
+            line = _ser.readline().decode("utf-8", errors="ignore").strip()
+            if "READY" in line:
+                _ready = True
+                print(f"  [neck] Connected on {_port} — servo ready")
+                return True
+        print(f"  [neck] Timeout waiting for ADAM_SERVO_READY on {_port}")
+        return False
     except Exception as e:
-        print(f"  ⚠️  Neck: failed to open {port}: {e}")
-        _ser = None
+        print(f"  [neck] Init failed ({_port}): {e}")
         return False
 
 
 def is_ready() -> bool:
-    return _ready.is_set() and _ser is not None and _ser.is_open
+    return _ready and _ser is not None and _ser.is_open
 
 
-def pan(angle: int) -> bool:
-    """Pan servo to angle (30–150, centre=90)."""
-    angle = max(30, min(150, int(angle)))
-    return _send_raw(f"P{angle}")
-
-
-def tilt(angle: int) -> bool:
-    """Tilt servo to angle (50–120, centre=85)."""
-    angle = max(50, min(120, int(angle)))
-    return _send_raw(f"T{angle}")
-
-
-def named_move(move: str) -> bool:
-    """
-    Trigger a named animation on the Arduino.
-    move: NOD | SHAKE | RESET | LOOK_UP | LOOK_DOWN |
-          LOOK_LEFT | LOOK_RIGHT | TILT_CURIOUS
-    """
-    move = move.upper().strip()
-    print(f"  🦾  Neck move → {move}")
-    return _send_raw(f"N{move}")
-
-
-def reset_neck() -> bool:
-    """Return both servos to neutral centre position."""
-    return named_move("RESET")
-
-
-def close_neck():
-    """Clean up serial connection on shutdown."""
-    global _ser
+def close_neck() -> None:
+    global _ser, _ready
     if _ser and _ser.is_open:
-        reset_neck()
-        time.sleep(0.5)
-        _ser.close()
-        print("  🦾  Neck: serial closed")
-    _ser = None
+        try:
+            _send("NRESET")
+            time.sleep(0.5)
+            _ser.close()
+        except Exception:
+            pass
+    _ready = False
 
 
-# ═════════════════════════════════════════════════════════════════
-# EMOTION → MOVEMENT MAP
-# ═════════════════════════════════════════════════════════════════
+# ── Speed control ─────────────────────────────────────────────────
 
-# Call this from ADAM's emotion handler to drive physical head movement.
-EMOTION_TO_NECK = {
-    "happy":     "NOD",
-    "excited":   "NOD",
-    "angry":     "SHAKE",
-    "confused":  "TILT_CURIOUS",
-    "smug":      None,
-    "sad":       "LOOK_DOWN",
-    "surprised": "LOOK_UP",
-    "thinking":  "TILT_CURIOUS",
-    "love":      "NOD",
-    "blush":     "LOOK_DOWN",
-}
+def set_speed(speed: int) -> None:
+    """Set global servo speed on Arduino (1=very slow .. 10=very fast)."""
+    spd = max(1, min(10, int(speed)))
+    _send(f"SPEED{spd}")
 
-def emotion_move(emotion: str):
-    """Drive physical head based on ADAM emotion. Safe to call even if disconnected."""
-    if not is_ready():
-        return
-    move = EMOTION_TO_NECK.get(emotion.lower())
+
+# ── Direct angle commands ──────────────────────────────────────────
+
+def pan(angle: int, speed: int | None = None) -> None:
+    """Pan to absolute angle.  Optionally set speed for this move only."""
+    if speed is not None:
+        set_speed(speed)
+    _send(f"P{int(angle)}")
+    if speed is not None:
+        set_speed(_default_speed)  # restore
+
+
+def tilt(angle: int, speed: int | None = None) -> None:
+    """Tilt to absolute angle.  Optionally set speed for this move only."""
+    if speed is not None:
+        set_speed(speed)
+    _send(f"T{int(angle)}")
+    if speed is not None:
+        set_speed(_default_speed)
+
+
+def reset_neck() -> None:
+    _send("NRESET")
+
+
+# ── Named moves ───────────────────────────────────────────────────
+
+def named_move(move: str, speed: int | None = None) -> None:
+    """
+    Execute a named movement preset.
+    If speed is None, use the preset's natural speed from _MOVE_SPEED.
+    """
+    m = move.upper().strip()
+    effective_speed = speed if speed is not None else _MOVE_SPEED.get(m, _default_speed)
+    set_speed(effective_speed)
+    _send(f"N{m}")
+    set_speed(_default_speed)  # restore
+
+
+# ── Emotion → named move ──────────────────────────────────────────
+
+def emotion_move(emotion: str) -> None:
+    """
+    Trigger the physical movement associated with an emotion.
+    Uses emotion-appropriate speed automatically.
+    """
+    e = emotion.lower().strip()
+    speed = _EMOTION_SPEED.get(e, _default_speed)
+
+    move_map = {
+        "happy":     "NOD",
+        "excited":   "NOD_FAST",
+        "surprised": "NOD",
+        "love":      "NOD",
+        "thinking":  "TILT_CURIOUS",
+        "confused":  "TILT_CURIOUS",
+    }
+    move = move_map.get(e)
     if move:
-        named_move(move)
-
-
-# ═════════════════════════════════════════════════════════════════
-# STANDALONE TEST
-# Run: python adam_neck_serial.py
-# ═════════════════════════════════════════════════════════════════
-
-if __name__ == "__main__":
-    print("=== ADAM Neck Serial — Standalone Test ===")
-    if not init_neck():
-        print("❌  Could not connect. Check USB cable and port.")
-        exit(1)
-
-    time.sleep(1)
-    print("\nRunning test sequence...")
-
-    tests = [
-        ("NOD",          lambda: named_move("NOD")),
-        ("SHAKE",        lambda: named_move("SHAKE")),
-        ("LOOK_LEFT",    lambda: named_move("LOOK_LEFT")),
-        ("LOOK_RIGHT",   lambda: named_move("LOOK_RIGHT")),
-        ("LOOK_UP",      lambda: named_move("LOOK_UP")),
-        ("LOOK_DOWN",    lambda: named_move("LOOK_DOWN")),
-        ("TILT_CURIOUS", lambda: named_move("TILT_CURIOUS")),
-        ("PAN to 60",    lambda: pan(60)),
-        ("TILT to 70",   lambda: tilt(70)),
-        ("RESET",        lambda: named_move("RESET")),
-    ]
-
-    for label, fn in tests:
-        print(f"  → {label}")
-        fn()
-        time.sleep(1.5)
-
-    print("\n✅  Test complete.")
-    close_neck()
+        set_speed(speed)
+        _send(f"N{move}")
+        set_speed(_default_speed)
