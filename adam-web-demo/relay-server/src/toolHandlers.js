@@ -6,7 +6,6 @@ const VALID_MOUTH_INTENSITY = new Set(['closed', 'low', 'medium', 'high']);
 const MAX_MEMORY_KEYS_PER_USER = 50;
 const MAX_MEMORY_KEY_LENGTH = 80;
 const MAX_MEMORY_VALUE_LENGTH = 1000;
-const MAX_SEARCH_QUERY_LENGTH = 256;
 
 export async function handleToolCall(name, args, { sendToClient, uid }) {
   switch (name) {
@@ -90,46 +89,13 @@ export function clearMemory(uid) {
   memoryStore.delete(uid);
 }
 
-// DuckDuckGo search with 30-min cache
-const searchCache = new Map();
-const CACHE_TTL   = 30 * 60 * 1000;
-
 async function handleWebSearch({ query }) {
-  if (typeof query !== 'string' || query.trim().length === 0) {
-    return { error: 'Search query is required' };
-  }
-
-  if (query.length > MAX_SEARCH_QUERY_LENGTH) {
-    return { error: `Search query must be <= ${MAX_SEARCH_QUERY_LENGTH} characters` };
-  }
-
-  const normalizedQuery = query.trim();
-  const key    = normalizedQuery.toLowerCase();
-  const cached = searchCache.get(key);
-  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.result;
-
-  try {
-    const url  = `https://api.duckduckgo.com/?q=${encodeURIComponent(normalizedQuery)}&format=json&no_html=1&skip_disambig=1`;
-    const res  = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) {
-      throw new Error(`Search API returned status ${res.status}`);
-    }
-
-    const data = await res.json();
-
-    const result = {
-      query: normalizedQuery,
-      abstract:       data.AbstractText ?? '',
-      abstract_url:   data.AbstractURL  ?? '',
-      answer:         data.Answer       ?? '',
-      related_topics: (data.RelatedTopics ?? []).slice(0, 3).map((t) => t.Text ?? ''),
-    };
-
-    searchCache.set(key, { result, ts: Date.now() });
-    return result;
-  } catch (err) {
-    return { query: normalizedQuery, error: `Search failed: ${err.message}` };
-  }
+  const normalizedQuery = typeof query === 'string' ? query.trim() : '';
+  return {
+    query: normalizedQuery,
+    unavailable: true,
+    message: 'web_search is disabled in this web demo. Use a no-live-data response and mention the hardware waitlist for real-time features.',
+  };
 }
 
 export function buildWebDemoTools() {
@@ -189,7 +155,7 @@ export function buildWebDemoTools() {
         },
         {
           name:        'web_search',
-          description: 'Search the web via DuckDuckGo for factual look-ups and general knowledge.',
+          description: 'Disabled in this web demo. Returns unavailability metadata for safe fallback messaging.',
           parameters: {
             type: 'object',
             properties: {
