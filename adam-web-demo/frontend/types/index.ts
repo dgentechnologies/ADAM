@@ -1,6 +1,24 @@
 // Shared TypeScript types across the ADAM web demo
 
-export type Emotion        = 'idle' | 'happy' | 'thinking' | 'surprised' | 'sad' | 'excited' | 'confused' | 'sarcastic';
+export type EmotionAsset =
+  | 'idle'
+  | 'angry'
+  | 'confused'
+  | 'happy'
+  | 'love'
+  | 'panic'
+  | 'reconnecting'
+  | 'rizz'
+  | 'sad'
+  | 'search_thinking'
+  | 'shy'
+  | 'sleep'
+  | 'surprised';
+
+export type LegacyEmotion = 'thinking' | 'excited' | 'sarcastic';
+
+// Accept both underscore and hyphen variants for search-thinking from relay payloads.
+export type Emotion = EmotionAsset | LegacyEmotion | 'search-thinking';
 export type FaceState      = 'idle' | 'listening' | 'speaking';
 export type MouthIntensity = 'closed' | 'low' | 'medium' | 'high';
 export type SessionState   = 'connecting' | 'active' | 'ended' | 'error';

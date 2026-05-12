@@ -6,6 +6,7 @@ import { AdamFace } from './AdamFace';
 import { AdamModelViewer } from './AdamModelViewer';
 import { AudioCapture } from './AudioCapture';
 import { SessionTimer } from './SessionTimer';
+import { normalizeIncomingEmotion, toAdamFaceEmotion, toEmotionAsset } from './emotions/mapping';
 import type {
   ClientMessage,
   ServerMessage,
@@ -134,7 +135,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
         }
         break;
       case 'emotion':
-        setEmotion(msg.emotion);
+        setEmotion(normalizeIncomingEmotion(msg.emotion));
         break;
       case 'mouth_sync':
         setMouthIntensity(msg.intensity);
@@ -300,6 +301,9 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
     send({ type: 'audio', data: base64 });
   };
 
+  const viewerEmotion = toEmotionAsset(emotion);
+  const faceEmotion = toAdamFaceEmotion(emotion);
+
   // ── Render states ─────────────────────────────────────────────────────────
 
   if (state === 'connecting') {
@@ -445,7 +449,12 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
 
         {/* ── Full-viewport 3D model as background, left-aligned ── */}
         <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-          <AdamModelViewer modelPath="/models/adam-body.glb" faceState={faceState} />
+          <AdamModelViewer
+            modelPath="/models/adam-body.glb"
+            faceState={faceState}
+            emotion={viewerEmotion}
+            mouthIntensity={mouthIntensity}
+          />
         </div>
 
         {/* ── Right-side gradient vignette — darkens the right to contrast panels ── */}
@@ -582,7 +591,7 @@ export function DemoSession({ user, onSessionEnded, fullscreen }: DemoSessionPro
     <div className="space-y-6">
       {/* Face */}
       <div className="flex flex-col items-center gap-3">
-        <AdamFace emotion={emotion} faceState={faceState} mouthIntensity={mouthIntensity} size={200} />
+        <AdamFace emotion={faceEmotion} faceState={faceState} mouthIntensity={mouthIntensity} size={200} />
         <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold">
           {faceState === 'listening' ? '● Listening' : faceState === 'speaking' ? '▶ Speaking' : '— Idle'}
         </p>

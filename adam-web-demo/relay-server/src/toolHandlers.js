@@ -1,6 +1,25 @@
 // toolHandlers.js — handles Gemini function call tool invocations
 
-const VALID_EMOTIONS = new Set(['idle', 'happy', 'thinking', 'surprised', 'sad', 'excited', 'confused', 'sarcastic']);
+const VALID_EMOTIONS = new Set([
+  'idle',
+  'angry',
+  'confused',
+  'happy',
+  'love',
+  'panic',
+  'reconnecting',
+  'rizz',
+  'sad',
+  'search_thinking',
+  'search-thinking',
+  'shy',
+  'sleep',
+  'surprised',
+  // Legacy values preserved for backwards compatibility.
+  'thinking',
+  'excited',
+  'sarcastic',
+]);
 const VALID_HEAD_GESTURES = new Set(['none', 'nod_yes', 'shake_no', 'tilt_left', 'tilt_right']);
 const VALID_MOUTH_INTENSITY = new Set(['closed', 'low', 'medium', 'high']);
 const MAX_MEMORY_KEYS_PER_USER = 50;
@@ -110,7 +129,25 @@ export function buildWebDemoTools() {
             properties: {
               emotion: {
                 type: 'string',
-                enum: ['idle', 'happy', 'thinking', 'surprised', 'sad', 'excited', 'confused', 'sarcastic'],
+                enum: [
+                  'idle',
+                  'angry',
+                  'confused',
+                  'happy',
+                  'love',
+                  'panic',
+                  'reconnecting',
+                  'rizz',
+                  'sad',
+                  'search_thinking',
+                  'search-thinking',
+                  'shy',
+                  'sleep',
+                  'surprised',
+                  'thinking',
+                  'excited',
+                  'sarcastic',
+                ],
               },
               head_gesture: {
                 type: 'string',
