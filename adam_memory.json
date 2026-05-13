@@ -41,7 +41,7 @@
   "west_bengal_2026_winner": "BJP",
   "west_bengal_2026_cm": "Subhendu Adhikari",
   "current_mood_sarcastic": "true",
-  "last_movement_requested": "pan_left_right",
+  "last_movement_requested": "look_right",
   "neck_movement_error": "panning_opposite_or_stuck",
   "mouth_movement_error": "not_syncing_properly",
   "tirthankar_polo_shirt_orange": "false",
