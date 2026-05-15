@@ -74,6 +74,11 @@ function toSafeString(value, max = 240) {
 
 function buildUserContextBlock({ uid, userName, userEmail, userProfile }) {
   const profile = userProfile && typeof userProfile === 'object' ? userProfile : {};
+  const location = profile.lastKnownLocation && typeof profile.lastKnownLocation === 'object'
+    ? profile.lastKnownLocation
+    : profile.clientLocation && typeof profile.clientLocation === 'object'
+      ? profile.clientLocation
+      : {};
 
   const name = toSafeString(profile.name || profile.displayName || userName, 120);
   const email = toSafeString(profile.email || userEmail, 180);
@@ -82,6 +87,14 @@ function buildUserContextBlock({ uid, userName, userEmail, userProfile }) {
   const useCase = toSafeString(profile.useCase || profile.use_case, 320);
   const dob = toSafeString(profile.dob, 32);
   const provider = toSafeString(profile.primaryProvider, 64);
+  const timezone = toSafeString(location.timezone, 80);
+  const locale = toSafeString(location.locale, 32);
+  const permission = toSafeString(location.permission, 24);
+  const latitude = typeof location.latitude === 'number' ? location.latitude.toFixed(4) : '';
+  const longitude = typeof location.longitude === 'number' ? location.longitude.toFixed(4) : '';
+  const accuracyMeters = typeof location.accuracyMeters === 'number'
+    ? String(Math.round(location.accuracyMeters))
+    : '';
 
   const lines = [
     `uid: ${toSafeString(uid, 120) || 'unknown'}`,
@@ -94,6 +107,11 @@ function buildUserContextBlock({ uid, userName, userEmail, userProfile }) {
   if (whereHeard) lines.push(`where_heard_about_adam: ${whereHeard}`);
   if (dob) lines.push(`dob: ${dob}`);
   if (useCase) lines.push(`user_use_case: ${useCase}`);
+  if (timezone) lines.push(`timezone: ${timezone}`);
+  if (locale) lines.push(`locale: ${locale}`);
+  if (latitude && longitude) lines.push(`approx_location_coordinates: ${latitude}, ${longitude}`);
+  if (accuracyMeters) lines.push(`location_accuracy_meters: ${accuracyMeters}`);
+  if (permission && permission !== 'granted') lines.push(`location_permission: ${permission}`);
 
   return `
 
@@ -101,6 +119,8 @@ KNOWN USER PROFILE (from Google sign-in and onboarding form):
 ${lines.join('\n')}
 
 Use this profile naturally to personalize responses.
+If approximate location or timezone is available, use it lightly for local context and time-aware replies.
+Do not claim a precise address or neighborhood unless the user says it first.
 Treat profile and conversation memory as adaptation signals:
 - formality_level (casual | balanced | formal)
 - humor_tolerance (low | medium | high)

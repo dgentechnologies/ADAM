@@ -52,7 +52,7 @@ export async function getUserByUid(uid) {
 /**
  * Create a session document and return its auto-generated ID.
  */
-export async function createSession({ uid, userAgent, countryCode }) {
+export async function createSession({ uid, userAgent, countryCode, clientLocation }) {
   const ref = await db().collection('demoSessions').add({
     uid,
     startedAt:   FieldValue.serverTimestamp(),
@@ -62,6 +62,7 @@ export async function createSession({ uid, userAgent, countryCode }) {
     endReason:   null,
     userAgent:   userAgent ?? '',
     countryCode: countryCode ?? '',
+    ...(clientLocation ? { clientLocation } : {}),
   });
   return ref.id;
 }

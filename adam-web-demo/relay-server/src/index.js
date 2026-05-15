@@ -186,6 +186,7 @@ wss.on('connection', (ws, req) => {
           uid,
           userAgent:   req.headers['user-agent'] ?? '',
           countryCode: req.headers['cf-ipcountry'] ?? '',
+          clientLocation: userDoc?.lastKnownLocation ?? null,
         });
 
         sessionStart = Date.now();
@@ -193,13 +194,10 @@ wss.on('connection', (ws, req) => {
         await incrementSessionsToday(uid);
 
         const tester = isTester(uid);
-        send({
-          type:         'session_ready',
-          sessionId:    dbSessionId,
-          turnsAllowed: tester ? 9999 : SESSION_CAPS.MAX_TURNS,
-          durationMs:   remainingMs(uid),
-        });
 
+        // Connect Gemini BEFORE sending session_ready so the browser timer
+        // starts at the same instant Gemini is actually live. This keeps the
+        // relay's internal countdown and the browser's countdown in sync.
         gemini = await createGeminiSession({
           uid,
           userName,
@@ -209,7 +207,14 @@ wss.on('connection', (ws, req) => {
           onSessionEnd: closeSession,
         });
 
-        log(uid, 'Session ready');
+        send({
+          type:         'session_ready',
+          sessionId:    dbSessionId,
+          turnsAllowed: tester ? 9999 : SESSION_CAPS.MAX_TURNS,
+          durationMs:   remainingMs(uid),
+        });
+
+        log(uid, 'Session ready — Gemini connected, timers synced');
       } catch (err) {
         log(connId, `Auth error: ${err.message}`);
         send({ type: 'error', code: 'auth_failed', message: err.message });

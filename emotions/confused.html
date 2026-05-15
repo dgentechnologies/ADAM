@@ -5,24 +5,30 @@
 <title>ADAM — Confused</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
   body {
-    background: #000;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
     font-family: monospace;
+    overflow: hidden;
+    background: transparent;
   }
   .label {
-    color: #fff;
-    font-size: 11px;
-    letter-spacing: 6px;
-    text-transform: uppercase;
-    margin-bottom: 28px;
-    opacity: 0.3;
+    display: none;
   }
-  svg { width: 340px; height: 220px; overflow: visible; }
+  svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+  }
 
   .spiral-l { animation: spin-slow-l 3s linear infinite; transform-origin: 105px 88px; }
   .spiral-r { animation: spin-slow-r 3s linear infinite; transform-origin: 215px 88px; }
