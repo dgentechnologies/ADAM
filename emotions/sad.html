@@ -31,10 +31,10 @@
   }
 
   .face { animation: sag 4s ease-in-out infinite; transform-origin: 160px 100px; }
-  .tear-l { animation: tear-drop 3.5s ease-in-out 1.2s infinite; }
-  .tear-r { animation: tear-drop 3.5s ease-in-out 2s infinite; }
-  .tear-trail-l { animation: tear-trail 3.5s ease-in-out 1.2s infinite; }
-  .tear-trail-r { animation: tear-trail 3.5s ease-in-out 2s infinite; }
+  .tear-l { animation: tear-drop 1.5s ease-in-out 1.2s infinite; }
+  .tear-r { animation: tear-drop 1.5s ease-in-out 2s infinite; }
+  .tear-trail-l { animation: tear-trail 1.5s ease-in-out 1.2s infinite; }
+  .tear-trail-r { animation: tear-trail 1.5s ease-in-out 2s infinite; }
 
   @keyframes sag {
     0%,100% { transform: translateY(0); }
@@ -68,12 +68,12 @@
   </g>
 
   <!-- Tears -->
-  <ellipse class="tear-l" cx="105" cy="116" rx="3.5" ry="5" fill="#fff" opacity="0"/>
-  <ellipse class="tear-r" cx="215" cy="116" rx="3.5" ry="5" fill="#fff" opacity="0"/>
+  <ellipse class="tear-l" cx="105" cy="116" rx="5" ry="7.2" fill="#fff" opacity="0"/>
+  <ellipse class="tear-r" cx="215" cy="116" rx="5" ry="7.2" fill="#fff" opacity="0"/>
 
   <!-- Tear trails (thin lines) -->
-  <line class="tear-trail-l" x1="105" y1="122" x2="103" y2="135" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0"/>
-  <line class="tear-trail-r" x1="215" y1="122" x2="213" y2="135" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0"/>
+  <line class="tear-trail-l" x1="105" y1="122" x2="103" y2="135" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity="0"/>
+  <line class="tear-trail-r" x1="215" y1="122" x2="213" y2="135" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity="0"/>
 </svg>
 </body>
 </html>

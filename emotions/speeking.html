@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAM - Speeking</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: monospace;
+    overflow: hidden;
+    background: transparent;
+  }
+  .label {
+    display: none;
+  }
+  svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+  }
+
+  .eye-l { animation: speaking-blink-left 3.8s ease-in-out infinite; transform-origin: 105px 88px; }
+  .eye-r { animation: speaking-blink-right 3.8s ease-in-out infinite 0.12s; transform-origin: 215px 88px; }
+  .mouth { animation: talk-mouth 0.42s ease-in-out infinite; transform-origin: 160px 133px; }
+
+  @keyframes speaking-blink-left {
+    0%, 88%, 100% { transform: scaleY(1); }
+    92% { transform: scaleY(0.05); }
+  }
+  @keyframes speaking-blink-right {
+    0%, 86%, 100% { transform: scaleY(1); }
+    91% { transform: scaleY(0.05); }
+  }
+  @keyframes talk-mouth {
+    0%, 100% { transform: scaleX(1); }
+    33% { transform: scaleX(0.69); }
+    66% { transform: scaleX(0.38); }
+  }
+</style>
+</head>
+<body>
+<div class="label">ADAM - Speeking</div>
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <g class="eye-l">
+    <rect x="86" y="84" width="42" height="8" rx="4" fill="#fff" />
+  </g>
+  <g class="eye-r">
+    <rect x="196" y="84" width="42" height="8" rx="4" fill="#fff" />
+  </g>
+
+  <g class="mouth">
+    <rect x="134" y="133" width="52" height="7" rx="4" fill="#fff" />
+  </g>
+</svg>
+</body>
+</html>

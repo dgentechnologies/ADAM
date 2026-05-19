@@ -73,16 +73,33 @@
     d="M 215 73 C 215 68 210 63 204 66 C 198 63 193 68 193 73 C 193 80 215 95 215 95 C 215 95 237 80 237 73 C 237 68 232 63 226 66 C 220 63 215 68 215 73 Z"
     stroke="#fff" stroke-width="1.5" fill="none" opacity="0.4"/>
 
-  <!-- Left heart eye -->
-  <g class="heart-l">
-    <path d="M 105 73 C 105 68 100 63 94 66 C 88 63 83 68 83 73 C 83 80 105 97 105 97 C 105 97 127 80 127 73 C 127 68 122 63 116 66 C 110 63 105 68 105 73 Z"
-      stroke="#fff" stroke-width="4" fill="none"/>
-  </g>
-  <!-- Right heart eye -->
-  <g class="heart-r">
-    <path d="M 215 73 C 215 68 210 63 204 66 C 198 63 193 68 193 73 C 193 80 215 97 215 97 C 215 97 237 80 237 73 C 237 68 232 63 226 66 C 220 63 215 68 215 73 Z"
-      stroke="#fff" stroke-width="4" fill="none"/>
-  </g>
+<!-- Left heart eye -->
+            <g class="heart-l">
+                <path d="M 105 97 
+                         C 80 85 75 60 92 60 
+                         C 100 60 105 70 105 70 
+                         C 105 70 110 60 118 60 
+                         C 135 60 130 85 105 97 Z"
+                      stroke="#fff" 
+                      stroke-width="4" 
+                      fill="none" 
+                      stroke-linecap="round" 
+                      stroke-linejoin="round"/>
+            </g>
+
+            <!-- Right heart eye (Offset by 110 units on X-axis) -->
+            <g class="heart-r">
+                <path d="M 215 97 
+                         C 190 85 185 60 202 60 
+                         C 210 60 215 70 215 70 
+                         C 215 70 220 60 228 60 
+                         C 245 60 240 85 215 97 Z"
+                      stroke="#fff" 
+                      stroke-width="4" 
+                      fill="none" 
+                      stroke-linecap="round" 
+                      stroke-linejoin="round"/>
+            </g>
 
   <!-- Small smile mouth -->
   <g class="mouth">
@@ -90,19 +107,34 @@
       stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
   </g>
 
-  <!-- Floating hearts -->
   <g class="float-1">
-    <path d="M 260 130 C 260 128 258 126 256 127 C 254 126 252 128 252 130 C 252 133 260 138 260 138 C 260 138 268 133 268 130 C 268 128 266 126 264 127 C 262 126 260 128 260 130 Z"
-      fill="#fff" opacity="0.6"/>
-  </g>
-  <g class="float-2">
-    <path d="M 52 145 C 52 143 50 141 48 142 C 46 141 44 143 44 145 C 44 148 52 153 52 153 C 52 153 60 148 60 145 C 60 143 58 141 56 142 C 54 141 52 143 52 145 Z"
-      fill="#fff" opacity="0.5"/>
-  </g>
-  <g class="float-3">
-    <path d="M 272 90 C 272 88.5 271 87 269.5 87.5 C 268 87 267 88.5 267 90 C 267 92 272 95 272 95 C 272 95 277 92 277 90 C 277 88.5 276 87 274.5 87.5 C 273 87 272 88.5 272 90 Z"
-      fill="#fff" opacity="0.4"/>
-  </g>
+                <path d="M 260 138 
+                         C 250 132 248 122 256 122 
+                         C 260 122 260 126 260 126 
+                         C 260 126 260 122 264 122 
+                         C 272 122 270 132 260 138 Z"
+                      fill="#fff" opacity="0.6"/>
+            </g>
+
+            <!-- float-2: Centered at 52, 153 -->
+            <g class="float-2">
+                <path d="M 52 153 
+                         C 42 147 40 137 48 137 
+                         C 52 137 52 141 52 141 
+                         C 52 141 52 137 56 137 
+                         C 64 137 62 147 52 153 Z"
+                      fill="#fff" opacity="0.5"/>
+            </g>
+
+            <!-- float-3: Centered at 272, 95 (Smallest) -->
+            <g class="float-3">
+                <path d="M 272 95 
+                         C 265 92 264 85 269 85 
+                         C 272 85 272 88 272 88 
+                         C 272 88 272 85 275 85 
+                         C 280 85 279 92 272 95 Z"
+                      fill="#fff" opacity="0.4"/>
+            </g>
 </svg>
 </body>
 </html>
