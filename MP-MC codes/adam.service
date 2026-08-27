@@ -1,0 +1,81 @@
+# ADAM v32 — systemd service unit
+# DGEN Technologies Pvt. Ltd.
+#
+# INSTALL:
+#   sudo cp adam.service /etc/systemd/system/adam.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable adam.service      # start automatically on boot
+#   sudo systemctl start adam.service       # start it now
+#
+# USAGE:
+#   sudo systemctl status adam.service      # check if it's running
+#   sudo systemctl stop adam.service        # graceful stop (SIGTERM —
+#                                            # triggers camera-off/servo-
+#                                            # center/history-save cleanup)
+#   sudo systemctl restart adam.service     # graceful stop + start
+#   journalctl -u adam.service -f           # live logs (replaces stdout)
+#   journalctl -u adam.service --since "1 hour ago"
+#
+# WHY THIS MATTERS FOR "PRODUCTION READY":
+#   Without this, ADAM only runs while someone is SSHed in with the venv
+#   active — a power blip, SSH disconnect, or accidental Ctrl+C kills the
+#   robot until a human manually restarts it. This unit makes ADAM:
+#     - start automatically after boot (After=network-online.target,
+#       sound.target — waits for network + audio subsystem)
+#     - restart automatically if it crashes (Restart=on-failure)
+#     - NOT restart-loop forever if something is fundamentally broken
+#       (StartLimitBurst/StartLimitIntervalSec caps retries)
+#     - log everything to the systemd journal instead of vanishing into
+#       an SSH session's scrollback
+#
+# BEFORE INSTALLING — edit the paths below to match your actual setup:
+#   - User/Group: confirm "pi" is your actual username (whoami)
+#   - WorkingDirectory / ExecStart: confirm the venv + script path
+#   - Group=dialout,audio,gpio,video are needed for UART, sound, and
+#     GPIO servo access respectively — confirm your user is in these
+#     groups (run: groups) or the service will fail with permission
+#     errors even though it works fine when you run it manually (manual
+#     SSH sessions usually already have these groups active).
+
+[Unit]
+Description=ADAM — Autonomous Desktop AI Module (DGEN Technologies)
+After=network-online.target sound.target
+Wants=network-online.target
+# Give the ESP32-CAM and audio HAT a moment to finish their own boot
+# sequence before we start hammering the UART/ALSA devices.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+SupplementaryGroups=dialout audio gpio video
+
+WorkingDirectory=/home/pi/adam
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/adam/venv/bin/python /home/pi/adam/adam.py
+
+# Graceful shutdown: systemd sends SIGTERM (caught by adam_main_wifi.py's
+# signal handler → sets the stop event → camera-off/servo-center/history
+# save runs → process exits cleanly). TimeoutStopSec gives it a real
+# window to finish that cleanup before systemd escalates to SIGKILL.
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+# Auto-restart on crash, but not in an infinite tight loop if something
+# is fundamentally broken (bad API key, missing hardware, etc.) — after
+# StartLimitBurst failures within StartLimitIntervalSec, systemd stops
+# trying and the failure is visible in `systemctl status` instead of
+# silently spinning forever and flooding the journal.
+Restart=on-failure
+RestartSec=5
+
+# Reasonable resource ceiling so a runaway leak can't starve the rest of
+# the Pi (camera streaming, laptop-agent HTTP calls, etc. all run here
+# too). Tune if you find ADAM's actual working set is larger on your
+# build; this is a safety ceiling, not a target.
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target
