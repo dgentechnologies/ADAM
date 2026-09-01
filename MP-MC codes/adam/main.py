@@ -19,6 +19,7 @@ from config import (
     LIVE_MODEL,
     VOICE,
     CAPTURE_DEVICE, CAPTURE_FORMAT, CAPTURE_RATE, CAPTURE_CHANNELS,
+    GEMINI_SEND_RATE,
     PLAYBACK_DEVICE, PLAYBACK_FORMAT, PLAYBACK_RATE, PLAYBACK_CHANNELS,
     PI_UART_PORT, PI_UART_BAUD,
     NECK_TILT_CENTER, NECK_PAN_CENTER,
@@ -52,7 +53,8 @@ async def main() -> None:
     print("=" * 66)
     print("  ADAM v40 — Autonomous Desktop AI Module (Wired ESP32-CAM)")
     print(f"  Model  : {LIVE_MODEL}  |  Voice: {VOICE}")
-    print(f"  Mic    : {CAPTURE_DEVICE} {CAPTURE_FORMAT} {CAPTURE_RATE}Hz {CAPTURE_CHANNELS}ch")
+    print(f"  Mic    : {CAPTURE_DEVICE} {CAPTURE_FORMAT} {CAPTURE_RATE}Hz {CAPTURE_CHANNELS}ch "
+          f"→ {GEMINI_SEND_RATE}Hz to Gemini")
     print(f"  Speaker: {PLAYBACK_DEVICE} {PLAYBACK_FORMAT} {PLAYBACK_RATE}Hz {PLAYBACK_CHANNELS}ch")
     print(f"  ESP32  : WIRED UART {PI_UART_PORT} @ {PI_UART_BAUD} baud (Flow 2)")
     print(f"  Display: on Pico, driven via ESP32-CAM relay (Pi->UART->ESP32->Pico)")

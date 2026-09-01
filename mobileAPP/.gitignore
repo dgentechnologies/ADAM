@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Capacitor / native
+apps/mobile-shell/android/
+apps/mobile-shell/ios/
+apps/mobile-shell/www/
+*.keystore
+*.jks
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Prisma local db
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal

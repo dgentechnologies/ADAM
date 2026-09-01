@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "adam-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "mobileAPP/apps/web", "exec", "next", "dev"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "adam-export",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "serve", "mobileAPP/apps/web/out", "-l", "4321"],
+      "port": 4321,
+      "autoPort": true
+    }
+  ]
+}

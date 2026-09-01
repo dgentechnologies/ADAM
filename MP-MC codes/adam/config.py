@@ -32,20 +32,30 @@ VOICE      = "Charon"
 
 MEMORY_FILE        = BASE_DIR / "adam_memory.json"
 FACE_MEMORY_FILE   = BASE_DIR / "adam_faces.json"
-SYSTEM_PROMPT_FILE = BASE_DIR / "system_prompt.txt"
+SYSTEM_PROMPT_FILE = BASE_DIR / "SystemPrompt.txt"
 CONV_MEMORY_FILE   = BASE_DIR / "adam_conversations.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
-# AUDIO — CAPTURE / PLAYBACK (proven working — do not modify without testing
-# on real hardware)
+# AUDIO — CAPTURE / PLAYBACK
+# ------------------------------------------------------------------------------
+# Both capture and playback use the Google voiceHAT soundcard (dual INMP441
+# I2S mics + MAX98357A I2S amp), addressed BY NAME rather than card index.
+# ALSA numbers the voiceHAT AFTER the HDMI audio card (vc4hdmi), so its index
+# is not fixed (typically 1) and can shift across boots/kernels — but the name
+# "sndrpigooglevoi" is stable. The old "plughw:0,0" pointed at card 0 = HDMI,
+# which has NO capture device (arecord fails) and would route playback to HDMI
+# instead of the speaker. Verified on real hardware: S32_LE/48k/2ch capture
+# (mics live) and S16_LE/48k/2ch playback both open on plughw:sndrpigooglevoi,0.
+# Overridable via .env (CAPTURE_DEVICE / PLAYBACK_DEVICE) if the card name ever
+# differs — check `arecord -l` / `aplay -l`.
 # ═════════════════════════════════════════════════════════════════════════════
 
-CAPTURE_DEVICE   = "plughw:0,0"
+CAPTURE_DEVICE   = os.getenv("CAPTURE_DEVICE", "plughw:sndrpigooglevoi,0")
 CAPTURE_FORMAT   = "S32_LE"
 CAPTURE_RATE     = 48000
 CAPTURE_CHANNELS = 2
 
-PLAYBACK_DEVICE   = "plughw:0,0"
+PLAYBACK_DEVICE   = os.getenv("PLAYBACK_DEVICE", "plughw:sndrpigooglevoi,0")
 PLAYBACK_FORMAT   = "S16_LE"
 PLAYBACK_RATE     = 48000
 PLAYBACK_CHANNELS = 2
@@ -53,8 +63,32 @@ PLAYBACK_CHANNELS = 2
 GEMINI_SEND_RATE = 16000
 GEMINI_RECV_RATE = 24000
 CHUNK_FRAMES     = 1600      # 33ms at 48kHz
-S32_SHIFT        = 14
-SPEAKER_GAIN     = 2.5
+
+# ── MIC DIGITAL GAIN ────────────────────────────────────────────────────────
+# The INMP441 sends 24-bit audio left-justified in each 32-bit I2S frame.
+# S32_SHIFT is how far we right-shift the raw S32 sample before the int16 cast
+# in audio_utils. It's effectively the mic's *digital gain*: smaller shift =
+# louder (and closer to clipping); +1 to the shift HALVES the level.
+#
+# 14 was too hot for the observed mic levels (raw RMS 130M-310M in the logs).
+# On loud speech the shifted value went past 32767 and the int16 cast WRAPPED
+# it into loud opposite-sign spikes — that garbling is why Gemini mis-heard
+# English as random languages. 15 halves the level to give clean headroom;
+# the np.clip() now in audio_utils saturates any rare remaining peak instead of
+# wrapping it. If speech still sounds hot/distorted, bump to 16 (quieter) with
+# no code change:  echo 'MIC_S32_SHIFT=16' >> ~/adam/.env  &&  restart adam.
+S32_SHIFT        = int(os.getenv("MIC_S32_SHIFT", "15"))
+
+# ── SPEAKER SOFTWARE GAIN ───────────────────────────────────────────────────
+# Multiplier applied to Gemini's TTS before playback (audio_utils clips to the
+# int16 range after). Gemini's output is already near full-scale, so 2.5 clipped
+# it hard and made the speaker sound distorted/unclear. 1.3 is a mild, largely
+# clip-free boost. For MORE LOUDNESS use the hardware/ALSA volume instead
+# (`alsamixer` -> pick the voiceHAT card -> raise the level) — pushing this past
+# ~1.5 just clips. Tunable without a code change:
+#   echo 'SPEAKER_GAIN=1.1' >> ~/adam/.env  &&  restart adam
+SPEAKER_GAIN     = float(os.getenv("SPEAKER_GAIN", "1.3"))
+
 POST_MUTE_S      = 0.45
 MIC_Q_MAX        = 40
 OUT_Q_MAX        = 200
@@ -106,9 +140,6 @@ NECK_PAN_DEADZONE_DEG  = 12
 # back-to-back corrections that read as jittery/twitchy rather than
 # deliberate human-like turns.
 NECK_PAN_COOLDOWN_S    = 1.5
-# How often (seconds of no active tracking) ADAM does a small idle look
-# gesture instead of sitting perfectly frozen.
-IDLE_GESTURE_INTERVAL_S = 25.0
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DIRECTION-OF-ARRIVAL (DOA) — dual INMP441 mics on v32 BODY board

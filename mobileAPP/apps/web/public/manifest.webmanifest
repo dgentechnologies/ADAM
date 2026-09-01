@@ -1,0 +1,11 @@
+{
+  "name": "ADAM",
+  "short_name": "ADAM",
+  "description": "Companion app for ADAM — an AI desk companion by DGEN Technologies.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": []
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@adam/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Tailwind theme, TS and ESLint config for the ADAM Companion App",
+  "exports": {
+    "./tokens": "./tailwind/tokens.js",
+    "./tailwind-preset": "./tailwind/preset.js",
+    "./tailwind-plugin": "./tailwind/plugin.js",
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/next.json": "./tsconfig/next.json",
+    "./tsconfig/node.json": "./tsconfig/node.json",
+    "./tsconfig/react-lib.json": "./tsconfig/react-lib.json"
+  },
+  "dependencies": {
+    "tailwindcss": "3.4.17"
+  },
+  "files": ["tailwind", "tsconfig"]
+}

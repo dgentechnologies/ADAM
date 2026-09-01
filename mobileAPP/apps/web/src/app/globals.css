@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * App-level base only. Everything reusable — the token variables, resets, and
+ * the Digital Skin utilities — is registered by @adam/config's Tailwind plugin
+ * so the component library carries its own styling contract.
+ */
+@layer base {
+  body {
+    /**
+     * Ambient Digital Skin behind every screen, at the 3% ceiling from
+     * DESIGN.md. Screens needing a stronger texture layer their own overlay.
+     */
+    background-image: radial-gradient(rgba(255, 255, 255, 0.14) 1.5px, transparent 0);
+    background-size: 24px 24px;
+    background-attachment: fixed;
+  }
+
+  [data-theme='light'] body {
+    background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.5px, transparent 0);
+  }
+}

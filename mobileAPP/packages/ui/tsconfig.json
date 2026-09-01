@@ -1,0 +1,10 @@
+{
+  "extends": "@adam/config/tsconfig/react-lib.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tailwind.preset.js"],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}

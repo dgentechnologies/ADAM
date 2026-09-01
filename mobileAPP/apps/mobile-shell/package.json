@@ -1,0 +1,30 @@
+{
+  "name": "@adam/mobile-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor shell wrapping @adam/web's static export as an Android/iOS app",
+  "scripts": {
+    "add:android": "cap add android",
+    "sync": "cap sync",
+    "open:android": "cap open android",
+    "run:android": "cap run android",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf .turbo"
+  },
+  "dependencies": {
+    "@capacitor/android": "6.2.0",
+    "@capacitor/app": "6.0.2",
+    "@capacitor/core": "6.2.0",
+    "@capacitor/keyboard": "6.0.3",
+    "@capacitor/preferences": "6.0.3",
+    "@capacitor/splash-screen": "6.0.3",
+    "@capacitor/status-bar": "6.0.2"
+  },
+  "devDependencies": {
+    "@adam/config": "workspace:*",
+    "@capacitor/cli": "6.2.0",
+    "@types/node": "22.10.2",
+    "rimraf": "6.0.1",
+    "typescript": "5.7.2"
+  }
+}

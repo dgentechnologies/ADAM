@@ -1,0 +1,24 @@
+{
+  "name": "@adam/types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Zod schemas + inferred types shared by @adam/web and @adam/api — the single API contract",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf .turbo dist"
+  },
+  "dependencies": {
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@adam/config": "workspace:*",
+    "rimraf": "6.0.1",
+    "typescript": "5.7.2"
+  }
+}

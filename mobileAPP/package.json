@@ -1,0 +1,30 @@
+{
+  "name": "adam-companion",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ADAM Companion App — DGEN Technologies Pvt. Ltd.",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=@adam/web",
+    "dev:api": "turbo run dev --filter=@adam/api",
+    "build": "turbo run build",
+    "build:web": "turbo run build --filter=@adam/web",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css}\"",
+    "cap:sync": "pnpm --filter @adam/mobile-shell run sync",
+    "cap:android": "pnpm --filter @adam/mobile-shell run open:android"
+  },
+  "devDependencies": {
+    "prettier": "3.4.2",
+    "prettier-plugin-tailwindcss": "0.6.9",
+    "turbo": "2.3.3",
+    "typescript": "5.7.2"
+  }
+}

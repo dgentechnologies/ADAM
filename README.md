@@ -1,80 +1,72 @@
 # ADAM — Autonomous Desktop AI Module
 
-ADAM is an AI-powered desktop assistant built by **DGEN Technologies Pvt. Ltd.**
-Powered by Google Gemini Live API, it features real-time voice conversation,
-emotion-driven face animations, live camera vision, and a persistent memory system.
+ADAM is an AI-powered desktop assistant built by **DGEN Technologies Pvt. Ltd.**  
+Powered by the Google Gemini Live API, it features real-time bidirectional voice conversation, emotion-driven face animations, live camera vision & face tracking, async web search, hardware neck servo actuation, and persistent memory.
 
 ---
 
-## Project Structure
+## Project Directory Layout
 
 ```
 ADAM/
-├── adam_live_v19_attention.py   # ★ Latest — v19.1: Gemini Live + camera + smart attention
-├── adam_live_v18_camera.py      # v18: Gemini Live + OpenCV camera + face recognition
-├── adam_live_v17.py             # v17: Gemini Live + Flask face UI + WebSocket
-├── adam_live_v9.py              # v9:  Gemini Live API (standalone, no camera)
-├── adam_live_v9_legacy.py       # v9:  Legacy variant with Google Search tool
-├── adam_voice_elevenlabs.py     # Classic: Google STT + ElevenLabs TTS
-├── adam_native_audio.py         # Native audio: speech-segmented Gemini input
-├── wake_word_vosk.py            # Wake word detector (Vosk offline model)
-├── wake_word_google.py          # Wake word detector (Google Speech Recognition)
-├── adam_face.html               # Face animation UI (served via Flask)
-├── system_prompt.txt            # ADAM's full personality & behaviour prompt
-├── adam_memory.json             # Persistent conversation memory (auto-generated)
-├── requirements_native_audio.txt
-├── README_native_audio.md
-└── design/
-    └── media/
-        ├── body.jpeg
-        └── generated_design.jpeg
+├── adamV30.py                  # ★ Latest Entry Launcher (v30)
+├── adamV30_test_async_search.py# Core Runtime (v30 async search, vision, neck tracking)
+├── adamV29.py                  # Stable Precursor (v29 search cost optimizations)
+├── system_prompt.txt           # Unified token-optimized system prompt
+├── adam_face.html              # Face animation UI (served via Flask/WebSocket)
+├── adam_memory.json            # Persistent conversation & user memory
+├── adam_conversations.json     # Conversation transcript logs
+├── adam_faces.json             # Facial recognition embeddings/data
+│
+├── emotions/                   # HTML/CSS UI assets for emotion state animations
+├── faces/                      # Reference profile photos for facial recognition
+├── tools/                      # Diagnostic and verification utilities
+│   ├── adam_neck_serial.py     # Standalone Arduino/Serial neck test script
+│   └── verify_compile.py       # Arduino/ESP32 compilation check script
+│
+├── MP-MC codes/                # Microprocessor / Microcontroller deployment code
+│   ├── adam.py                 # Raspberry Pi / Embedded core daemon
+│   ├── laptop_agent.py         # Companion agent
+│   ├── esp32_cam/              # ESP32 Camera stream firmware
+│   └── ADAM_Display/           # Embedded screen drivers
+│
+├── UNO_code/                   # Microcontroller & Arduino firmware
+│   ├── picopixel_lvgl_ui/      # LVGL graphical UI for PicoPixel/ESP32
+│   ├── esp32_tft_emotions/     # TFT emotion display firmware
+│   └── adam_neck_servo/        # Servo neck controller firmware
+│
+├── mobileAPP/                  # Mobile companion application (Turborepo monorepo)
+├── adam-web-demo/              # Web demonstration & relay server
+├── Hardware_Docs/              # Schematics, blueprints, and setup documentation
+├── design/                     # Hardware CAD / industrial design assets
+└── old_versions/               # Archived historic versions (v9 through v28)
 ```
 
 ---
 
-## Quick Start
+## Quick Start (v30)
 
-### Latest version (recommended)
-
-```bash
-pip install --upgrade google-genai pyaudio python-dotenv websockets flask opencv-python Pillow
-```
-
-Set your API key:
+### 1. Requirements & Dependencies
 
 ```bash
-# Linux / macOS
-export GOOGLE_API_KEY="your_key_here"
-
-# Windows PowerShell
-$env:GOOGLE_API_KEY = "your_key_here"
+pip install --upgrade google-genai pyaudio python-dotenv websockets flask opencv-python Pillow pyperclip pyserial webrtcvad vosk duckduckgo-search
 ```
 
-Run:
+*(Optional) Download an offline Vosk speech model from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) if using offline wake-word detection.*
+
+### 2. Environment Setup
+
+Create or update your `.env` file in the project root:
+
+```env
+GOOGLE_API_KEY=your_gemini_api_key_here
+```
+
+### 3. Run ADAM
 
 ```bash
-python adam_live_v19_attention.py
+python adamV30.py
 ```
-
-### Classic voice-only version
-
-```bash
-pip install speechrecognition elevenlabs playsound python-dotenv google-generativeai
-python adam_voice_elevenlabs.py
-```
-
----
-
-## Version History
-
-| File | Version | Key Features |
-|------|---------|-------------|
-| `adam_live_v19_attention.py` | v19.1 | Camera + smart attention (face gaze, wake word, timeout) |
-| `adam_live_v18_camera.py` | v18 | Camera + face recognition + persistent visual memory |
-| `adam_live_v17.py` | v17 | Gemini Live + face UI (WebSocket + Flask) |
-| `adam_live_v9.py` | v9 | Gemini Live API + session resumption + voice picker |
-| `adam_native_audio.py` | — | Native audio with speech-segmentation |
-| `adam_voice_elevenlabs.py` | — | Classic STT + ElevenLabs TTS pipeline |
 
 ---
 

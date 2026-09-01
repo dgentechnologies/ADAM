@@ -1,0 +1,8 @@
+{
+  "extends": "@adam/config/tsconfig/base.json",
+  "include": ["capacitor.config.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"]
+  }
+}
