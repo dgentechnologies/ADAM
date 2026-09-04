@@ -35,7 +35,10 @@ export function SetupShell({ children }: { children: ReactNode }) {
   const progress = step ? progressPosition(step) : null;
 
   return (
-    <div className="relative flex h-dvh max-h-dvh flex-col overflow-hidden">
+    <div
+      className="relative flex min-h-dvh h-dvh max-h-dvh flex-col overflow-hidden"
+      style={{ minHeight: '100dvh', height: '100dvh' }}
+    >
       <div className="digital-skin pointer-events-none fixed inset-0" aria-hidden />
 
       {bare ? null : (
@@ -54,7 +57,7 @@ export function SetupShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
         <SetupTransition>{children}</SetupTransition>
       </div>
     </div>

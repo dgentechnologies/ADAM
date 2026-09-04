@@ -3,22 +3,289 @@
 @tailwind utilities;
 
 /**
- * App-level base only. Everything reusable — the token variables, resets, and
- * the Digital Skin utilities — is registered by @adam/config's Tailwind plugin
- * so the component library carries its own styling contract.
+ * App-level base styles.
  */
-@layer base {
-  body {
-    /**
-     * Ambient Digital Skin behind every screen, at the 3% ceiling from
-     * DESIGN.md. Screens needing a stronger texture layer their own overlay.
-     */
-    background-image: radial-gradient(rgba(255, 255, 255, 0.14) 1.5px, transparent 0);
-    background-size: 24px 24px;
-    background-attachment: fixed;
-  }
+/* Dynamic Progressive Matrix Shader Engine owns the dot matrix halo */
+html, body {
+  background-color: #000000 !important;
+  background-image: none !important;
+}
 
-  [data-theme='light'] body {
-    background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.5px, transparent 0);
+.digital-skin,
+[class*="digital-skin"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+/* Organic glance with saccadic eye movements and micro-settles (active on /welcome and /camera-permission) */
+@keyframes adam-glance {
+  0%, 14% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
   }
+  18% {
+    transform: translate3d(-26px, -2px, 0) rotate(-0.6deg);
+  }
+  20%, 34% {
+    transform: translate3d(-24px, -1.5px, 0) rotate(-0.3deg);
+  }
+  37%, 45% {
+    transform: translate3d(-18px, -3.5px, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(1.5px, 0, 0) rotate(0deg);
+  }
+  52%, 60% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  64% {
+    transform: translate3d(26px, 1.5px, 0) rotate(0.6deg);
+  }
+  66%, 78% {
+    transform: translate3d(24px, 1px, 0) rotate(0.3deg);
+  }
+  81%, 88% {
+    transform: translate3d(16px, -2.5px, 0) rotate(0deg);
+  }
+  93%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+/* Frequent, unmistakable organic eyelid blinks */
+@keyframes adam-blink {
+  0%, 41%, 47%, 86%, 92%, 100% {
+    transform: scaleY(1) scaleX(1);
+    opacity: 1;
+  }
+  43%, 45% {
+    transform: scaleY(0) scaleX(0.9);
+    opacity: 0;
+  }
+  88%, 90% {
+    transform: scaleY(0) scaleX(0.9);
+    opacity: 0;
+  }
+}
+
+/* Ambient organic breathing & gentle floating */
+@keyframes adam-organic-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  35% {
+    transform: translateY(-4px);
+  }
+  70% {
+    transform: translateY(2px);
+  }
+}
+
+.animate-adam-glance {
+  animation: adam-glance 6.5s cubic-bezier(0.35, 0.05, 0.45, 0.95) infinite !important;
+  display: inline-flex !important;
+  will-change: transform;
+}
+
+.animate-adam-blink {
+  animation: adam-blink 3.6s ease-in-out infinite !important;
+  transform-origin: center center !important;
+  transition: none !important;
+  will-change: transform, opacity;
+}
+
+.animate-adam-float {
+  animation: adam-organic-float 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+}
+
+/* bloom sets box-shadow */
+.bloom {
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.35), 0 0 30px rgba(255, 255, 255, 0.15) !important;
+}
+
+/* === PERFECT VIEWPORT-FIT FOR SIGN-IN (NO SCROLLING & VISIBLE TERMS/CHECKBOX) === */
+body:has(input[type="checkbox"]) {
+  overflow: hidden !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+}
+
+body:has(input[type="checkbox"]) > div.relative.flex {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+body:has(input[type="checkbox"]) main {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  flex: 1 1 0% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  padding-top: 0 !important;
+  padding-bottom: max(20px, env(safe-area-inset-bottom, 20px)) !important;
+}
+
+/* === VIEWPORT & CARD SIZING FOR SETUP SCREENS (/device-found, /wifi-select, etc.) === */
+.rounded-card,
+div.rounded-card,
+div[class*="rounded-card"] {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+/* Fix setup shell root container without affecting inner cards */
+body > div.relative.flex.min-h-dvh,
+body > div.relative.flex.h-dvh {
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+/* SetupShell header (back button & step progress) stays compact at top */
+body > div.relative.flex > div.relative.z-10:not(:has(main)),
+body > div.relative.flex > div.px-container.pt-safe {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+/* Only wrappers between SetupShell root and main fill the remaining height */
+body > div.relative.flex > div.relative.z-10:has(main),
+body > div.relative.flex > div.relative.z-10.flex-1,
+body > div.relative.flex > div.relative.z-10:has(main) > div,
+body > div.relative.flex div:has(> main) {
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  flex: 1 1 0% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+/* Ensure all setup wizard pages fit in viewport without body scroll */
+body > div.relative.flex main {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  flex: 1 1 0% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  padding-top: 0 !important;
+  padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
+  overflow: hidden !important;
+}
+
+/* Main inner container fills 100% height without overflowing */
+body > div.relative.flex main > div.relative.flex.w-full.flex-1,
+body > div.relative.flex main > div.flex-1,
+body > div.relative.flex main > form.flex-1 {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  flex: 1 1 0% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  overflow: hidden !important;
+}
+
+/* Middle content area between header and footer actions scrolls smoothly on all setup screens */
+body > div.relative.flex main .flex-1.min-h-0,
+body > div.relative.flex main div.flex-col.gap-stack-md.pt-stack-md,
+body > div.relative.flex main div.flex-col.gap-stack-md.pt-stack-lg,
+body > div.relative.flex main div.flex-col.gap-stack-md.pt-2,
+body > div.relative.flex main div.flex-col.gap-stack-md.py-2 {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Always pin action CTA buttons at bottom above mobile gesture bar */
+body > div.relative.flex main .mt-auto,
+body > div.relative.flex main [class*="ScreenActions"] {
+  flex-shrink: 0 !important;
+  margin-top: auto !important;
+  padding-top: 8px !important;
+  padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
+}
+
+/* Compact sizing for sign-in components so everything sits comfortably above fold */
+body:has(input[type="checkbox"]) .h-16.w-16,
+body:has(input[type="checkbox"]) .h-14.w-14,
+body:has(input[type="checkbox"]) div:has(> [role="img"]) {
+  height: 48px !important;
+  width: 48px !important;
+}
+
+body:has(input[type="checkbox"]) .gap-stack-md {
+  gap: 10px !important;
+}
+
+body:has(input[type="checkbox"]) h1 {
+  font-size: 26px !important;
+  line-height: 1.15 !important;
+  margin-bottom: 0 !important;
+}
+
+body:has(input[type="checkbox"]) button {
+  height: 44px !important;
+  min-height: 44px !important;
+  font-size: 15px !important;
+}
+
+body:has(input[type="checkbox"]) label {
+  margin-top: 6px !important;
+  gap: 10px !important;
+}
+
+body:has(input[type="checkbox"]) label span.text-label-md {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+
+body:has(input[type="checkbox"]) .mt-auto {
+  padding-top: 8px !important;
+}
+
+/* === BOLDER, HIGH-VISIBILITY STEP PROGRESS INDICATOR === */
+p.font-display.uppercase,
+.font-display.text-label-xs.uppercase,
+div:has(> [role="progressbar"]) > p {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  color: #FFFFFF !important;
+  opacity: 0.95 !important;
+}
+
+[role="progressbar"] {
+  gap: 6px !important;
+}
+
+[role="progressbar"] > span {
+  height: 3.5px !important;
+  border-radius: 9999px !important;
+}
+
+[role="progressbar"] > span.bg-border-strong {
+  background-color: rgba(255, 255, 255, 0.22) !important;
+}
+
+[role="progressbar"] > span.bg-fg {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4) !important;
+}
+
+button[aria-label="Back"] svg {
+  stroke-width: 2.5px !important;
 }

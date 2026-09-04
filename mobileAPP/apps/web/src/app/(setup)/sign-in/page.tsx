@@ -44,17 +44,25 @@ export default function SignInPage() {
         <div className="absolute top-0 left-0 right-0 h-1/3 bg-gradient-to-b from-black to-transparent pointer-events-none" />
       </div>
 
-      <div className="relative z-10 flex flex-1 flex-col justify-center gap-stack-md">
-        {/* The rounded-square mark chip from the Stitch screen — the app's own
-            identity stated before it asks for the user's. */}
-        <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-border bg-surface-raised overflow-hidden">
-          <AdamFaceMark expression="idle" size="sm" glance={false} />
+      <div className="relative z-10 flex flex-1 flex-col justify-center gap-6">
+        {/* Generous, beautifully padded hardware icon box for ADAM's eyes */}
+        <div
+          className="flex h-20 w-20 items-center justify-center overflow-hidden"
+          style={{
+            borderRadius: 20,
+            background: 'linear-gradient(180deg, #18181b 0%, #0d0d0f 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            boxShadow: '0 12px 30px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
+            padding: '16px',
+          }}
+        >
+          <AdamFaceMark expression="idle" size="sm" glance={false} animated bloom />
         </div>
         <ScreenHeader size="md" title="Who am I working for?" />
       </div>
 
-      <ScreenActions className="relative z-10 pt-stack-md">
-        <Button block variant="primary" disabled={!accepted} onClick={signIn} className="gap-3">
+      <ScreenActions className="relative z-10 pt-2 gap-2.5">
+        <Button block variant="primary" disabled={!accepted} onClick={signIn} className="gap-3 h-11">
           <svg
             viewBox="0 0 24 24"
             width="20"
@@ -81,11 +89,11 @@ export default function SignInPage() {
           </svg>
           Continue with Google
         </Button>
-        <Button block variant="ghost" size="md" disabled={!accepted} onClick={signIn}>
+        <Button block variant="ghost" size="md" disabled={!accepted} onClick={signIn} className="h-11">
           Use email instead
         </Button>
 
-        <label className="mt-stack-sm flex cursor-pointer items-start gap-stack-sm">
+        <label className="mt-2 flex cursor-pointer items-start gap-stack-sm">
           <span className="relative mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
             <input
               type="checkbox"

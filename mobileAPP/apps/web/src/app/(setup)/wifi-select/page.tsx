@@ -18,11 +18,11 @@ import { queryKeys, scanNetworks } from '@/lib/mock/api';
 import { useSetupStore } from '@/stores/setup-store';
 
 /**
- * `connecting_to_wi_fi` — the network list ("Get him online."), not the password
- * screen; the password entry is its own Stitch folder and its own route.
+ * `connecting_to_wi_fi` — the network list ("Get him online.").
  *
- * 5GHz-only SSIDs are listed but unselectable, with the constraint stated once at
- * the bottom instead of repeated per row.
+ * Designed for mobile:
+ * - Fixed header and bottom actions.
+ * - Scrollable list of networks so buttons are never pushed below fold.
  */
 export default function WifiSelectPage() {
   const router = useRouter();
@@ -45,15 +45,17 @@ export default function WifiSelectPage() {
   }
 
   return (
-    <Screen className="pt-stack-md">
-      <ScreenHeader
-        size="md"
-        title="Get him online."
-        subtitle="Select a network to connect ADAM to your local environment."
-      />
+    <Screen className="pt-0 flex-1 min-h-0 flex flex-col justify-between" texture={false}>
+      <div className="shrink-0 pt-1 pb-2">
+        <ScreenHeader
+          size="md"
+          title="Get him online."
+          subtitle="Select a network to connect ADAM to your local environment."
+        />
+      </div>
 
-      <div className="flex flex-col gap-stack-md pt-stack-md">
-        <div className="flex flex-col gap-stack-sm">
+      <div className="flex-1 min-h-0 overflow-y-auto py-2 flex flex-col gap-stack-md no-scrollbar">
+        <div className="flex flex-col gap-2.5">
           {isPending
             ? Array.from({ length: 4 }, (_, index) => (
                 <Card key={index} padding="none">
@@ -69,7 +71,10 @@ export default function WifiSelectPage() {
                   <Card
                     key={network.ssid}
                     padding="none"
-                    className={cn(isSelected && 'border-fg')}
+                    className={cn(
+                      'transition-colors duration-fast',
+                      isSelected ? 'border-fg bg-surface-raised' : 'border-border/60 bg-surface-raised/90',
+                    )}
                   >
                     <ListRow
                       disabled={network.unsupported}
@@ -101,14 +106,14 @@ export default function WifiSelectPage() {
               })}
         </div>
 
-        <p className="flex items-center gap-stack-sm text-label-md text-fg-muted">
+        <p className="flex items-center gap-stack-sm text-label-sm text-fg-muted pb-2">
           <Info className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden />
           ADAM only supports 2.4GHz networks.
         </p>
       </div>
 
-      <ScreenActions>
-        <Button block variant="primary" disabled={!selected} onClick={submit}>
+      <ScreenActions className="mt-auto pb-safe shrink-0 pt-2">
+        <Button block variant="primary" size="lg" disabled={!selected} onClick={submit}>
           Continue
         </Button>
       </ScreenActions>

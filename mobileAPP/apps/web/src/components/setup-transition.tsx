@@ -45,7 +45,7 @@ export function SetupTransition({ children }: { children: ReactNode }) {
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={pathname}
-        className="flex flex-1 flex-col"
+        className="flex flex-1 min-h-0 flex-col overflow-hidden"
         initial={{ opacity: 0, x: offset }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: -offset }}

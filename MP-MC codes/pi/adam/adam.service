@@ -1,0 +1,41 @@
+[Unit]
+Description=ADAM v40 — Autonomous Desktop AI Module
+# Needs the network up for the Gemini Live API + laptop-agent mDNS discovery.
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/adam
+# -u = unbuffered, so prints reach journald live (journalctl -u adam -f).
+# config.py loads /home/pi/adam/.env itself (GEMINI_API_KEY etc.), so no
+# EnvironmentFile line is needed here.
+ExecStart=/home/pi/adam/venv/bin/python -u /home/pi/adam/main.py
+
+# DNS READINESS GATE. network-online.target is not enough: it means wlan0
+# associated and has an address, NOT that the resolver answers. Measured on
+# this Pi, 28 of 39 session reconnects in a single boot were
+# "socket.gaierror: [Errno -3] Temporary failure in name resolution", every
+# one of them inside the first minute of uptime. Wait (bounded) for the real
+# thing ADAM needs to resolve. `|| true` and the final `exit 0` are load-
+# bearing: a Type=simple ExecStartPre that fails aborts the whole unit, and
+# ADAM must still come up on a network with no internet — main.py now retries
+# transient DNS faults cheaply on its own (NETWORK_TRANSIENT), so this only
+# has to remove the boot-time stampede, not guarantee connectivity.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do getent hosts generativelanguage.googleapis.com >/dev/null 2>&1 && echo "DNS ready after ${i}s" && exit 0; sleep 1; done; echo "DNS still not resolving after 30s - starting anyway"; exit 0'
+
+# main.py installs a SIGTERM handler that turns the camera off, centers the
+# servo and flushes memory/conversation to disk, so the default SIGTERM stop
+# is a clean shutdown. Give it time to finish that before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Auto-restart on crash (unhandled exception -> sys.exit(1)); a clean exit(0)
+# will NOT restart. Backoff so a hard-failing start can't hammer the Pi.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

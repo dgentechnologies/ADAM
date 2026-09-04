@@ -8,12 +8,10 @@ import { useSetupStore } from '@/stores/setup-store';
 /**
  * `let_adam_see_you` — camera consent.
  *
- * The on-device framing is stated on this screen because consent has to be
- * informed at the moment it is given, not on a later legal page. "Not now" is a
- * real, equally-weighted exit: face recognition is optional (spec §1).
- *
- * The native camera permission plugin is out of scope for this pass, so both
- * buttons only record the choice in the store.
+ * On tap of "Let ADAM meet you" we immediately invoke `getUserMedia` so the
+ * native permission dialog fires here (at the moment of informed consent)
+ * rather than a screen later.  The obtained stream is immediately stopped —
+ * the face-capture page opens its own stream fresh.
  */
 export default function CameraPermissionPage() {
   const router = useRouter();
@@ -21,9 +19,23 @@ export default function CameraPermissionPage() {
   const complete = useSetupStore((state) => state.complete);
   const finish = useSetupStore((state) => state.finish);
 
-  function grant() {
+  async function grant() {
     setCameraPermission(true);
     complete('camera-permission');
+
+    // Fire the browser permission prompt NOW so the dialog appears at the
+    // informed-consent moment rather than in the middle of the next screen.
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        // Permission obtained — immediately release the stream.
+        // face-capture/page.tsx will open a fresh stream with optimal constraints.
+        stream.getTracks().forEach((t) => t.stop());
+      } catch {
+        // User denied or no camera — face-capture page handles this gracefully.
+      }
+    }
+
     router.push('/face-capture');
   }
 
@@ -45,7 +57,7 @@ export default function CameraPermissionPage() {
           align="center"
           size="md"
           title="Let ADAM see you"
-          subtitle="He learns your face so he knows who he’s talking to. Face data stays on the device and is never uploaded — no photos, only a local mathematical signature you can delete any time from Settings → Memory."
+          subtitle="He learns your face so he knows who he's talking to. Face data stays on the device and is never uploaded — no photos, only a local mathematical signature you can delete any time from Settings → Memory."
         />
       </div>
 

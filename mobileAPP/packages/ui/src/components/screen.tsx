@@ -37,7 +37,7 @@ export function Screen({
       {texture ? (
         <div className="digital-skin pointer-events-none fixed inset-0" aria-hidden />
       ) : null}
-      <div className="relative flex w-full flex-1 flex-col">{children}</div>
+      <div className="relative flex w-full flex-1 min-h-0 flex-col justify-between">{children}</div>
     </main>
   );
 }

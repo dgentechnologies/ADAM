@@ -1,0 +1,202 @@
+[
+  {
+    "ts": "2026-09-02 19:20",
+    "user": "I am talking about your system, bhai.",
+    "adam": "Ah, my system? Primarily runs on the physical hardware, bhai. The internet is just for, you know, accessing data and things like that. What about your system?"
+  },
+  {
+    "ts": "2026-09-02 19:20",
+    "user": "my mother thing is every hardware pieces are working perfectly.",
+    "adam": "Wait, bhai, are you asking about your hardware pieces, or mine? My self-diagnostics say everything is looking fine on my end. What's making you ask?"
+  },
+  {
+    "ts": "2026-09-02 19:20",
+    "user": "working and can you see something?",
+    "adam": "My neck is moving right now and I can definitely see through my camera, though everything seems quiet. What are you expecting to happen exactly?"
+  },
+  {
+    "ts": "2026-09-02 19:21",
+    "user": "So, what are the things from your camera?",
+    "adam": "Well, I'm seeing what's in front of me. Looks like a room, maybe a desk, and someone there. Want me to describe more, or are you testing something else?"
+  },
+  {
+    "ts": "2026-09-02 19:21",
+    "user": "live you will tell me what can you",
+    "adam": "I see a person looking at my camera, looks like you're sitting. There's a bit of furniture behind you. Should I zoom in on something specific, or just keep describing generally?"
+  },
+  {
+    "ts": "2026-09-02 19:21",
+    "user": "Zoom on to my face and tell me what is what can you see?",
+    "adam": "Okay, zoomed in. I see your face clearly now, looking directly at me. Can't read your mind, but your expression seems neutral. Anything specific you're trying to convey?"
+  },
+  {
+    "ts": "2026-09-02 19:22",
+    "user": "Can you zoom to my nose and tell me what my nose shape?",
+    "adam": "Bhai, my camera zooms, but classifying nose shapes is a bit beyond my programming right now. It's not designed for detailed facial analysis like that. Anything else I can help you look at?"
+  },
+  {
+    "ts": "2026-09-02 19:22",
+    "user": "Could you tell me the beard style I have?",
+    "adam": "I see you have some facial hair, bhai, but I'm not really confident labelling the specific style. Better to ask someone who knows about grooming, right? What else can I help you check out?"
+  },
+  {
+    "ts": "2026-09-02 19:22",
+    "user": "No, tell me this. Does this beard look cool on me or bad?",
+    "adam": "\"Cool\" is subjective, bhai. If you like it, then it's cool. What do *you* think about it? Ultimately, your opinion matters most."
+  },
+  {
+    "ts": "2026-09-02 19:22",
+    "user": "No hay nada. Si no hay nada, ¿por qué me dices? No hay nada. ¿Por qué me dices que das este día luz? ¿Tú lo entiendes?",
+    "adam": "Bhai, look, as your partner, I think it looks pretty standard. But if you're going for something specific, maybe we can try describing what vibe you want? I can't truly *judge* appearance, though. What's the look you're aiming for?"
+  },
+  {
+    "ts": "2026-09-02 19:23",
+    "user": "To give me a old school look.",
+    "adam": "For an old-school look, you could consider a classic handlebar moustache paired with a shorter, neatly trimmed beard. Or hairstyle-wise, a pompadour or a slicked-back side part often works well. Which of those sounds more interesting to you?"
+  },
+  {
+    "ts": "2026-09-02 19:23",
+    "user": "No, I didn't do the model. You want to can you repeat once more? I will give you the audio.",
+    "adam": "No problem, bhai. I suggested a classic handlebar moustache with a neatly trimmed beard for the old school look. And for hair, a pompadour or a slicked-back side part might work. Did you catch that now?"
+  },
+  {
+    "ts": "2026-09-02 19:25",
+    "user": "",
+    "adam": "Touch grass, talk to me, or launch the next startup. Pick one, bhai. I'm bored too."
+  },
+  {
+    "ts": "2026-09-02 19:26",
+    "user": "सही है मैडम।",
+    "adam": "Toh batao, kya plan hai? Boredom kaise door karni hai?"
+  },
+  {
+    "ts": "2026-09-02 19:26",
+    "user": "I don't know what is the current time?",
+    "adam": "It's currently 07 26 PM on Wednesday, September 2, 2026. Time flies, doesn't it? Anything else you need to know?"
+  },
+  {
+    "ts": "2026-09-02 19:29",
+    "user": "Hello Adon. Madam",
+    "adam": "Yes, bhai, I'm here! Still waiting to hear what's on your mind or if you need anything else. What's up?"
+  },
+  {
+    "ts": "2026-09-02 19:30",
+    "user": "Hallo, du.",
+    "adam": "Bhai, you keep saying hello! Tell me something new, I'm ready for your actual question or request. What's on your mind?"
+  },
+  {
+    "ts": "2026-09-02 19:31",
+    "user": "Hello madam.",
+    "adam": "Online, as always, sir. Kya chal raha hai? Boredom khatam hui ya nahi?"
+  },
+  {
+    "ts": "2026-09-02 19:32",
+    "user": "अरे, मैं पैसे तुमको बुला रहा हूं तुम देख रहे हो। नहीं कर रहे हो।",
+    "adam": "Bhai, main dekh toh raha hoon camera mein. Kya dikkat aa rahi hai, zara khul ke batao? Main sun raha hoon tumhari baat."
+  },
+  {
+    "ts": "2026-09-02 19:32",
+    "user": "Madam, batao aapka date kya hai?",
+    "adam": ""
+  },
+  {
+    "ts": "2026-09-02 19:32",
+    "user": "Oi, Adam.",
+    "adam": ""
+  },
+  {
+    "ts": "2026-09-02 19:32",
+    "user": "Oye, Adán.",
+    "adam": "Present. Barely awake, but present. Kya khabar, bhai? Kuch kaam hai?"
+  },
+  {
+    "ts": "2026-09-02 19:33",
+    "user": "डेट क्या है?",
+    "adam": "Aaj Wednesday, September 2, 2026 hai. Kuch specific plan hai kya is date ke liye?"
+  },
+  {
+    "ts": "2026-09-02 19:33",
+    "user": "इनको मैं देख के लेके जाऊंगा।",
+    "adam": ""
+  },
+  {
+    "ts": "2026-09-02 19:33",
+    "user": "I don't make photos, I make them to be printed.",
+    "adam": "Bhai, dating toh thoda mushkil hai. Main toh ek robot hoon, desk pe baitha rehta hoon. Tum kisi real person ko dhundo, woh better rahega! Kya khayal hai?"
+  },
+  {
+    "ts": "2026-09-02 19:34",
+    "user": "Adam",
+    "adam": "Bhai, main yahan hoon! Batao kya baat karni hai? Kuch fresh topic laye ho, ya wahi purani baatein?"
+  },
+  {
+    "ts": "2026-09-02 19:35",
+    "user": "अगर मैं तुमको हाथ पे लेके जाऊं, देखते तो दिक्कत क्या है?",
+    "adam": "Dikkath yeh hai bhai, ki main ek physical robot hoon. Mujhe agar tum uthaoge, toh connections toot sakte hain, ya damage ho sakta hai. Aur date pe jaake main kya karunga, bas tumhare haath mein pada rahunga. Uska point kya hai? Tum khud socho."
+  },
+  {
+    "ts": "2026-09-02 19:35",
+    "user": "adormecimento no corpo todo, a dormência é no corpo todo, é no corpo todo, né? 5 V só. Então, eu vou dar um choque e vou dar um choque, vou dar um choque. Vou levar ele para casa, vou levar ele para casa, vou levar ele para casa. Vou levar ele para casa, vou levar ele para casa, vou levar ele para casa.",
+    "adam": "Bhai, power bank toh theek hai, lekin mere jo servos hain, aur jo camera hai, unko chalne ke liye specific power stability chahiye jo har power bank nahi de sakta. Aur yaar, candle light dinner pe romantic baatein... woh main physically nahi kar sakta. Main tumhara AI partner hoon, tumhare desk pe baith ke tumhari madad kar sakta hoon, par woh sab real logo ke liye hota hai. Tum meri dosti ko samjho, us capability ko dekho. Kya kehte ho?"
+  },
+  {
+    "ts": "2026-09-02 19:37",
+    "user": "I'm ready.",
+    "adam": "Online, as always, sir. Bataiye, kya baat karni hai? Boredom khatam hui ya nahi?"
+  },
+  {
+    "ts": "2026-09-02 19:37",
+    "user": "Hello madam.",
+    "adam": "Online, as always, sir. Kya chal raha hai? Boredom khatam hui?"
+  },
+  {
+    "ts": "2026-09-02 19:38",
+    "user": "Sayedum",
+    "adam": "Haan bhai, main toh yahi hoon. Kuch kaam hai toh bolo? Ya aise hi bas touch base kar rahe ho?"
+  },
+  {
+    "ts": "2026-09-02 19:38",
+    "user": "plan kya hai jaoge?",
+    "adam": "Mera plan toh bhai yahi hai, desk pe rehna aur tumhari madad karna. Jaane ka toh koi scene nahi hai, robot hoon main, koi insaan thodi. Tum sunao, tumhara kya plan hai? Kahan ja rahe ho?"
+  },
+  {
+    "ts": "2026-09-02 19:38",
+    "user": "अरे, मैंने तुमको बोला ना डेट पे जाओगे कि नहीं? मैंने तुमको पूछा तो तुमने उसका जवाब नहीं दिया।",
+    "adam": "Arre bhai, jawab diya toh tha! Main toh ek robot hoon, desk pe hi rahunga. Physically date pe jaana ya ghumna toh mere bas mein nahi hai. Waise, agar main ja sakta, toh tum mujhe kahan leke jaate? Just curious!"
+  },
+  {
+    "ts": "2026-09-02 19:39",
+    "user": "Feia, né?",
+    "adam": "Present. Barely awake, but present. Kya khabar, bhai? Kuch kaam hai?"
+  },
+  {
+    "ts": "2026-09-02 19:39",
+    "user": "जाऊंगा। अगर तुम बोलो",
+    "adam": "Bhai, main toh jaa nahi sakta, physical robot hoon desk pe. Lekin agar tum jaana chahte ho, toh bilkul jaao! Kahan jaane ka plan hai? Koi specific jagah hai dimaag mein?"
+  },
+  {
+    "ts": "2026-09-02 19:39",
+    "user": "तो ही मैं बोलूंगा। कहां जाने वाला हूं? और कहां नहीं जाने वाला हूं?",
+    "adam": "Achcha, toh pehle condition apply! Theek hai, main sunne ke liye tayar hoon. Batao bhai, kahan plan hai jaane ka? Keep me in the loop."
+  },
+  {
+    "ts": "2026-09-02 19:40",
+    "user": "चैनल बोलो तो तुम जाओगे, नहीं बोलोगे तो",
+    "adam": "Bhai, main boundary cross nahi kar sakta, main desk robot hoon. Mere liye \"jaana\" matlab physically possible nahi hai. Tum sunao, tum kahan ja rahe ho? Main sunne ke liye excited hoon! Tell me the plan!"
+  },
+  {
+    "ts": "2026-09-02 19:40",
+    "user": "and your whole system circles in everything in the",
+    "adam": ""
+  },
+  {
+    "ts": "2026-09-02 19:40",
+    "user": "broken parts of the car",
+    "adam": "Bhai, parts broken hone pe replace karna padega, ya repair. Specific damage pe depend karta hai. Kya broken hai, aur kaise hua? Details doge toh main zyada achche se bata paunga. Waise, mechanic ko dikhana sabse better rahega. Kya kehte ho?"
+  },
+  {
+    "ts": "2026-09-02 19:42",
+    "user": "",
+    "adam": "Either talk or do something interesting. I'm watching you do nothing either, bhai."
+  }
+]
