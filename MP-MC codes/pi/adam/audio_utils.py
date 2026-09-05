@@ -41,8 +41,6 @@ from config import (
     MIC_HP_HZ,
     MIC_LP_HZ,
     MIC_LP_STOP_HZ,
-    MIC_NR, MIC_NR_FRAME, MIC_NR_OVERSUB, MIC_NR_FLOOR_DB, MIC_NR_NOISE_S,
-    MIC_NR_SMOOTH,
     MIC_CHANNEL,
     MIC_CH_WATCH_S, MIC_CH_WATCH_MIN_CLIPS,
     MIC_CH_CLIP_FRAC,
@@ -144,11 +142,43 @@ _LP_FIR  = _design_lowpass((MIC_LP_HZ + MIC_LP_STOP_HZ) * 0.5,
 # window function or design method changes.
 _LP_FIR_R = _LP_FIR[::-1].copy()
 
-# High-pass built as (signal - moving average). A boxcar average of length M is
-# a low-pass with its corner near 0.443*fs/M, so subtracting it high-passes at
-# the same corner. Done with cumsum it is O(n) and fully vectorised — no scipy
-# (not installed on the Pi) and no per-sample Python loop.
-_MA_LEN = max(3, int(round(0.443 * GEMINI_SEND_RATE / MIC_HP_HZ)) | 1)   # odd
+def _design_biquad_hp(fc: float, fs: float) -> tuple[float, float, float, float, float]:
+    """Design a 2nd-order Butterworth high-pass filter via bilinear transform.
+    Maximally flat passband (0.00 dB ripple), steep 12 dB/octave rolloff,
+    completely eliminating the comb-filter distortion of moving-average subtraction."""
+    w = math.tan(math.pi * fc / fs)
+    w2 = w * w
+    sqrt2 = math.sqrt(2.0)
+    norm = 1.0 / (1.0 + sqrt2 * w + w2)
+    b0 = norm
+    b1 = -2.0 * norm
+    b2 = norm
+    a1 = 2.0 * (w2 - 1.0) * norm
+    a2 = (1.0 - sqrt2 * w + w2) * norm
+    return b0, b1, b2, a1, a2
+
+
+class _BiquadHP:
+    """Direct Form II Transposed biquad filter for clean, transparent high-pass."""
+    def __init__(self, fc: float = 80.0, fs: float = 16000.0) -> None:
+        self.b0, self.b1, self.b2, self.a1, self.a2 = _design_biquad_hp(fc, fs)
+        self.s1 = 0.0
+        self.s2 = 0.0
+
+    def process(self, x: np.ndarray) -> np.ndarray:
+        y = np.empty_like(x, dtype=np.float32)
+        b0, b1, b2 = self.b0, self.b1, self.b2
+        a1, a2 = self.a1, self.a2
+        s1, s2 = self.s1, self.s2
+        for i in range(len(x)):
+            xi = float(x[i])
+            yi = b0 * xi + s1
+            s1 = b1 * xi - a1 * yi + s2
+            s2 = b2 * xi - a2 * yi
+            y[i] = yi
+        self.s1 = s1
+        self.s2 = s2
+        return y
 
 
 class _MicChain:
@@ -156,204 +186,23 @@ class _MicChain:
 
     def __init__(self) -> None:
         self._lp_tail   = np.zeros(_LP_TAPS - 1, dtype=np.float32)
-        self._ma_tail   = np.zeros(_MA_LEN - 1, dtype=np.float32)
         self._dec_phase = 0
+        self._hp        = _BiquadHP(fc=MIC_HP_HZ, fs=GEMINI_SEND_RATE)
 
     def process(self, mono48: np.ndarray) -> np.ndarray:
         # ── anti-alias low-pass + decimation, fused (polyphase) ─────────────
-        # Only every DECIM'th low-pass output survives the decimation, so
-        # convolving the full 48kHz stream and then throwing 2/3 of it away
-        # does 3x the necessary multiplies. Computing just the kept phases via
-        # a strided sliding window costs 533x63 MACs per chunk instead of
-        # 1600x63, and hands the inner loop to BLAS. That headroom matters:
-        # this runs 30x/second on a Pi Zero 2W that is simultaneously feeding
-        # aplay, and starving the playback task is audible as crackle.
         buf = np.concatenate((self._lp_tail, mono48))
         self._lp_tail = buf[-(_LP_TAPS - 1):].copy()
         win = np.lib.stride_tricks.sliding_window_view(buf, _LP_TAPS)
-        # win[i] == buf[i:i+_LP_TAPS], so win[i] @ _LP_FIR_R reproduces
-        # np.convolve(buf, _LP_FIR, "valid")[i] exactly.
         lp = win[self._dec_phase::DECIM] @ _LP_FIR_R
 
-        # 1600 frames/chunk is not a multiple of 3, so restarting at index 0
-        # every chunk would repeat/skip a sample each time (~0.1% rate error
-        # plus a boundary glitch). Track where the next chunk should start.
         self._dec_phase = (self._dec_phase - int(mono48.size)) % DECIM
 
-        # ── de-rumble high-pass, at 16k (3x fewer samples than at 48k) ─────
-        buf = np.concatenate((self._ma_tail, lp))
-        self._ma_tail = buf[-(_MA_LEN - 1):].copy()
-        c   = np.cumsum(np.concatenate(([0.0], buf.astype(np.float64))))
-        ma  = (c[_MA_LEN:] - c[:-_MA_LEN]) / _MA_LEN        # len == lp.size
-        half = (_MA_LEN - 1) // 2                           # symmetric => no
-        mid  = buf[half:half + lp.size]                     # phase distortion
-        return mid - ma.astype(np.float32)
+        # ── 2nd-order Butterworth high-pass: kills DC and 26Hz ripple without comb notches
+        return self._hp.process(lp)
 
 
 _mic_chain = _MicChain()
-
-
-# ── NOISE SUPPRESSION FOR THE RECOGNISER-BOUND STREAM ───────────────────────
-# Why this exists, and why it is not in the gate's path:
-#
-# Measured live on this unit, post-filter int16 RMS: noise floor 1550-1591,
-# speech p90 2041-4256, speech peaks 2783-6487. That is roughly +6 dB SNR. The
-# adaptive gate copes fine with that — it is a ratio detector and it opened on
-# every utterance — but a speech RECOGNISER does not. Words come back wrong
-# because the acoustic evidence really is buried, not because anything upstream
-# is broken.
-#
-# So the recogniser gets a cleaned copy and the gate keeps the original. That
-# split is deliberate: the gate's floor percentile, learned flatness ceiling and
-# lo/hi ratio were all tuned against the raw signal's statistics, and quietly
-# changing what it sees would invalidate that tuning and risk trading a
-# recognition problem for a "cannot hear me at all" problem.
-#
-# Method: WOLA spectral magnitude subtraction with a per-bin noise floor from
-# minimum statistics. No VAD input at all — the noise estimate is the running
-# minimum of the smoothed power in each frequency bin over MIC_NR_NOISE_S, and
-# a minimum over 1.5 s cannot be contaminated by speech because no phoneme
-# sustains one bin's energy that long. That independence matters here: the gate
-# and the suppressor cannot cascade each other's mistakes.
-#
-# sqrt-Hann analysis AND synthesis windows with hop = frame/2 satisfy COLA
-# (their squares sum to a periodic Hann, which sums to exactly 1.0), so with all
-# gains at 1.0 this reconstructs the input bit-for-bit apart from a hop of
-# delay. That property is what makes MIC_NR=0 a genuine A/B test rather than a
-# different signal path.
-class _NoiseSuppressor:
-    """Streaming single-channel denoiser for int16 mono at GEMINI_SEND_RATE."""
-
-    def __init__(self, frame: int, oversub: float, floor_db: float,
-                 noise_s: float, rate: int, smooth: float = MIC_NR_SMOOTH) -> None:
-        self._n   = max(64, int(frame) & ~1)          # even
-        self._h   = self._n // 2                      # COLA hop for sqrt-Hann
-        # Periodic (not symmetric) Hann is the one that satisfies COLA at N/2.
-        hann      = np.hanning(self._n + 1)[:self._n]
-        self._w   = np.sqrt(hann).astype(np.float32)
-        self._in   = np.zeros(0, dtype=np.float32)
-        self._acc  = np.zeros(self._n, dtype=np.float32)
-        nb         = self._n // 2 + 1
-        self._pwr  = np.zeros(nb, dtype=np.float32)   # smoothed power
-        self._gain = np.ones(nb, dtype=np.float32)    # previous frame's gain
-        self._floor   = float(10.0 ** (floor_db / 20.0))
-        self._oversub = float(oversub)
-        self._alpha   = min(0.99, max(0.0, float(smooth)))
-        # Minimum statistics: a deque of per-sub-window minima plus the minimum
-        # so far in the current sub-window. min(deque + current) is the estimate.
-        # Four sub-windows is the usual compromise — enough that the estimate
-        # updates several times a second, few enough that the window really is
-        # noise_s long.
-        frames_per_s   = float(rate) / float(self._h)
-        self._sub_len  = max(1, int(round(noise_s * frames_per_s / 4.0)))
-        self._subs     = collections.deque(maxlen=4)
-        self._cur_min  = None                         # np.ndarray | None
-        self._sub_n    = 0
-        self._primed   = False
-        # Mean applied gain over the speech band, in dB, for the stats line.
-        # Without this the suppressor is invisible: you cannot tell "working"
-        # from "primed but doing nothing" from "MIC_NR=0" by listening to a
-        # 16 kHz stream you are not holding.
-        lo_bin = max(1, int(round(300.0 * self._n / float(rate))))
-        hi_bin = min(nb, int(round(3400.0 * self._n / float(rate))) + 1)
-        self._band = slice(lo_bin, hi_bin)
-        self._db   = 0.0
-
-    def reset(self) -> None:
-        """Drop the overlap state at a stream discontinuity (ADAM speaking mutes
-        the mic, so the 16 kHz stream really does have gaps). The NOISE estimate
-        is kept — the room is the same room on the other side of the gap, and
-        re-learning it would leave the first second after every reply
-        unprocessed, which is exactly when the user is most likely to talk."""
-        self._in  = np.zeros(0, dtype=np.float32)
-        self._acc = np.zeros(self._n, dtype=np.float32)
-        self._gain[:] = 1.0
-
-    def _noise_est(self, pwr: np.ndarray) -> np.ndarray:
-        self._cur_min = (pwr.copy() if self._cur_min is None
-                         else np.minimum(self._cur_min, pwr))
-        self._sub_n += 1
-        if self._sub_n >= self._sub_len:
-            self._subs.append(self._cur_min)
-            self._cur_min = None
-            self._sub_n   = 0
-            if len(self._subs) == self._subs.maxlen:
-                self._primed = True
-        est = self._cur_min
-        for s in self._subs:
-            est = s if est is None else np.minimum(est, s)
-        return est
-
-    def process(self, pcm: bytes) -> bytes:
-        x = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
-        if x.size == 0:
-            return pcm
-        self._in = np.concatenate((self._in, x)) if self._in.size else x
-        out = []
-        while self._in.size >= self._n:
-            spec = np.fft.rfft(self._in[:self._n] * self._w)
-            pwr  = (spec.real ** 2 + spec.imag ** 2).astype(np.float32)
-            # Smooth the power before the minimum tracker. The heavier this
-            # smoothing, the less the minimum sits below the true mean — which
-            # is the bias MIC_NR_OVERSUB has to make up for. See the note there.
-            self._pwr = (self._alpha * self._pwr
-                         + (1.0 - self._alpha) * pwr)
-            noise = self._noise_est(self._pwr)
-            if self._primed:
-                # Magnitude subtraction, expressed in power to avoid two sqrts:
-                # gain = sqrt(max(P - a*N, 0) / P).
-                clean = np.maximum(pwr - self._oversub * noise, 0.0)
-                g     = np.sqrt(clean / np.maximum(pwr, 1e-9))
-                np.maximum(g, self._floor, out=g)
-                # Smooth across frequency (3-bin) and time (1-pole). Both fight
-                # musical noise: isolated surviving bins get pulled down by
-                # their neighbours, and bins cannot flip between full pass and
-                # full floor from one 16 ms hop to the next.
-                g[1:-1] = (g[:-2] + g[1:-1] + g[2:]) / 3.0
-                # Fast-attack on rising speech (preserves word onsets), smooth decay on noise
-                alpha = np.where(g > self._gain, 0.15, 0.65).astype(np.float32)
-                g = alpha * self._gain + (1.0 - alpha) * g
-                self._gain = g.astype(np.float32)
-                spec *= self._gain
-                self._db = 20.0 * math.log10(
-                    max(float(self._gain[self._band].mean()), 1e-6))
-            y = np.fft.irfft(spec, self._n).astype(np.float32) * self._w
-            self._acc += y
-            out.append(self._acc[:self._h].copy())
-            self._acc = np.concatenate(
-                (self._acc[self._h:], np.zeros(self._h, dtype=np.float32)))
-            self._in = self._in[self._h:]
-        if not out:
-            return b""
-        y = np.concatenate(out)
-        return np.clip(y, -32768, 32767).astype(np.int16).tobytes()
-
-
-_mic_nr = (_NoiseSuppressor(MIC_NR_FRAME, MIC_NR_OVERSUB, MIC_NR_FLOOR_DB,
-                            MIC_NR_NOISE_S, GEMINI_SEND_RATE)
-           if MIC_NR else None)
-
-
-def denoise_16k(pcm: bytes) -> bytes:
-    """Cleaned copy of one 16 kHz mono chunk for the recogniser. Returns the
-    input unchanged when MIC_NR=0. May return fewer or more bytes than it was
-    given (WOLA runs on a fixed frame/hop, not on chunk boundaries) and returns
-    b"" while the first frame is still filling — callers must tolerate both."""
-    return pcm if _mic_nr is None else _mic_nr.process(pcm)
-
-
-def denoise_reset() -> None:
-    """Call at a discontinuity in the 16 kHz stream, i.e. whenever the mic has
-    been muted. Cheap; safe to call when MIC_NR=0."""
-    if _mic_nr is not None:
-        _mic_nr.reset()
-
-
-def denoise_db() -> float | None:
-    """Mean gain the suppressor is currently applying across 300-3400 Hz, in dB.
-    None when MIC_NR=0. 0.0 means primed-but-passing (the frame looked like pure
-    speech) or not yet primed; the floor is MIC_NR_FLOOR_DB."""
-    return None if _mic_nr is None else _mic_nr._db
 
 
 # ── Which physical mic feeds the speech path ────────────────────────────

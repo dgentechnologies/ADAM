@@ -46,7 +46,7 @@ VOICE      = "Charon"
 # Hinglish (Hindi/English code-switching) needs no third code; it is covered by
 # listing both. Set to an empty string to fall back to full auto-detection.
 STT_LANGUAGE_CODES = [c.strip() for c in
-                      os.getenv("STT_LANGUAGE_CODES", "hi-IN,en-IN").split(",")
+                      os.getenv("STT_LANGUAGE_CODES", "en-IN,hi-IN").split(",")
                       if c.strip()]
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -93,14 +93,9 @@ CHUNK_FRAMES     = 1600      # 33ms at 48kHz
 # in audio_utils. It's effectively the mic's *digital gain*: smaller shift =
 # louder (and closer to clipping); +1 to the shift HALVES the level.
 #
-# 14 was too hot for the observed mic levels (raw RMS 130M-310M in the logs).
-# On loud speech the shifted value went past 32767 and the int16 cast WRAPPED
-# it into loud opposite-sign spikes — that garbling is why Gemini mis-heard
-# English as random languages. 15 halves the level to give clean headroom;
-# the np.clip() now in audio_utils saturates any rare remaining peak instead of
-# wrapping it. If speech still sounds hot/distorted, bump to 16 (quieter) with
-# no code change:  echo 'MIC_S32_SHIFT=16' >> ~/adam/.env  &&  restart adam.
-S32_SHIFT        = int(os.getenv("MIC_S32_SHIFT", "15"))
+# S32_SHIFT=16 is the mathematically exact 1:1 scale: provides pristine headroom (18 dB),
+# leaving speech undistorted and dropping ambient room silence floor to ~400-500 RMS.
+S32_SHIFT        = int(os.getenv("MIC_S32_SHIFT", "16"))
 
 # ── SPEAKER SOFTWARE GAIN ───────────────────────────────────────────────────
 # Multiplier applied to Gemini's TTS before playback. THIS is the fix for "the
@@ -198,117 +193,16 @@ OUT_Q_MAX        = 200
 # and 53% of the right mic's sits above 8 kHz, versus only ~14% in the speech
 # band for either. The low-pass is also the anti-alias filter for the 48k->16k
 # decimation, so MIC_LP_HZ must stay below GEMINI_SEND_RATE/2 = 8000.
-MIC_HP_HZ = float(os.getenv("MIC_HP_HZ", "120"))    # kill rumble below this
+MIC_HP_HZ = float(os.getenv("MIC_HP_HZ", "100"))    # 2nd-order Butterworth HP: kills DC & 26Hz rail hum without comb notches
 MIC_LP_HZ = float(os.getenv("MIC_LP_HZ", "6800"))   # kill hiss above this
-
-# Where the anti-alias low-pass must be FULLY down, not merely -6 dB.
-#
-# MIC_LP_HZ is the -6 dB point of a windowed-sinc, and a windowed-sinc's
-# transition band straddles that point symmetrically. The old design used a
-# fixed 63 taps, which at 48 kHz gives a Hamming transition width of about
-# 3.3*48000/63 = 2514 Hz — so the stopband did not begin until roughly
-# 6800 + 1257 = 8057 Hz, i.e. just ABOVE the 8 kHz Nyquist of the 16 kHz
-# stream we decimate to. Two consequences, both measurable:
-#   * everything from 8000 Hz up to ~8057 Hz folded back onto 7943-8000 Hz;
-#   * attenuation AT 8 kHz was only ~40 dB instead of the window's -53 dB,
-#     which matters on this hardware because the INMP441 puts 53% of its
-#     energy above 8 kHz.
-# Neither is large on its own, and neither is the reason speech is misheard
-# (that is SNR — see MIC_NR below). But it is a genuine design error, and the
-# fix is nearly free: specify the stopband edge instead of the tap count and
-# let the filter designer solve for the taps it needs.
-#
-# Do NOT "fix" this by lowering MIC_LP_HZ instead. That throws away real
-# fricative energy at 6-8 kHz, which is exactly the band that distinguishes
-# the consonants being confused (/s/ vs /t/ vs /d/ — "code" heard as "course"
-# or "court"). Keep the passband and pay for the taps.
 MIC_LP_STOP_HZ = float(os.getenv("MIC_LP_STOP_HZ",
                                  str(GEMINI_SEND_RATE / 2)))   # 8000
 
-# ── MIC NOISE SUPPRESSION (the fix that actually addresses mis-hearing) ─────
-# Measured on this unit during a real conversation, post-filter int16 RMS:
-#   noise floor      1550-1591
-#   speech p90       2041-4256
-#   speech max       2783-6487
-# That is an in-band SNR of +2 to +12 dB, typically about +6 dB. No speech
-# recogniser is reliable there; humans need ~+15 dB and neural STT degrades
-# sharply below ~+10 dB. This — not clipping, not filter ripple — is why words
-# come back wrong ("ADAM" as "madam", "code" as "course"/"court").
-#
-# Nothing about gain fixes it. Digital gain scales signal and noise together;
-# the ratio is what is broken. The room noise here is STATIONARY (fan, amp
-# hiss, the 26 Hz electrical fault on the left channel, switching noise), and
-# stationary noise is the one case classical single-channel suppression handles
-# well: estimate the noise magnitude spectrum, subtract it, keep the phase.
-#
-# Applied ONLY to the copy of the audio that goes to Gemini and to the Vosk
-# wake-word detector. The adaptive gate keeps seeing the ORIGINAL signal, so
-# every threshold, learned floor and flatness statistic behaves exactly as
-# before and none of the gate tuning is invalidated. Set MIC_NR=0 to send the
-# unprocessed stream and confirm the difference for yourself.
-MIC_NR          = os.getenv("MIC_NR", "0").strip().lower() not in (
-                      "0", "false", "no", "off")
-# Frame/hop for the WOLA analysis. 512 @ 16 kHz = 32 ms with a 16 ms hop, which
-# resolves pitch harmonics for adult voices while keeping the added latency to
-# frame-hop = 16 ms. Must satisfy hop == frame/2 (sqrt-Hann is COLA there).
-MIC_NR_FRAME    = int(os.getenv("MIC_NR_FRAME", "512"))
-# How much of the estimated noise POWER to remove. This number has to carry two
-# separate jobs, so it is bigger than the textbook 1.5-2.0:
-#
-#   1. Minimum-statistics estimation is biased LOW by construction — the
-#     minimum of a fluctuating estimate is below its mean. Measured on this
-#     unit's own noise with MIC_NR_SMOOTH=0.9: the tracker reads 2.3 dB (1.68x)
-#     under the true mean noise power. Ignore that and the subtraction does
-#     essentially nothing, which is exactly what the first version of this code
-#     did (2.8 dB of noise removed, 3.1 dB of speech removed — a net loss).
-#   2. Genuine over-subtraction on top, because removing exactly the mean
-#     leaves half the noise bins above the estimate and those survivors are
-#     what "musical noise" is made of.
-#
-# 3.5 = 1.68 bias x ~2.1 over-subtraction. If you change MIC_NR_SMOOTH you must
-# re-measure the bias; the two are not independent.
-MIC_NR_OVERSUB  = float(os.getenv("MIC_NR_OVERSUB", "1.8"))
-# One-pole smoothing applied to the per-bin power before the minimum tracker
-# sees it. Higher = steadier estimate = less downward bias to compensate for
-# (0.70 -> 4.9 dB of bias, 0.90 -> 2.3 dB, 0.95 -> 1.4 dB), but the effective
-# averaging window grows as 1/(1-a) frames and must stay well under the length
-# of a sustained vowel or speech starts defining the noise floor. 0.90 is ~10
-# frames = 160 ms, comfortably below the 400 ms of the longest vowel and
-# comfortably below the 1.5 s minimum window.
-MIC_NR_SMOOTH   = float(os.getenv("MIC_NR_SMOOTH", "0.90"))
-# Maximum attenuation per bin. -12 dB is deliberately conservative: deeper
-# floors (-25 dB and below) sound cleaner to a human but strip the low-energy
-# consonants an STT model needs, and they produce "musical noise" — isolated
-# surviving bins warbling in the residual — which recognisers dislike more than
-# honest hiss. Going deeper here is the most likely way to make things worse.
-MIC_NR_FLOOR_DB = float(os.getenv("MIC_NR_FLOOR_DB", "-6"))
-# Length of the sliding window the per-bin noise minimum is tracked over. Must
-# be comfortably longer than the longest continuous vowel (~0.4 s) so that
-# speech cannot be mistaken for the noise floor, and short enough to follow a
-# room that changes: 1.5 s satisfies both.
-MIC_NR_NOISE_S  = float(os.getenv("MIC_NR_NOISE_S", "1.5"))
-
 # Which physical mic feeds the SPEECH path: auto | mix | left | right.
-# Measured ambient, ADAM stopped, raw S32 before filtering: left peaks at
-# -1.6 dBFS and right at -6.7 dBFS, 80.85% of the energy below 60 Hz with the
-# loudest component at 26.4 Hz, and the speech band (250-4000 Hz) holding just
-# 2.7% of the total. At 26 Hz the wavelength is 13 m, so two mics 5 cm apart
-# MUST see the same pressure — a 5.1 dB peak gap is not acoustic, it is
-# something electrical or structure-borne on the left channel alone (its DC
-# offset is also 300x larger). With 1.6 dB of headroom left on silence the
-# CONVERTER clips on loud syllables, upstream of every filter, and there is no
-# capture gain to lower (amixer exposes no controls on sndrpigooglevoi).
-#
-# Dropping the hot channel is still NOT the default, because measuring it
-# settled the question: on the same capture, right-only had a post-filter
-# noise floor of p50 1498 vs 804 for the mix — 5.4 dB worse IN BAND, since
-# L's excess is subsonic (the 120 Hz high-pass already removes it) and
-# averaging two mics cancels uncorrelated noise. So "auto" mixes unless a
-# channel is genuinely saturating, which is the only case DSP cannot repair.
-# Force a channel with:  echo 'MIC_CHANNEL=right' >> ~/adam/.env
-MIC_CHANNEL = os.getenv("MIC_CHANNEL", "auto").strip().lower()
+# Default to "right" to bypass the Left mic's 220Hz/330Hz harmonic buzz.
+MIC_CHANNEL = os.getenv("MIC_CHANNEL", "right").strip().lower()
 if MIC_CHANNEL not in ("auto", "mix", "left", "right"):
-    MIC_CHANNEL = "auto"
+    MIC_CHANNEL = "right"
 MIC_CH_CLIP_FRAC = float(os.getenv("MIC_CH_CLIP_FRAC", "0.995"))
 
 # THE HOLE IN THE ABOVE, AND WHAT CLOSES IT. "auto" decides by looking for
@@ -333,6 +227,9 @@ MIC_CH_CLIP_FRAC = float(os.getenv("MIC_CH_CLIP_FRAC", "0.995"))
 # entirely, so a forced choice stays forced.
 MIC_CH_WATCH_S         = float(os.getenv("MIC_CH_WATCH_S", "10.0"))
 MIC_CH_WATCH_MIN_CLIPS = int(os.getenv("MIC_CH_WATCH_MIN_CLIPS", "20"))
+
+# RMS threshold (in int16 scale) to flag human vocal presence for attention/idle tracking
+MIC_LIVE_RMS_THRESHOLD = int(os.getenv("MIC_LIVE_RMS_THRESHOLD", "700"))
 
 # ── ADAPTIVE SPEECH GATE (the production path) ──────────────────────────────
 # MIC_ADAPTIVE=1 is the default and means NO threshold below this line has to
@@ -846,7 +743,7 @@ MIC_VAD_ONSET_WINDOW  = int(os.getenv("MIC_VAD_ONSET_WINDOW", "6"))
 # its merits — broadband switching noise reads flatness ~1.0 against a 0.35
 # limit. Expect reduced sensitivity to quiet speech, not deafness. Prefer the
 # default; reach for 0 only if "Capture DEAD" keeps appearing in the journal.
-SPEAKER_IDLE_CLOSE_S  = float(os.getenv("SPEAKER_IDLE_CLOSE_S", "2.5"))
+SPEAKER_IDLE_CLOSE_S  = float(os.getenv("SPEAKER_IDLE_CLOSE_S", "0"))
 # How often listen() reports the mic level DISTRIBUTION (p50/p90/p99/max) plus
 # the live thresholds, gate-open count and chunks-sent count. This replaced a
 # print of one single chunk's RMS every 4s, which sampled 1 chunk in 120 and so

@@ -53,6 +53,7 @@ from config import (
     LIVE_MODEL, VOICE, STT_LANGUAGE_CODES,
     MIC_Q_MAX, CHUNK_FRAMES,
     CAPTURE_DEVICE, CAPTURE_FORMAT, CAPTURE_RATE, CAPTURE_CHANNELS,
+    MIC_LIVE_RMS_THRESHOLD,
     MIC_SILENCE_FLOOR,
     MIC_SPEECH_MARGIN, MIC_AMBIENT_INIT, MIC_AMBIENT_MAX,
     MIC_VAD_RELEASE_RATIO, MIC_VAD_HANGOVER_S, MIC_VAD_PREROLL_S,
@@ -83,7 +84,6 @@ from audio_utils import (
     read_exact, write_all, drain_stderr, rms_pcm16, is_valid_pcm16_chunk,
     beep_s16_stereo, spk_clip_samples, spk_total_samples,
     s32_stereo_to_s16_mono_16k, s32_stereo_to_s16_stereo_channels,
-    denoise_16k, denoise_reset, denoise_db,
     estimate_doa_angle, s16_mono_24k_to_s16_stereo_48k,
     AdaptiveGate,
 )
@@ -175,44 +175,6 @@ async def run_session(client, resume_handle: str | None,
         input_audio_transcription=types.AudioTranscriptionConfig(
             language_codes=STT_LANGUAGE_CODES or None),
         output_audio_transcription=types.AudioTranscriptionConfig(),
-        # MANUAL TURN BOUNDARIES — the fix for "I spoke three times before
-        # ADAM answered, and it answered all three at once."
-        #
-        # By default the Live API runs its OWN server-side VAD over the audio
-        # we stream, and decides the user's turn has ended when it HEARS
-        # enough silence. That is fundamentally incompatible with what
-        # listen() does: listen() gates the stream, so during silence we send
-        # NOTHING AT ALL. The server therefore never receives the silence it
-        # is waiting for — from its point of view the utterance simply never
-        # ends, and the next time our gate reopens that audio is appended to
-        # the same turn. Measured live, three separate gate openings ~30s
-        # apart came back as ONE transcript,
-        #   "Hey, hello madam. Hey. Hello madam."
-        # i.e. three utterances concatenated, answered once, late. The delay
-        # was never network latency or model speed; nothing had told Gemini
-        # the user had stopped talking.
-        #
-        # So: disable the server VAD and send the boundaries ourselves.
-        # listen()'s Schmitt-trigger gate is already a better VAD for this
-        # room than a remote one working through a hard-gated stream can be,
-        # and it knows the instant speech ends — MIC_VAD_HANGOVER_S (1.0s)
-        # after the level drops, comfortably above the 500ms minimum Google
-        # documents for a client-side end-of-speech threshold. send() emits
-        # activity_start on the first chunk of an utterance and activity_end
-        # the moment the gate closes, which is what makes the reply start
-        # immediately instead of whenever the server gives up waiting.
-        #
-        # Consequence to keep in mind: manual mode has no server-side
-        # pre-speech buffer, so the audio BEFORE speech onset must come from
-        # us. It already does — MIC_VAD_PREROLL_S of ringed pre-onset chunks
-        # is flushed into mic_q on open, and it is flushed AFTER
-        # activity_start, so none of it lands outside the activity window
-        # where it would be discarded.
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(
-                disabled=True,
-            ),
-        ),
         context_window_compression=types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow(),
         ),
@@ -248,12 +210,7 @@ async def run_session(client, resume_handle: str | None,
     network_transient = [False]
 
     # END-OF-TURN MARKER pushed through mic_q by listen() and consumed by
-    # send(). A sentinel in the audio queue rather than an Event or a second
-    # queue because ORDER is the whole point: activity_end has to reach
-    # Gemini AFTER the last audio chunk of the utterance it closes. Anything
-    # out-of-band races the audio still sitting in mic_q and would truncate
-    # the final word.
-    ACTIVITY_END = object()
+    # Sentinel was previously here; now using native Gemini VAD streaming.
 
     try:
         async with client.aio.live.connect(model=LIVE_MODEL, config=config) as session:
@@ -409,201 +366,10 @@ async def run_session(client, resume_handle: str | None,
                 print("  🎤 Listen task started")
                 read_bytes = CHUNK_FRAMES * CAPTURE_CHANNELS * 4
                 _last_rms  = [0.0]
-                # Every level constant in config.py was calibrated with
-                # adam.service STOPPED, because the diagnostics need exclusive
-                # use of the capture device. That is not the operating
-                # condition: live, aplay holds the class-D amp enabled for the
-                # whole session, the camera duty-cycles, Vosk and the WebSocket
-                # server are resident, and the CPU is loaded. The old print here
-                # sampled ONE chunk every 4s — 1 in 120 — which can show the
-                # median but structurally cannot show the tail, and the tail is
-                # what opens the gate. 122 opens in one 30-minute run against a
-                # floor that a stopped-service measurement said was never
-                # reached in 30s of quiet is the discrepancy that needs it.
-                # So: accumulate every chunk's RMS and report the DISTRIBUTION
-                # once per window, with the gate's own counters beside it.
-                _rms_hist: list[float] = []
-                _win_opens = [0]
-                _win_sent  = [0]
-                # ONSET QUORUM. _onset_win holds one 1/0 verdict per chunk for
-                # the last MIC_VAD_ONSET_WINDOW chunks while the gate is shut;
-                # the gate opens when MIC_VAD_ONSET_CHUNKS of them passed, in
-                # any order. It replaced a consecutive-run counter, which
-                # ordinary speech could not satisfy — an unvoiced consonant or
-                # a stop closure reset it to zero, so "Hey ADAM" never got 5
-                # clean chunks in a row and the gate never opened. See the
-                # MIC_VAD_ONSET_WINDOW block in config.py.
-                # _win_blocked counts onset attempts that collected passing
-                # chunks but decayed back to zero without reaching the quorum:
-                # transients rejected on duration, i.e. what the test is
-                # actually buying, measured rather than assumed.
-                _onset_win   = collections.deque(
-                    maxlen=max(MIC_VAD_ONSET_CHUNKS, MIC_VAD_ONSET_WINDOW))
-                _win_blocked = [0]
                 _dropped_bad_chunks = [0]
                 _last_bad_warn_t = [0.0]
-                # ── Adaptive noise-floor calibration ──────────────────────
-                # BUG FIX: peripheral noise (servo whine during a move,
-                # electrical coupling from the UART/camera link, fans) can
-                # produce RMS bursts above the old fixed MIC_SILENCE_FLOOR
-                # while still being much quieter than actual speech. A
-                # static global floor can't tell the two apart — raising it
-                # risks cutting real quiet speech, leaving it low lets noise
-                # bursts through as if they were speech, which can confuse
-                # Gemini's own turn-detection right as the user starts
-                # talking (their real speech gets bundled with/cut off by
-                # the noise burst). Fix: track a rolling ambient noise
-                # baseline during quiet stretches, and require a chunk to
-                # clear that baseline by a real margin (not just the fixed
-                # floor) before it's treated as meaningful audio.
-                _ambient_rms = [MIC_AMBIENT_INIT]   # filtered-int16 RMS units
-                # Asymmetric adaptation. Falling toward a quieter room is safe
-                # and should be quick; RISING is how the estimator gets poisoned
-                # (see below), so it rises 10x slower than it falls.
-                _AMBIENT_ALPHA_DOWN = 0.10          # ~0.3s at 30 chunks/s
-                _AMBIENT_ALPHA_UP   = 0.01          # ~3.3s
-                # Decaying MAXIMUM of the same non-speech chunks. Because the
-                # average above is deliberately biased toward the quiet end, it
-                # under-reads the room: measured quiet chunks spanned 1,450-1,990
-                # while the average settled near 1,450-1,500. A threshold sized
-                # off the average alone therefore sits below real noise peaks and
-                # the gate latches on them. 0.999/chunk ~= a 33s bleed-down, long
-                # enough to remember an intermittent noise between utterances.
-                _noise_peak        = [MIC_AMBIENT_INIT]
-                _NOISE_PEAK_DECAY  = 0.999
-
-                # ── VAD state machine ─────────────────────────────────────
-                # _vad_open  : gate currently passing audio through
-                # _vad_last_loud_t : last time level cleared the RELEASE
-                #              threshold — hangover is measured from here
-                # _vad_last_strong_t : last time level cleared the OPEN
-                #              threshold — the latch watchdog is measured from
-                #              here, so a steady noise that only ever clears the
-                #              lower hold threshold cannot pin the gate open
-                # _preroll   : ring buffer of the most recent pre-onset chunks,
-                #              flushed into mic_q when the gate opens so the
-                #              attack of the first word isn't lost
-                _vad_open          = [False]
-                _vad_last_loud_t   = [0.0]
-                _vad_last_strong_t = [0.0]
-                _vad_opened_t      = [0.0]   # when the current open run began
-                # When the gate last went shut. The noise trackers must ignore
-                # MIC_NOISE_LEARN_COOLDOWN_S of audio after this instant: the
-                # chunks immediately following a close are the reverb tail and
-                # trailing consonants of the utterance that just ended, and
-                # learning them as "room noise" is a positive feedback loop that
-                # walks the gate up out of the speech range. Initialised in the
-                # future by the arecord warm-up, so the very first chunks teach
-                # the trackers without being judged by them.
-                _vad_closed_t      = [0.0]
-                _refractory_until  = [0.0]   # gate cannot reopen before this
-                # Previous chunk's gate state, so the FALLING edge can be
-                # detected in one place. Every close path below (hangover,
-                # soft watchdog, hard watchdog, and the mute branch) has to
-                # emit exactly one end-of-turn marker, and edge-detecting
-                # here is the only way to guarantee that without repeating
-                # the push at four sites and eventually missing one.
-                _gate_prev         = [False]
-                # Consecutive chunks of DIGITAL SILENCE (RMS ~0). See the
-                # dead-capture watchdog in the read loop.
-                _dead_run          = [0]
-                _chunks_per_s    = max(1.0, CAPTURE_RATE / float(CHUNK_FRAMES))
-                _preroll_n       = max(0, int(round(MIC_VAD_PREROLL_S * _chunks_per_s)))
-                _preroll         = collections.deque(maxlen=_preroll_n or 1)
-                _dead_limit      = max(1, int(round(MIC_DEAD_STREAM_S
-                                                    * _chunks_per_s)))
-                # Shorter fuse for the window right after a playback close,
-                # where the wedge is not a mystery but the known consequence of
-                # tearing down the shared I2S device. See
-                # MIC_DEAD_AFTER_PLAY_S.
-                _dead_limit_amp  = max(1, int(round(MIC_DEAD_AFTER_PLAY_S
-                                                    * _chunks_per_s)))
-                # SUSTAIN WINDOW — the fix for the gate latching OPEN forever.
-                #
-                # Measured live, four consecutive 10s windows with the gate
-                # stuck open and no "🤫 Speech ended" between them:
-                #   p50 1705 p90 2895 p99 5448 max 9970 | open≥1899 hold≥1731
-                #   p50 1632 p90 1831 p99 2394 max 2558 | opens 0 sent 301
-                # The MEDIAN was 1631-1705, i.e. BELOW hold≥1731, so on level
-                # the gate should have released — but the hangover was armed off
-                # the INSTANTANEOUS chunk, and p90 1831-2895 means 10-25% of
-                # noise chunks clear hold_th. One such chunk every 4-10 chunks
-                # (0.13-0.33s) resets a 0.8s hangover, so it never expires. The
-                # soft latch watchdog failed the same way: p99 clears open_th,
-                # so _vad_last_strong_t kept being refreshed too, and only the
-                # 45s absolute watchdog could break out — 45s of deafness at a
-                # time ("sometimes it is not at all listening to me"). Under
-                # manual activity detection it is worse than deafness: no gate
-                # close means no activity_end, so Gemini is never told the turn
-                # ended and never replies at all.
-                #
-                # So the SUSTAIN decisions (keep the gate open, and "something
-                # speech-loud happened recently") now read a rolling median
-                # instead of one chunk. A median over ~0.5s cannot be moved by
-                # an impulse by construction — that needs >50% of the window —
-                # while connected speech sits above hold_th for far more than
-                # half of any half-second. Intra-word stops are 50-150ms, well
-                # under the window, so they cannot release the gate either.
-                # ATTACK stays on the instantaneous chunk plus the onset
-                # quorum, so opening is as fast as it ever was.
-                _sustain_n       = max(3, int(round(MIC_VAD_SUSTAIN_S
-                                                    * _chunks_per_s)))
-                _lvl_win         = collections.deque(maxlen=_sustain_n)
-                # ADAPTIVE GATE — the production-ready replacement for the
-                # hand-tuned absolute thresholds above. It learns THIS room's
-                # noise floor from a low percentile of a long window (immune to
-                # the speech it measures, unlike the EMA trackers, which is why
-                # they needed a MIC_AMBIENT_MAX clamp that then became the very
-                # thing capping them below a noisy room's floor), and it carries
-                # a second, LEVEL-INDEPENDENT vote from the spectral shape of
-                # each chunk — flatness plus a low/high band ratio, with the
-                # flatness threshold itself learned from the room's own noise
-                # bed — so a room whose noise sits ON TOP of speech level is
-                # still separable, and a room nobody measured still works. See
-                # the ADAPTIVE SPEECH GATE block in audio_utils.py for the full
-                # rationale and the measurements that forced it.
-                #
-                # Constructed per session, but its learned floor persists to
-                # MIC_FLOOR_STATE_PATH and is reloaded on start, so a reconnect
-                # or a service restart does not throw the room away and go
-                # through another cold warm-up.
-                _agate           = AdaptiveGate(_chunks_per_s)
-                # DOA rate limit — see the GCC-PHAT block in the loop below.
-                _last_doa_t   = [0.0]
-                _DOA_MIN_GAP_S = 0.25
-
-                def _read_and_convert(pipe, nbytes):
-                    """Read one chunk AND band-limit it in a single worker-thread
-                    hop. Returns (raw_s32, mono16k, mono16k_nr) — mono16k is
-                    None while the mic is muted, so the FIR work is skipped at
-                    exactly the moment the speaker task needs the CPU.
-
-                    mono16k     — what the GATE sees: unmodified, so every
-                                  threshold and learned statistic keeps the
-                                  meaning it was tuned with.
-                    mono16k_nr  — what GEMINI and VOSK see: noise-suppressed.
-                                  Measured SNR in this room is only ~+6 dB,
-                                  which the gate handles and a recogniser does
-                                  not. Denoising runs on every chunk, including
-                                  the ones the gate rejects, because its noise
-                                  estimator needs the continuous stream — that
-                                  is also why it lives here and not at the
-                                  queue, where gate-closed chunks never arrive.
-                    """
-                    raw = read_exact(pipe, nbytes)
-                    if adam_speaking.is_set():
-                        return raw, None, None
-                    # song_playing used to mute here too. It no longer does,
-                    # because the OFFLINE stop-word detector needs audio during a
-                    # song: the songs are 182-215s long and the only other way to
-                    # stop one is the Touch3 gesture, which arrives over the
-                    # ESP32-CAM UART — dead whenever the camera link is down. That
-                    # left "adam is not responding to anything, just started
-                    # playing the song": three and a half minutes of deafness with
-                    # no way out. The audio still never reaches Gemini; the song
-                    # branch in the gate below routes it to Vosk and nowhere else.
-                    mono16k = s32_stereo_to_s16_mono_16k(raw)
-                    return raw, mono16k, denoise_16k(mono16k)
+                _dead_run = [0]
+                _chunks_per_s = max(1.0, CAPTURE_RATE / float(CHUNK_FRAMES))
 
                 while not stop.is_set():
                     proc = None
@@ -613,21 +379,8 @@ async def run_session(client, resume_handle: str | None,
                                "-f", CAPTURE_FORMAT,
                                "-r", str(CAPTURE_RATE),
                                "-c", str(CAPTURE_CHANNELS),
-                               "-t", "raw",
+                               "-t", "raw", "-q",
                                "--buffer-size=48000"]
-                        # --buffer-size is in FRAMES, so 48000 = 1.0s of slack
-                        # between arecord and this loop. The default is a few
-                        # hundred ms, and the journal showed
-                        #   [arecord] overrun!!! (at least 2097.350 ms long)
-                        # — once the reader stalls past the buffer, ALSA throws
-                        # away everything that arrived in the meantime, so the
-                        # user's speech is gone before any gate can see it. A
-                        # bigger buffer converts a scheduling hiccup from lost
-                        # audio into harmless latency.
-                        #
-                        # No "-q" either — it would hide those overrun warnings,
-                        # which are indistinguishable from "the mic didn't hear
-                        # me" without the message.
                         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                                 stderr=subprocess.PIPE, bufsize=0)
                         await asyncio.sleep(1.0)
@@ -637,10 +390,6 @@ async def run_session(client, resume_handle: str | None,
                             await asyncio.sleep(3.0)
                             continue
 
-                        # Only start draining stderr AFTER the startup check
-                        # above — that check reads proc.stderr directly to
-                        # report why arecord died, and a drain thread started
-                        # earlier would race it and swallow the message.
                         threading.Thread(target=drain_stderr,
                                          args=(proc, "arecord"), daemon=True).start()
 
@@ -648,48 +397,19 @@ async def run_session(client, resume_handle: str | None,
                               f"{CAPTURE_RATE}Hz {CAPTURE_CHANNELS}ch")
                         errors = 0
 
-                        # ── Hardware warm-up discard ──────────────────────
-                        # The first fraction of a second of audio right
-                        # after arecord opens the capture device is
-                        # typically unstable — DC offset hasn't settled,
-                        # some HATs/codecs ramp their AGC (automatic gain
-                        # control) up over the first few frames, and ALSA's
-                        # own buffer needs a moment to reach steady state.
-                        # This produces wildly inconsistent RMS readings on
-                        # startup/reconnect that don't reflect real input
-                        # levels and could feed garbage into VAD/attention
-                        # logic. Discard a short warm-up window's worth of
-                        # chunks (not sent to Gemini, not RMS-logged)
-                        # before treating capture as "live."
-                        warmup_bytes_target = int(
-                            CAPTURE_RATE * CAPTURE_CHANNELS * 4 * 0.4)  # ~0.4s
+                        # Hardware warm-up discard (~0.4s)
+                        warmup_bytes_target = int(CAPTURE_RATE * CAPTURE_CHANNELS * 4 * 0.4)
                         warmup_discarded = 0
-                        while (warmup_discarded < warmup_bytes_target
-                               and not stop.is_set()):
+                        while (warmup_discarded < warmup_bytes_target and not stop.is_set()):
                             try:
-                                _ = await asyncio.to_thread(
-                                    read_exact, proc.stdout, read_bytes)
+                                _ = await asyncio.to_thread(read_exact, proc.stdout, read_bytes)
                                 warmup_discarded += read_bytes
                             except Exception:
                                 break
 
-                        # Hold the gate shut while the trackers meet the room.
-                        # They start at MIC_AMBIENT_INIT — a guess, not a
-                        # measurement — so without this the first chunk is
-                        # judged against a cold threshold. Live, that is exactly
-                        # what happened: chunk ~1 read 2,460 against a cold
-                        # open_th of 2,430, the gate opened on nothing, and
-                        # because the trackers freeze while it is open only the
-                        # 45s absolute-cap watchdog could break the latch. The
-                        # refractory branch still runs the tracker updates, so
-                        # this window is spent measuring, not idling.
-                        _refractory_until[0] = time.time() + MIC_WARMUP_S
-                        _vad_closed_t[0]     = 0.0
-
                         while not stop.is_set():
                             try:
-                                raw, mono16k, mono16k_nr = await asyncio.to_thread(
-                                    _read_and_convert, proc.stdout, read_bytes)
+                                raw = await asyncio.to_thread(read_exact, proc.stdout, read_bytes)
                             except Exception as e:
                                 errors += 1
                                 if errors > 5:
@@ -699,1098 +419,113 @@ async def run_session(client, resume_handle: str | None,
                                 continue
                             errors = 0
 
-                            if mono16k is None:
-                                # Muted (ADAM speaking). The pipe is still being
-                                # drained every iteration — that
-                                # is what prevents the ALSA capture overruns
-                                # documented below — but nothing is filtered,
-                                # metered or queued.
-                                #
-                                # The gate is also forced SHUT, not left as it
-                                # was. Nothing in this branch touches the VAD
-                                # state, so an open gate used to survive the
-                                # whole reply and reappear as "open" on the first
-                                # unmuted chunk — with a _vad_last_loud_t stamped
-                                # seconds ago. Two consequences, both seen live:
-                                # the echo guard is keyed on `not _vad_open`, so
-                                # it silently did not apply at the one moment it
-                                # exists for, and the first post-reply chunk
-                                # printed "🤫 Speech ended" for an utterance that
-                                # had finished before ADAM even started talking.
-                                if _vad_open[0]:
-                                    _vad_open[0]     = False
-                                    _vad_closed_t[0] = time.time()
-                                # The 16 kHz stream genuinely stops here, so the
-                                # denoiser's overlap-add buffer must not splice
-                                # the audio from before ADAM's reply onto the
-                                # audio after it. Its noise estimate survives —
-                                # same room, and re-learning it would leave the
-                                # moment right after a reply unprocessed, which
-                                # is exactly when the user speaks next.
-                                denoise_reset()
+                            # ── HALF-DUPLEX MUTUAL EXCLUSION ──
+                            # When ADAM is speaking or a song is playing, the speaker is ACTIVE.
+                            # The microphone MUST BE COMPLETELY OFF:
+                            # Drain mic_q immediately, drop all capture, send zero audio to Gemini.
+                            if adam_speaking.is_set() or song_playing.is_set():
+                                _dead_run[0] = 0
                                 while not mic_q.empty():
                                     try: mic_q.get_nowait()
                                     except asyncio.QueueEmpty: break
-                                _preroll.clear()
-                                # No end-of-turn marker here even though the
-                                # gate just closed: the queue is being drained
-                                # anyway, so a marker pushed now would be
-                                # thrown away by this same branch on the next
-                                # muted chunk. send() closes a dangling
-                                # activity window off adam_speaking /
-                                # song_playing directly, which covers this
-                                # path. Clearing _gate_prev keeps the edge
-                                # detector from firing a stale marker when
-                                # the mic unmutes.
-                                _gate_prev[0] = False
+                                if song_playing.is_set() and VOSK_AVAILABLE:
+                                    # Allow offline stop-phrase detection during song
+                                    mono16k_song = await asyncio.to_thread(s32_stereo_to_s16_mono_16k, raw)
+                                    if mono16k_song:
+                                        try: wake_word_q.put_nowait(mono16k_song)
+                                        except asyncio.QueueFull: pass
                                 continue
 
-                            # Converted in the SAME worker thread that did the
-                            # read (see _read_and_convert), not a second
-                            # asyncio.to_thread hop. Each hop costs a thread-pool
-                            # dispatch plus two context switches, and this loop
-                            # runs 30x/second; with the old two-hop version the
-                            # log showed
-                            #   [arecord] overrun!!! (at least 2097.350 ms long)
-                            # i.e. ALSA discarded 2.1 SECONDS of captured audio
-                            # because this loop drained the pipe too slowly.
-                            # Whole sentences vanished before any gate saw them,
-                            # which reads exactly like "ADAM can't hear me".
+                            # Downsample 48kHz stereo S32 to 16kHz mono S16 (band-pass filtered)
+                            mono16k = await asyncio.to_thread(s32_stereo_to_s16_mono_16k, raw)
                             if not mono16k:
                                 continue
 
-                            # ── Song playing: OFFLINE stop-word only ──────────
-                            # A song is 182-215s of aplay on the same I2S device,
-                            # and until now the mic was muted for all of it, so
-                            # ADAM could not be interrupted by voice at all. The
-                            # documented escape was the Touch3 gesture, which
-                            # arrives over the ESP32-CAM UART — and that link
-                            # reports "no data received … audio-only mode" often
-                            # enough that the practical answer was "wait three
-                            # minutes". Hence the report: "not responding to
-                            # anything, just started playing the song".
-                            #
-                            # This branch is placed BEFORE all level metering on
-                            # purpose. The mic hears the speaker through the same
-                            # PCB, so feeding music into _ambient_rms /
-                            # _noise_peak would ratchet the thresholds up to
-                            # MIC_AMBIENT_MAX and leave the gate deaf for a good
-                            # while AFTER the song ended — trading a 3-minute
-                            # problem for a longer one. Nothing here touches the
-                            # trackers, the gate, or mic_q; the audio goes to the
-                            # local Vosk recogniser and nowhere else, so no song
-                            # audio is sent to Google either.
-                            #
-                            # Honest limitation: recognition happens while the
-                            # song is playing loudly into the same enclosure and
-                            # there is no echo cancellation, so a stop phrase is
-                            # not guaranteed to be heard on the first try. The
-                            # phrase is deliberately two words ("adam stop" /
-                            # "stop the song") to keep music transients from
-                            # tripping it, and it can simply be repeated.
-                            if song_playing.is_set():
-                                if _vad_open[0]:
-                                    _vad_open[0]     = False
-                                    _vad_closed_t[0] = time.time()
-                                _gate_prev[0] = False
-                                _preroll.clear()
-                                while not mic_q.empty():
-                                    try: mic_q.get_nowait()
-                                    except asyncio.QueueEmpty: break
-                                if VOSK_AVAILABLE:
-                                    try:
-                                        # Deliberately the RAW chunk, not the
-                                        # denoised one. The interfering sound
-                                        # here is music, which is anything but
-                                        # stationary, so the minimum-statistics
-                                        # noise estimate is meaningless against
-                                        # it — and a wrong estimate suppresses
-                                        # the stop phrase along with the song.
-                                        wake_word_q.put_nowait(mono16k)
-                                    except asyncio.QueueFull:
-                                        pass
-                                continue
-
-                            # Level metering happens on the FILTERED audio, in
-                            # int16 units. rms_s32(raw) — what every gate below
-                            # used to use — measures the raw S32 capture, which
-                            # on this hardware is ~85% out-of-band rumble/hiss:
-                            # it reads 68M-108M in a SILENT room, so no gate
-                            # calibrated for speech could ever fire and pure
-                            # room noise was streamed to Gemini nonstop. See
-                            # rms_pcm16() and the LEVEL GATES block in config.
-                            now      = time.time()
-                            _rms_now = rms_pcm16(mono16k)
-
-                            # DEAD-CAPTURE WATCHDOG — the fix for "and after
-                            # this it stopped listening", permanently.
-                            #
-                            # Observed live: immediately after a
-                            # "🔇 Playback idle" close, every subsequent chunk
-                            # came back as EXACT digital silence and stayed
-                            # that way until the service was restarted:
-                            #   📊 Mic 10s: p50 0 p90 0 p99 0 max 0 | ...
-                            #   (repeating, ambient decaying 1144 → 188 → 0)
-                            # arecord was still alive and still handing us
-                            # full-size chunks, so nothing in the existing
-                            # error path could notice — read_exact never
-                            # failed, `errors` never incremented, and the
-                            # stats line dutifully reported that the room was
-                            # perfectly quiet. ADAM was stone deaf and
-                            # cheerful about it.
-                            #
-                            # The trigger is the shared I2S clock domain: the
-                            # voiceHAT is ONE soundcard serving both capture
-                            # and playback, so tearing the playback stream
-                            # down can leave the capture DMA running but
-                            # feeding zeros. SPEAKER_IDLE_CLOSE_S made that
-                            # teardown routine rather than once-per-session,
-                            # which is what turned a latent race into
-                            # something reproducible. speaker()'s teardown is
-                            # now graceful (EOF, not SIGTERM) to stop
-                            # provoking it — but a capture path that can
-                            # silently die MUST also be able to notice and
-                            # recover on its own, whatever the cause.
-                            #
-                            # An INMP441 always has self-noise; a true 0 is
-                            # impossible from live hardware. So a sustained
-                            # run of it is unambiguous, and the cure is the
-                            # one that already exists: break, let the finally
-                            # below reap arecord, and let the outer loop
-                            # respawn it.
-                            if _rms_now < 1.0:
-                                _dead_run[0] += 1
-                                # Two fuses, one detector. Inside the window
-                                # after a playback close the cause is KNOWN, so
-                                # waiting the full MIC_DEAD_STREAM_S there just
-                                # donates the seconds in which the user replies
-                                # to a stream of zeros.
-                                _recent_close = (now - amp_quiet_t[0]
-                                                 < MIC_DEAD_AFTER_PLAY_WINDOW_S)
-                                _lim = (_dead_limit_amp if _recent_close
-                                        else _dead_limit)
-                                if _dead_run[0] >= _lim:
-                                    print(f"  ⚠️  Capture DEAD — "
-                                          f"{_dead_run[0] / _chunks_per_s:.1f}s "
-                                          f"of exact digital silence from "
-                                          f"arecord (voiceHAT I2S capture "
-                                          f"wedged"
-                                          f"{', playback closed ' if _recent_close else ''}"
-                                          f"{f'{now - amp_quiet_t[0]:.1f}s ago' if _recent_close else ''}"
-                                          f"). Restarting arecord.")
-                                    break
-                            else:
-                                _dead_run[0] = 0
-
-                            _rms_hist.append(_rms_now)
-                            # Rolling median of the last MIC_VAD_SUSTAIN_S of
-                            # audio. Fed here — after the dead-capture check and
-                            # before any gate reads it — so every unmuted chunk
-                            # contributes exactly once. statistics.median on a
-                            # 15-element deque is ~15us on a Pi Zero 2 W, against
-                            # a 33ms chunk period.
-                            _lvl_win.append(_rms_now)
-                            _lvl_sus = statistics.median(_lvl_win)
-                            # ADAPTIVE GATE, fed on every unmuted chunk, with
-                            # exactly ONE exception (the amp guard below):
-                            #
-                            # observe() must see speech too. That sounds wrong
-                            # and is the whole point: it keeps a low PERCENTILE
-                            # of a 45s window, and speech never occupies the
-                            # bottom 20% of 45 seconds, so the estimate is
-                            # immune to it by construction. The old EMA had to
-                            # be defended from speech with a cooldown, a
-                            # near-baseline guard and a hard MIC_AMBIENT_MAX
-                            # clamp — and that clamp is what capped it below a
-                            # noisy room's real floor.
-                            #
-                            # shape_ok() must see every chunk because it also
-                            # maintains the rolling shape window that the HOLD
-                            # test reads. It is cheap (one 1024-point rFFT,
-                            # 1.02 ms measured against a 33.3 ms budget).
-                            #
-                            # Note what is NOT used here: an "was there speech
-                            # recently" timer. At this feature's real false
-                            # positive rate on noise (~5-10% per chunk) a 0.5 s
-                            # memory reads true ~79% of the time on noise alone,
-                            # so it could never let the gate CLOSE — and with
-                            # Gemini's manual activity detection a gate that
-                            # cannot close means no reply at all. The hold test
-                            # is a FRACTION of the sustain window instead.
-                            #
-                            # THE ONE EXCEPTION — the amp guard. observe() is
-                            # skipped while the playback device is open, and
-                            # for MIC_ECHO_GUARD_S after it closes, because
-                            # what the mic hears then is the voiceHAT's own
-                            # amplifier (+4 dB of hiss, measured with nothing
-                            # playing) rather than the room. Learning that
-                            # walked open_th up to 2,989 against a user whose
-                            # quietest speech is 2,357 — see the AMP HISS
-                            # GUARD note in run_session for the full trace.
-                            # The settle window matters as much as the open
-                            # one: the device is closed by then, but the ALSA
-                            # teardown transient is still in the capture path,
-                            # and the whole point is to only ever learn air.
-                            #
-                            # shape_ok() is NOT skipped, and that asymmetry is
-                            # deliberate. Its per-chunk features cannot be
-                            # poisoned by hiss, and its rolling window has to
-                            # stay contiguous for the HOLD fraction to mean
-                            # what it says. Hiss is also exactly what it is
-                            # best at rejecting: broadband noise reads flatness
-                            # ~1.0 against a 0.35 limit and lo/hi ~0.15
-                            # against a 0.60 floor, so it fails both halves of
-                            # the shape test on its own merits. That is what
-                            # keeps the stale-floor window from turning into
-                            # false opens: during it the hiss does clear
-                            # open_th, and the shape vote is the only reason
-                            # the gate stays shut.
-                            #
-                            # Its ONE piece of adaptation — the learned
-                            # flatness threshold — is fed separately, through
-                            # learn_noise, and that flag repeats the amp guard
-                            # for the same reason observe() has it: the
-                            # threshold is meant to describe the ROOM. A chunk
-                            # only teaches it when the gate is shut, the level
-                            # is under the open threshold, and the amplifier is
-                            # off — i.e. when this code already believes the
-                            # chunk is silence. Speech cannot teach it, and
-                            # neither can ADAM's own hiss.
-                            _amp_hot = (amp_open[0]
-                                        or now - amp_quiet_t[0]
-                                            < MIC_ECHO_GUARD_S)
-                            if not _amp_hot:
-                                _agate.observe(_rms_now)
-                            _shape_now  = _agate.shape_ok(
-                                mono16k,
-                                learn_noise=(not _amp_hot
-                                             and not _vad_open[0]
-                                             and _agate.ready
-                                             and _rms_now < _agate.open_th))
-                            _shape_hold = _agate.shape_hold_ok()
-                            if now - _last_rms[0] > MIC_STATS_S:
-                                # Print the LIVE thresholds, not the static
-                                # floor: the floor is only one term of
-                                # max(floor, ambient*margin, peak*margin), and it
-                                # was the adaptive terms that silently drifted —
-                                # ambient rising out of reach of the user's voice,
-                                # then hold_th sinking below the noise. Showing
-                                # both numbers actually being compared, plus the
-                                # gate state, makes either failure visible in one
-                                # line instead of inferable from behaviour.
-                                _th = max(MIC_SILENCE_FLOOR,
-                                          _ambient_rms[0] * MIC_SPEECH_MARGIN,
-                                          _noise_peak[0] * MIC_VAD_OPEN_MARGIN)
-                                _hth = min(_th * MIC_VAD_MAX_HOLD_RATIO,
-                                           max(_th * MIC_VAD_RELEASE_RATIO,
-                                               _noise_peak[0] * MIC_VAD_HOLD_MARGIN))
-                                if MIC_ADAPTIVE and _agate.ready:
-                                    _th  = _agate.open_th
-                                    _hth = _agate.hold_th
-                                _h = sorted(_rms_hist)
-                                _n = len(_h)
-
-                                def _pct(p: float) -> float:
-                                    return _h[min(_n - 1, int(p * _n))] if _n else 0.0
-
-                                # p99 next to open_th is the whole point: if p99
-                                # is ABOVE open_th while nobody is talking, the
-                                # gate is being opened by the room, and no amount
-                                # of hangover tuning will produce a transcript.
-                                #
-                                # IDLE / SONG are printed because their absence
-                                # cost hours of misdiagnosis: in idle mode every
-                                # chunk goes to the offline recogniser and NOTHING
-                                # to Gemini, so the line read "opens 1 sent 0" for
-                                # minutes on end and looked exactly like a broken
-                                # mic. It was ADAM obeying an "be quiet" it had
-                                # overheard from a phone call. The state that
-                                # explains `sent 0` now appears on the same line as
-                                # `sent 0`.
-                                _mode = ("IDLE" if idle_mode.is_set()
-                                         else "SONG" if song_playing.is_set()
-                                         else "OPEN" if _vad_open[0] else "shut")
-                                # "+AMP" means the floor estimate is FROZEN
-                                # because the playback device is open. Printed
-                                # for the same reason IDLE/SONG are: a frozen
-                                # floor is a legitimate state with a visible
-                                # symptom (the floor number stops moving), and
-                                # without this the only way to tell it apart
-                                # from a wedged gate is to read the source.
-                                if _amp_hot:
-                                    _mode += "+AMP"
-                                _floor_s = (f"floor {_agate.floor:.0f}"
-                                            f"{'' if _agate.ready else '?'} "
-                                            f"flat {_agate.flat:.2f}"
-                                            f"/{_agate.flat_max:.2f} "
-                                            f"lohi {_agate.lohi:.2f} "
-                                            f"shp {100*_agate.shape_frac:.0f}%"
-                                            if MIC_ADAPTIVE else
-                                            f"ambient {_ambient_rms[0]:.0f} "
-                                            f"peak {_noise_peak[0]:.0f}")
-                                _nr_db = denoise_db()
-                                _nr_s = ("" if _nr_db is None
-                                         else f"nr {_nr_db:+.1f}dB | ")
-                                print(f"  📊 Mic {MIC_STATS_S:.0f}s: p50 {_pct(0.50):.0f} "
-                                      f"p90 {_pct(0.90):.0f} p99 {_pct(0.99):.0f} "
-                                      f"max {(_h[-1] if _n else 0):.0f} | "
-                                      f"open≥{_th:.0f} hold≥{_hth:.0f} | "
-                                      f"{_floor_s} | "
-                                      f"opens {_win_opens[0]} sent {_win_sent[0]} | "
-                                      f"blocked {_win_blocked[0]} | "
-                                      f"{_nr_s}"
-                                      f"{_mode}")
-                                _rms_hist.clear()
-                                _win_opens[0] = 0
-                                _win_sent[0] = 0
-                                _win_blocked[0] = 0
-                                _last_rms[0] = now
-
-                            # ── Direction-of-arrival: see the block after the
-                            # VAD gate below. It used to run HERE, on every
-                            # chunk whose RMS cleared a separate (now deleted)
-                            # MIC_LIVE_RMS_THRESHOLD * 0.5 = 1,400 — below the
-                            # ambient the room was believed to have, so the
-                            # "only when it's worth it" guard never once engaged
-                            # and GCC-PHAT's FFTs ran
-                            # 30x/second forever. That was the CPU cost behind
-                            # both the capture overruns and the playback
-                            # underruns. It now runs only on real speech, and at
-                            # a rate the neck can actually use.
-
-                            # ── FIX #2: audio sanity gate ─────────────────────
-                            # Drop corrupted/desynced chunks BEFORE they reach
-                            # Gemini. This is what previously produced:
-                            #   "receive error: 1007 None. Request contains
-                            #    an invalid argument." — a single garbage
-                            #   chunk could kill the whole Live session.
                             if not is_valid_pcm16_chunk(mono16k):
                                 _dropped_bad_chunks[0] += 1
                                 now_w = time.time()
                                 if now_w - _last_bad_warn_t[0] > 2.0:
                                     print(f"  ⚠️  Dropped {_dropped_bad_chunks[0]} "
-                                          f"corrupted audio chunk(s) before "
-                                          f"send — check UART/CPU contention "
-                                          f"if this repeats constantly")
+                                          f"corrupted audio chunk(s) before send")
                                     _last_bad_warn_t[0] = now_w
                                     _dropped_bad_chunks[0] = 0
                                 continue
 
-                            # attention_active is driven by the VAD gate below,
-                            # not by a bare RMS comparison. It used to fire on
-                            # `_rms_now > MIC_LIVE_RMS_THRESHOLD` (2,800) — a
-                            # second, higher bar than the gate that decides what
-                            # Gemini actually hears. Speech landing between the
-                            # two counted as audio worth sending but NOT as
-                            # "someone is talking", so the 90s idle timer kept
-                            # running and the nudge talked straight over the
-                            # user. Observed live: the gate opened at RMS 5273
-                            # and `🔊 ADAM speaking` followed in the same
-                            # instant. One gate, one meaning — the constant is
-                            # gone, not merely unused.
+                            _rms_now = rms_pcm16(mono16k)
 
-                            # ── SILENCE / NOISE-FLOOR GATE ───────────────────
-                            # Previously every mic chunk was queued/sent to
-                            # Gemini unconditionally, including pure room
-                            # noise/silence between sentences. Continuously
-                            # streaming near-silent audio gives the Live API
-                            # ungrounded input during quiet stretches, which
-                            # is a known trigger for unprompted "phantom"
-                            # responses (the random Hindi hallucinations) —
-                            # the model free-associates from thin signal
-                            # instead of responding to real speech. It also
-                            # leaves Gemini's own turn detection with no
-                            # endpoint to latch onto, so genuine speech never
-                            # gets answered: the "ADAM talks but can't hear
-                            # me" symptom.
-                            #
-                            # A chunk must clear BOTH the fixed floor (a
-                            # backstop, in filtered-int16 RMS units) and the
-                            # ROLLING ambient baseline by a real margin. The
-                            # rolling part is what distinguishes a peripheral
-                            # noise burst — louder than true silence, still
-                            # much quieter than speech — from actual speech
-                            # onset, and it lets ADAM adapt to whatever room
-                            # it's in instead of relying on one hand-tuned
-                            # number.
-                            #
-                            # ORDERING FIX: the baseline update used to sit
-                            # BELOW the fixed-floor `continue`, so the very
-                            # chunks that represent true silence — the only
-                            # honest evidence of the room's noise floor —
-                            # returned before ever reaching it. The baseline
-                            # therefore never moved off its initial guess.
-                            #
-                            # HYSTERESIS + HANGOVER + PRE-ROLL: a bare
-                            # per-chunk comparison shreds speech at its own
-                            # internal gaps and deletes its attack; see the
-                            # VAD block in config.py for the measurement that
-                            # forced this. `open_th` gates the START of an
-                            # utterance, `hold_th` (lower) keeps it open, and
-                            # the hangover window keeps it open through short
-                            # dips even below that.
-                            # Thresholds come from the trackers as they stood at
-                            # the END of the previous chunk, and the trackers are
-                            # updated further down only for chunks this gate
-                            # judged to be non-speech. That ordering matters: a
-                            # chunk must never be allowed to raise the noise
-                            # estimate that is about to classify it.
-                            #
-                            # open_th ALSO respects the measured noise PEAK, not
-                            # just the average. The averaged ambient estimate
-                            # falls fast and rises slowly (deliberately — that is
-                            # what stops speech poisoning it), so it settles near
-                            # the LOWER envelope of room noise, materially below
-                            # the loudest noise chunks. Sizing thresholds off it
-                            # alone therefore puts them under peaks that are
-                            # still just noise.
-                            #
-                            # The peak multiplier here is MIC_VAD_OPEN_MARGIN and
-                            # the one in hold_th below is MIC_VAD_HOLD_MARGIN, and
-                            # they must stay DIFFERENT. Sharing one constant is
-                            # what killed the hysteresis: both lines reduced to
-                            # `peak * 1.05` whenever the peak term won, so hold_th
-                            # came out exactly equal to open_th and the Schmitt
-                            # trigger degenerated into a plain threshold. Live it
-                            # logged 2356/2356, 2764/2764, 2876/2876, 2914/2914,
-                            # 3007/3007 — and with no gap left, every mid-word dip
-                            # closed the gate, so 20+ consecutive bursts reached
-                            # Gemini as ~1s slices with ~1s holes between them and
-                            # not one produced a transcript.
-                            open_th = max(MIC_SILENCE_FLOOR,
-                                          _ambient_rms[0] * MIC_SPEECH_MARGIN,
-                                          _noise_peak[0] * MIC_VAD_OPEN_MARGIN)
-                            # hold_th must stay ABOVE the room's noise peak.
-                            # Deriving it purely as a fraction of open_th put it
-                            # at 2300*0.72 = 1,656 — BELOW the measured quiet
-                            # room (1,450-1,990), so every chunk of silence
-                            # re-armed the hangover and the gate could never
-                            # close. That fed Gemini an unbroken noise bed and it
-                            # answered with hallucinated transcripts in random
-                            # languages ("안녕하세요", "luego") — the exact
-                            # phantom-response failure the gate exists to prevent.
-                            # Observed live: opened at 2,447, then held on 1,674 /
-                            # 1,930 / 1,770 for ~40s of pure room noise.
-                            #
-                            # Note what this concedes: measured mid-word dips
-                            # (1,776 / 1,913 / 2,008) sit INSIDE the quiet-room
-                            # range, so NO threshold can separate a dip from
-                            # silence. The hangover timer, not the hold
-                            # threshold, is what has to bridge them — and it can,
-                            # because it is a duration test rather than a level
-                            # test. hold_th's only job is to be low enough to
-                            # ride out sustained-but-quieter speech and high
-                            # enough that noise alone cannot renew it.
-                            hold_th = max(open_th * MIC_VAD_RELEASE_RATIO,
-                                          _noise_peak[0] * MIC_VAD_HOLD_MARGIN)
-                            # Strictly below open_th, by construction. min(.., open_th)
-                            # was not enough: it permits hold_th == open_th, which is
-                            # a Schmitt trigger with no gap at all.
-                            hold_th = min(hold_th, open_th * MIC_VAD_MAX_HOLD_RATIO)
-
-                            # ── ADAPTIVE OVERRIDE ─────────────────────────────
-                            # Everything above is the ORIGINAL absolute-threshold
-                            # path, kept intact and reachable (MIC_ADAPTIVE=0) as
-                            # a one-variable rollback. When adaptive is on, the
-                            # three thresholds come from the learned floor
-                            # instead, because the absolute path cannot ship to
-                            # customers:
-                            #
-                            #   • MIC_SILENCE_FLOOR is one hand-measured number
-                            #     from ONE room. In this room, live: floor p50
-                            #     1872-1923 against open≥1800 — the noise was
-                            #     already over the gate. The printed remedy was
-                            #     "echo 'MIC_SILENCE_FLOOR=…' >> ~/adam/.env",
-                            #     i.e. asking the owner of the product to edit a
-                            #     dotfile over SSH. That is not a shipping
-                            #     product.
-                            #   • MIC_AMBIENT_MAX cannot be raised to cover a
-                            #     noisier room: MIC_AMBIENT_MAX x
-                            #     MIC_SPEECH_MARGIN must stay under the quietest
-                            #     measured speech (2357), which caps it at 1746.
-                            #     A room whose floor is 1900 is therefore
-                            #     unreachable BY CONSTRUCTION, and pushing the
-                            #     clamp up would put open_th above real speech
-                            #     and deafen ADAM outright.
-                            #   • And the gap that remains is only ~2 dB (floor
-                            #     1900 vs quietest speech 2357), so NO level
-                            #     threshold whatsoever separates this room's
-                            #     noise from this user's voice. That is why the
-                            #     shape vote below is not a refinement but the
-                            #     load-bearing part: it is the only term that is
-                            #     independent of level.
-                            #
-                            # strong_th is the level at which ADAM opens WITHOUT
-                            # the shape vote, so a shout, a clap-to-get-attention
-                            # or a voice the VAD mis-scores is never ignored.
-                            if MIC_ADAPTIVE and _agate.ready:
-                                open_th   = _agate.open_th
-                                hold_th   = _agate.hold_th
-                                strong_th = _agate.strong_th
-                                _vote_req = True
+                            # Safety dead-stream check: only if arecord gives 0.0 RMS for >5s of active listening
+                            if _rms_now < 1.0:
+                                _dead_run[0] += 1
+                                if _dead_run[0] >= int(5.0 * _chunks_per_s):
+                                    print("  ⚠️  Capture DEAD (continuous digital silence from arecord). Restarting arecord.")
+                                    _dead_run[0] = 0
+                                    break
                             else:
-                                # Legacy path, bit-for-bit: no shape vote is
-                                # required and "strong" is unreachable, so the
-                                # decision below reduces to exactly the level
-                                # comparison it always was. A rollback has to be
-                                # a real rollback to be worth keeping.
-                                strong_th = float("inf")
-                                _vote_req = False
+                                _dead_run[0] = 0
 
-                            # ECHO GUARD. For a short window after the mic
-                            # reopens, the room is still ringing with ADAM's own
-                            # last sentence. Measured live: the first unmuted
-                            # chunk after a reply read 2,693 against open_th
-                            # 2,300, opening the gate on ADAM's own voice — which
-                            # is how a model ends up answering itself. Demanding
-                            # extra margin here, instead of simply muting for
-                            # longer, is what keeps a fast human reply audible:
-                            # the audio still flows into the pre-roll buffer, so
-                            # nothing is discarded, it just takes a genuinely
-                            # louder chunk to declare speech.
-                            if (not _vad_open[0]
-                                    and now - mic_open_t[0] < MIC_ECHO_GUARD_S):
-                                open_th *= MIC_ECHO_GUARD_MARGIN
-                                # strong_th has to move with it. It is an OR
-                                # alternative to the shape vote, and ADAM's own
-                                # recorded voice passes a speech-shape test
-                                # trivially — leaving strong_th unscaled would
-                                # hand the echo a level-only bypass around the
-                                # very guard this block is.
-                                strong_th *= MIC_ECHO_GUARD_MARGIN
+                            # Direction-of-arrival (DOA) for neck tracking
+                            if not idle_mode.is_set():
+                                if _rms_now > MIC_LIVE_RMS_THRESHOLD * 0.5:
+                                    def _compute_doa():
+                                        left, right = s32_stereo_to_s16_stereo_channels(raw)
+                                        return estimate_doa_angle(left, right, CAPTURE_RATE)
+                                    angle = await asyncio.to_thread(_compute_doa)
+                                    if abs(angle) > DOA_ANGLE_DEADZONE:
+                                        doa_angle[0] = (doa_angle[0] * 0.6) + (angle * 0.4)
+                                        doa_last_update_t[0] = time.time()
+                                        _doa_angle[0] = doa_angle[0]
+                                        _doa_last_update_t[0] = doa_last_update_t[0]
 
-                            # ── ONE DECISION, TWO INDEPENDENT VOTES ───────────
-                            # LEVEL: instantaneous chunk to ATTACK (fast, and
-                            # duration-tested by the onset run below), rolling
-                            # median to SUSTAIN (an impulse cannot move a median,
-                            # which is what stopped intermittent noise pinning
-                            # the gate open forever).
-                            #
-                            # SHAPE: the spectral verdict, which knows nothing
-                            # about level — flatness plus a low/high band ratio
-                            # over 120-6,800 Hz (see AdaptiveGate.shape_ok).
-                            # NOT webrtcvad: it was tried here first and
-                            # measured on this hardware it called 100.0% of
-                            # this room's noise frames "speech" at
-                            # aggressiveness 0, 1 and 2, and 98.6% at 3, so as
-                            # a second vote it was a constant. This is the term
-                            # that makes the gate work in a room whose noise is
-                            # as loud as the user's voice — the measured 2 dB
-                            # case above. Requiring
-                            # BOTH votes to HOLD is deliberate and is the second
-                            # half of the "ADAM never answers" fix: under manual
-                            # activity detection the gate's falling edge is the
-                            # only activity_end Gemini ever gets, so a gate held
-                            # open by a noise bed does not merely waste
-                            # bandwidth, it means no reply is ever generated.
-                            # With the shape vote in the hold condition, a noise
-                            # bed stops refreshing the hangover even while it is
-                            # still loud, the hangover expires, and the turn
-                            # closes.
-                            #
-                            # The two branches use DIFFERENT shape statistics
-                            # on purpose. Opening reads this chunk's strict
-                            # verdict, so every one of the
-                            # MIC_VAD_ONSET_CHUNKS chunks in the onset run has
-                            # to pass on its own — that run requirement is what
-                            # takes the shape test's residual 4.3% per-chunk
-                            # false pass on noise down to zero false opens.
-                            # Holding reads the FRACTION of the sustain window
-                            # that passed with a little flatness slack, which
-                            # rides out consonants without ever being true on a
-                            # steady noise bed.
-                            if _vad_open[0]:
-                                _gate_pass = (_lvl_sus >= hold_th
-                                              and (not _vote_req or _shape_hold
-                                                   or _lvl_sus >= strong_th))
-                            else:
-                                _gate_pass = (_rms_now >= open_th
-                                              and (not _vote_req or _shape_now
-                                                   or _rms_now >= strong_th))
+                            now = time.time()
+                            if now - _last_rms[0] > 6.0:
+                                print(f"  🎤 Mic active (RMS: {_rms_now:.0f})")
+                                _last_rms[0] = now
 
-                            if servo_moving.is_set():
-                                # The head is physically turning, or has just
-                                # been released and is still settling. Measured
-                                # post-filter RMS: 4,658-4,666 while energised
-                                # and still 1,697 / 1,931 for the two seconds
-                                # after detach, against a 1,039-1,245 baseline
-                                # and an open_th of 1,800 (adam/_floorcal.py,
-                                # adam/_servodecay.py). Treated as neither speech
-                                # nor silence: it may not OPEN the gate, and it
-                                # may not teach the trackers what the room sounds
-                                # like. If the gate is already open (DOA only
-                                # turns the head toward someone who is talking)
-                                # the hangover is refreshed so the move cannot
-                                # truncate the utterance in progress, and the
-                                # audio still flows through — muting here would
-                                # punch a hole in the user's sentence.
-                                if _vad_open[0]:
-                                    _vad_last_loud_t[0] = now
-                                    _vad_last_strong_t[0] = now
-                                _onset_win.clear()
-                            elif now < _refractory_until[0]:
-                                _onset_win.clear()  # forced-shut window, see watchdogs
-                            elif _gate_pass:
-                                # ATTACK (gate shut) reads the instantaneous
-                                # chunk — fast, and already duration-tested by
-                                # the onset run below. SUSTAIN (gate open) reads
-                                # the rolling median, so intermittent room noise
-                                # can no longer hold the gate open forever; see
-                                # the SUSTAIN WINDOW note where _lvl_win is
-                                # built. Both are ANDed with the shape vote when
-                                # MIC_ADAPTIVE is on — see the two-votes block.
-                                _vad_last_loud_t[0] = now
+                            if _rms_now > MIC_LIVE_RMS_THRESHOLD:
                                 attention_active.set()
-                                if (_lvl_sus if _vad_open[0]
-                                        else _rms_now) >= open_th:
-                                    # Same split for the soft latch watchdog's
-                                    # "strong" stamp: while open it must mean
-                                    # SUSTAINED speech-level audio, otherwise a
-                                    # p99 impulse every few seconds keeps
-                                    # renewing it and MIC_VAD_MAX_OPEN_S can
-                                    # never fire.
-                                    _vad_last_strong_t[0] = now
-                                if not _vad_open[0]:
-                                    # ONSET CONFIRMATION — a DURATION test on top
-                                    # of the level test.
-                                    #
-                                    # adam/_hpcal.py established that the residual
-                                    # noise cannot be filtered away: after the
-                                    # sub-100 Hz rumble is gone what is left is
-                                    # broadband hiss sitting on the speech band, and
-                                    # no band-pass candidate beat the current chain
-                                    # (best 1.67x vs 1.68x, -0.1 dB). But the same
-                                    # measurement showed a band-pass dropping the
-                                    # noise p50 by 30% while dropping its p99 by
-                                    # only 17%. Stationary noise would move both by
-                                    # the same factor; a tail that survives
-                                    # band-limiting and sits 1.67x over its own
-                                    # median is IMPULSIVE — clicks, creaks, taps,
-                                    # bearing ticks.
-                                    #
-                                    # An impulse is one or two 33 ms chunks long.
-                                    # The shortest useful utterance is tens of
-                                    # chunks. So the level threshold was being set
-                                    # by the wrong constraint: pinned high purely to
-                                    # stay above transients, which cost every speech
-                                    # chunk underneath it — and the measured
-                                    # intra-word dips (1776/1913/2008) sit exactly
-                                    # there. A DURATION test rejects transients
-                                    # instead, which frees the level threshold to
-                                    # come down.
-                                    #
-                                    # A QUORUM, not a run: N of the last
-                                    # MIC_VAD_ONSET_WINDOW chunks, gaps allowed.
-                                    # The consecutive version of this test is what
-                                    # made ADAM look deaf — real speech is full of
-                                    # chunks that legitimately fail, an unvoiced
-                                    # /h/ or /s/ (broadband, flat, fails shape) and
-                                    # a stop closure (2-3 chunks of near-silence,
-                                    # fails level), and either one reset the run to
-                                    # zero. "Hey ADAM" does not contain 5 clean
-                                    # chunks in a row at conversational volume, so
-                                    # the run never completed and nothing was ever
-                                    # sent. The quorum keeps the duration test that
-                                    # rejects impulses (one chunk cannot make three)
-                                    # and drops the contiguity requirement that
-                                    # speech cannot meet.
-                                    #
-                                    # The delay is free: MIC_VAD_PREROLL_S of audio
-                                    # from BEFORE the gate opened is already ringed
-                                    # and gets flushed on open, so the window costs
-                                    # latency in the DECISION, not audio.
-                                    _onset_win.append(1)
-                                    if sum(_onset_win) >= MIC_VAD_ONSET_CHUNKS:
-                                        _vad_open[0] = True
-                                        _vad_last_strong_t[0] = now
-                                        _vad_opened_t[0] = now
-                                        _win_opens[0] += 1
-                                        print(f"  🎙️  Speech detected "
-                                              f"(RMS {_rms_now:.0f} ≥ {open_th:.0f}"
-                                              f"{f', {sum(_onset_win)}/{len(_onset_win)} chunks' if MIC_VAD_ONSET_CHUNKS > 1 else ''})")
-                                        _onset_win.clear()
-                            elif _vad_open[0] and (now - _vad_last_loud_t[0]
-                                                   ) > MIC_VAD_HANGOVER_S:
-                                _vad_open[0] = False
-                                _vad_closed_t[0] = now
-                                _onset_win.clear()
-                                print("  🤫 Speech ended")
-                            else:
-                                # A chunk that failed. It does NOT reset the
-                                # quorum — it just ages out of the window like
-                                # any other, which is the whole point: a
-                                # consonant or a stop closure inside an
-                                # utterance must not undo the chunks around it.
-                                #
-                                # A window that collected passes but decayed
-                                # back to nothing without reaching the quorum is
-                                # exactly the transient this rule exists to
-                                # reject, so count that moment — not every quiet
-                                # chunk, which would just count silence.
-                                # `blocked` is then how much the duration test
-                                # is actually buying, measured live rather than
-                                # assumed.
-                                if not _vad_open[0]:
-                                    _had = sum(_onset_win) > 0
-                                    _onset_win.append(0)
-                                    if _had and sum(_onset_win) == 0:
-                                        _win_blocked[0] += 1
 
-                            # LATCH WATCHDOGS. The trackers freeze while the gate
-                            # is open (by design — speech must not teach them
-                            # what silence sounds like), which means a latched
-                            # gate is self-sustaining: no update, so no threshold
-                            # movement, so no escape. Bound it in TIME instead.
-                            #
-                            # Soft: nothing has re-cleared the OPEN threshold for
-                            # MAX_OPEN_S, so only the lower hold threshold is being
-                            # met. That is not speech; force it shut and resync
-                            # both estimates upward to the level that fooled them,
-                            # so the room's new, louder floor is learned in one
-                            # step and the gate stops reopening on it.
-                            if _vad_open[0] and (now - _vad_last_strong_t[0]
-                                                 ) > MIC_VAD_MAX_OPEN_S:
-                                _vad_open[0] = False
-                                _vad_closed_t[0] = now
-                                _ambient_rms[0] = min(MIC_AMBIENT_MAX,
-                                                      max(_ambient_rms[0], _rms_now * 0.9))
-                                _noise_peak[0] = min(MIC_AMBIENT_MAX,
-                                                     max(_noise_peak[0], _rms_now))
-                                print(f"  🤫 Gate forced shut after "
-                                      f"{MIC_VAD_MAX_OPEN_S:.0f}s with no chunk over "
-                                      f"{open_th:.0f} — treating RMS {_rms_now:.0f} as "
-                                      f"room noise, not speech")
-                            # Hard: open CONTINUOUSLY for ABS_MAX_OPEN_S while
-                            # chunks keep clearing open_th. The soft watchdog
-                            # cannot catch this — the level really is above the
-                            # open threshold — so the only remaining explanation is
-                            # a room whose noise floor now sits above open_th
-                            # itself. Deliberately does NOT resync the legacy
-                            # trackers: at these levels that would drag open_th up
-                            # past normal speech and deafen ADAM completely.
-                            # Instead it caps how much noise reaches Gemini per
-                            # cycle. A genuine 45s unbroken monologue also trips
-                            # this; it costs the refractory window and the gate
-                            # reopens on the next chunk.
-                            #
-                            # The message used to end by telling the user to run
-                            # `echo 'MIC_SILENCE_FLOOR=…' >> ~/adam/.env` over SSH.
-                            # For a product that ships to people who did not write
-                            # it, that instruction IS the bug: it means the unit
-                            # cannot recover from a noisy room by itself. Under
-                            # MIC_ADAPTIVE it now recovers by itself — the 45s of
-                            # loud audio is already in the floor window, so the
-                            # learned floor and open_th are rising as a consequence
-                            # of the same event that printed this — and the line
-                            # reports that rather than handing out homework.
-                            elif _vad_open[0] and (now - _vad_opened_t[0]
-                                                   ) > MIC_VAD_ABS_MAX_OPEN_S:
-                                _vad_open[0] = False
-                                _vad_closed_t[0] = now
-                                _refractory_until[0] = now + 1.5
-                                if MIC_ADAPTIVE:
-                                    print(f"  ⚠️  Mic gate open "
-                                          f"{MIC_VAD_ABS_MAX_OPEN_S:.0f}s "
-                                          f"continuously at RMS {_rms_now:.0f} "
-                                          f"(open≥{open_th:.0f}, learned floor "
-                                          f"{_agate.floor:.0f}, flat "
-                                          f"{_agate.flat:.2f}, shape "
-                                          f"{100*_agate.shape_frac:.0f}%"
-                                          f") — this room is loud "
-                                          f"and speech-like; adapting upward "
-                                          f"automatically, no action needed")
-                                else:
-                                    print(f"  ⚠️  Mic gate open "
-                                          f"{MIC_VAD_ABS_MAX_OPEN_S:.0f}s "
-                                          f"continuously at RMS {_rms_now:.0f} "
-                                          f"(open≥{open_th:.0f}) — this room's "
-                                          f"noise floor is ABOVE the gate, so "
-                                          f"Gemini is being fed noise. Set "
-                                          f"MIC_ADAPTIVE=1 (default) to have "
-                                          f"ADAM learn this room by itself, or "
-                                          f"raise the fixed floor: echo "
-                                          f"'MIC_SILENCE_FLOOR={_rms_now * 1.1:.0f}'"
-                                          f" >> ~/adam/.env && restart adam")
-
-                            # ── TURN BOUNDARY ─────────────────────────────
-                            # Falling edge of the gate = the user stopped
-                            # talking = end of their turn. With the server's
-                            # own VAD disabled (see realtime_input_config in
-                            # the connect config) this marker is the ONLY
-                            # thing that tells Gemini to start answering, so
-                            # it is the difference between a reply that
-                            # begins now and one that begins whenever the
-                            # server happens to give up waiting for silence
-                            # that a gated stream never delivers.
-                            #
-                            # Pushed through mic_q so it lands strictly after
-                            # the last audio chunk of the utterance, and
-                            # pushed UNCONDITIONALLY: a dropped end marker
-                            # leaves the turn open forever, which is worse
-                            # than dropping audio, so make room by discarding
-                            # the oldest chunk rather than skipping it.
-                            if _gate_prev[0] and not _vad_open[0]:
-                                while mic_q.full():
-                                    try: mic_q.get_nowait()
-                                    except asyncio.QueueEmpty: break
-                                mic_q.put_nowait(ACTIVITY_END)
-                            _gate_prev[0] = _vad_open[0]
-
-                            if not _vad_open[0]:
-                                # Non-speech. Two jobs: teach the noise trackers
-                                # what this room sounds like, and keep the chunk
-                                # as pre-roll for whatever comes next (dropping it
-                                # outright is what deleted word onsets before).
-                                #
-                                # Ambient = smoothed level; falls fast, rises 10x
-                                # slower and only toward chunks near the current
-                                # baseline. Without that guard, talking that sits
-                                # just under the threshold drags the baseline up
-                                # and takes the threshold with it, progressively
-                                # locking out the very speaker it should be
-                                # listening to — observed live as ambient climbing
-                                # 1,816 -> 2,395 while the user talked.
-                                #
-                                # Noise peak = decaying maximum over the same
-                                # chunks. It jumps instantly to any new loud noise
-                                # chunk and bleeds back down over ~30s, so the
-                                # thresholds track the loudest thing the room does
-                                # rather than its average. The same near-baseline
-                                # guard applies, so a stray word can lift it by at
-                                # most 50%.
-                                #
-                                # LEARN COOLDOWN. "Not open" is not the same as
-                                # "room noise": the chunks right after a close are
-                                # the reverb tail, the trailing consonant and the
-                                # inter-word gap of the utterance that just ended,
-                                # and the ones right after an unmute are ADAM's own
-                                # tail. Feeding those in is a positive feedback
-                                # loop, and it is what made ADAM go deaf partway
-                                # through a conversation: peak walked 1,800 ->
-                                # 2,244 -> 2,632 -> 2,864 on speech tails alone,
-                                # taking open_th from 2,300 to 3,007 — above most
-                                # of the 2,400-5,500 speech range — and every step
-                                # up produced more chatter to learn from.
-                                _learning = (
-                                    now - _vad_closed_t[0] > MIC_NOISE_LEARN_COOLDOWN_S
-                                    and now - mic_open_t[0] > MIC_NOISE_LEARN_COOLDOWN_S
-                                    and not servo_moving.is_set()
-                                    # Same amp guard as the adaptive floor. The
-                                    # unmute cooldown above is 1.0s but the
-                                    # playback device stays open for
-                                    # SPEAKER_IDLE_CLOSE_S = 2.5s, so without
-                                    # this these trackers spend the difference
-                                    # learning the amplifier. MIC_AMBIENT_MAX
-                                    # caps the damage, which is exactly the
-                                    # clamp that made this path unusable in a
-                                    # loud room — so fix the input instead of
-                                    # leaning on the clamp.
-                                    and not _amp_hot)
-                                if _learning and _rms_now < _ambient_rms[0] * 1.5:
-                                    _a = (_AMBIENT_ALPHA_DOWN
-                                          if _rms_now < _ambient_rms[0]
-                                          else _AMBIENT_ALPHA_UP)
-                                    _ambient_rms[0] = min(
-                                        MIC_AMBIENT_MAX,
-                                        (1 - _a) * _ambient_rms[0] + _a * _rms_now)
-                                    _noise_peak[0] = min(
-                                        MIC_AMBIENT_MAX,
-                                        max(_rms_now, _noise_peak[0] * _NOISE_PEAK_DECAY))
-                                elif _learning:
-                                    # Too loud to be learned as a level, but the
-                                    # peak must still be allowed to DECAY here or a
-                                    # room that got quieter never lets the gate back
-                                    # down: every chunk over ambient*1.5 skipped the
-                                    # decay entirely, so one loud event could hold
-                                    # the peak — and the thresholds — up for as long
-                                    # as the noise kept recurring.
-                                    _noise_peak[0] *= _NOISE_PEAK_DECAY
-                                # Pre-roll holds the DENOISED chunks, because
-                                # its only consumer is mic_q — the gate has
-                                # already had its look at this chunk above.
-                                # denoise_16k() returns b"" while its first
-                                # frame fills, and those must not be queued as
-                                # empty audio blobs.
-                                # Keep pre-roll unattenuated so word onset is pristine
-                                if mono16k:
-                                    _preroll.append(mono16k)
-                                continue
-
+                            # If idle mode, route audio only to local wake-word detector
                             if idle_mode.is_set():
-                                # While idle, audio goes ONLY to the local
-                                # wake-word detector — never to mic_q
-                                # (which feeds Gemini via send()). This is
-                                # what actually keeps audio off Google
-                                # during idle, not just discarding the
-                                # response afterward.
-                                _preroll.clear()
-                                if VOSK_AVAILABLE and mono16k_nr:
+                                if VOSK_AVAILABLE:
                                     try:
-                                        # Denoised here, unlike the song branch:
-                                        # idle-room noise is stationary, which is
-                                        # the case the suppressor is built for,
-                                        # and "adam" has to be picked out of it
-                                        # by a small offline model.
-                                        wake_word_q.put_nowait(mono16k_nr)
+                                        wake_word_q.put_nowait(mono16k)
                                     except asyncio.QueueFull:
                                         pass
                                 continue
 
-                            # ── Direction-of-arrival (two-mic GCC-PHAT) ───────
-                            # Reached only when the VAD gate is OPEN, i.e. there
-                            # is actually speech to localise — GCC-PHAT on room
-                            # noise returns a meaningless jittery angle anyway,
-                            # so the old RMS-based guard was buying nothing even
-                            # when it did fire. Rate-limited on top of that: the
-                            # neck already has a 12° deadzone and a 1.5s
-                            # cooldown (NECK_PAN_DEADZONE_DEG /
-                            # NECK_PAN_COOLDOWN_S), so direction updates faster
-                            # than a few per second are discarded downstream.
-                            # Skipped entirely while idle — the servo must not
-                            # track sound during idle mode, belt-and-suspenders
-                            # alongside camera()'s own idle_mode check.
-                            if now - _last_doa_t[0] > _DOA_MIN_GAP_S:
-                                _last_doa_t[0] = now
-
-                                def _compute_doa(_raw=raw):
-                                    left, right = s32_stereo_to_s16_stereo_channels(_raw)
-                                    return estimate_doa_angle(left, right, CAPTURE_RATE)
-
-                                angle = await asyncio.to_thread(_compute_doa)
-                                if abs(angle) > DOA_ANGLE_DEADZONE:
-                                    # Light smoothing so the neck doesn't jitter
-                                    # — exponential moving average, not a snap.
-                                    doa_angle[0] = (doa_angle[0] * 0.6) + (angle * 0.4)
-                                    doa_last_update_t[0] = time.time()
-                                    # Mirror to module-level state for the
-                                    # get_sound_direction tool handler, which
-                                    # lives outside this closure.
-                                    _doa_angle[0] = doa_angle[0]
-                                    _doa_last_update_t[0] = doa_last_update_t[0]
-
-                            # Flush pre-roll first so Gemini hears the word from
-                            # its true beginning, then the current chunk.
-                            while _preroll and not mic_q.full():
-                                mic_q.put_nowait(_preroll.popleft())
-                                _win_sent[0] += 1
-                            _preroll.clear()
-
-                            if not mic_q.full() and mono16k_nr:
-                                mic_q.put_nowait(mono16k_nr)
-                                _win_sent[0] += 1
-
-                            await asyncio.sleep(0)
+                            # Put chunk into mic_q for send() task to stream to Gemini
+                            if not mic_q.full():
+                                mic_q.put_nowait(mono16k)
 
                     except asyncio.CancelledError:
-                        # MUST re-raise — see speaker()'s corresponding fix
-                        # for the full explanation. Swallowing this here
-                        # lets the outer `while not stop.is_set()` loop
-                        # (process-level stop, not per-session
-                        # cancellation) respawn arecord instead of letting
-                        # this task actually terminate when run_session()
-                        # cancels it.
                         raise
                     except Exception as e:
                         print(f"  ⚠️  listen recovering: {e}")
-                        await asyncio.sleep(2.0)
+                        await asyncio.sleep(1.0)
                     finally:
                         if proc:
-                            # FIX: proc.terminate()/proc.wait() are
-                            # BLOCKING synchronous calls. Running them
-                            # directly inside an async finally stalls the
-                            # ENTIRE event loop for up to the timeout
-                            # (2s) if arecord is slow to exit — during a
-                            # multi-task cancellation (e.g. right after a
-                            # 1007 error kills the session), this could
-                            # make the whole reconnect look hung rather
-                            # than fast, since asyncio.gather() is
-                            # waiting on this coroutine to actually finish
-                            # before run_session() can return and let
-                            # main()'s loop attempt to reconnect.
-                            async def _kill_proc():
-                                try:
-                                    proc.terminate()
-                                    await asyncio.to_thread(proc.wait, 2)
-                                except Exception:
-                                    try:
-                                        proc.kill()
-                                    except Exception:
-                                        pass
                             try:
-                                await asyncio.wait_for(_kill_proc(), timeout=3.0)
-                            except asyncio.TimeoutError:
+                                proc.terminate()
+                                await asyncio.to_thread(proc.wait, 1.0)
+                            except Exception:
                                 try: proc.kill()
                                 except Exception: pass
                 print("  🎤 Listen ended")
 
             async def send() -> None:
                 print("  📤 Send task started")
-                # Whether an activity window (a user turn) is currently open
-                # on the wire. The server's own VAD is disabled, so this
-                # bracket is what defines "the user is talking" — audio sent
-                # outside it is discarded by the API, and a window left open
-                # means Gemini keeps waiting instead of answering.
-                activity_open = [False]
-
-                async def _end_activity() -> None:
-                    """Close the user's turn if one is open. Idempotent.
-
-                    Swallows send failures on purpose: this is called from
-                    the mute/idle guards as well as from the explicit
-                    marker, and a lost boundary must not kill the send task
-                    — the flag is cleared first so the next utterance opens
-                    a fresh window regardless.
-                    """
-                    if not activity_open[0]:
-                        return
-                    activity_open[0] = False
-                    try:
-                        await session.send_realtime_input(
-                            activity_end=types.ActivityEnd())
-                    except Exception as e:
-                        print(f"  ⚠️  activity_end failed: {e}")
-
                 while not stop.is_set():
                     try:
                         chunk = await asyncio.wait_for(mic_q.get(), timeout=1.0)
                     except asyncio.TimeoutError:
-                        # Nothing queued for a second. If ADAM started
-                        # talking (or went idle) while a window was still
-                        # open, close it here: listen()'s mute branch drains
-                        # mic_q, so the marker that would have closed it may
-                        # never arrive, and this is the only place left that
-                        # can notice.
-                        if (adam_speaking.is_set() or song_playing.is_set()
-                                or idle_mode.is_set()):
-                            await _end_activity()
                         continue
                     except asyncio.CancelledError:
                         break
-                    if chunk is ACTIVITY_END:
-                        await _end_activity()
-                        continue
                     if adam_speaking.is_set() or song_playing.is_set():
-                        await _end_activity()
                         continue
                     if idle_mode.is_set():
-                        # While idle, audio must NOT reach Google at all —
-                        # not "sent but response discarded" (the previous,
-                        # incorrect approach), genuinely never sent. Wake
-                        # detection during idle runs entirely locally via
-                        # the offline wake_word_detector task instead,
-                        # which reads from wake_word_q (fed below).
-                        await _end_activity()
                         continue
                     try:
-                        if not activity_open[0]:
-                            # First audio of a new utterance. Must precede
-                            # the audio itself — including the pre-roll,
-                            # which listen() flushes into mic_q ahead of the
-                            # live chunk, so it lands inside the window
-                            # rather than being dropped outside it.
-                            await session.send_realtime_input(
-                                activity_start=types.ActivityStart())
-                            activity_open[0] = True
                         await session.send_realtime_input(
                             audio=types.Blob(data=chunk,
                                              mime_type=f"audio/pcm;rate={GEMINI_SEND_RATE}"))
@@ -1799,27 +534,9 @@ async def run_session(client, resume_handle: str | None,
                     except Exception as e:
                         err_str = str(e)
                         if "1007" in err_str:
-                            # CONFIRMED GOOGLE-SIDE BUG (python-genai#2290):
-                            # resuming a session that has used both mic
-                            # audio AND camera video — which every ADAM
-                            # session does — can leave the resumed session
-                            # broken, failing every subsequent audio send
-                            # with this same 1007 in a tight reconnect
-                            # loop. Previously this code assumed resuming
-                            # via the existing handle was safe (it isn't,
-                            # for this specific error) — now it forces the
-                            # next reconnect to start a genuinely fresh
-                            # session instead, breaking the loop. Recent
-                            # conversation context is preserved separately
-                            # via the persisted conversation history
-                            # (adam_conversations.json), not the broken
-                            # resumption handle.
                             force_fresh_session[0] = True
                             print(f"  ⚠️  Session closed by server (1007 — "
-                                  f"rejected audio payload). This is a known "
-                                  f"Live API resumption bug with audio+video "
-                                  f"sessions — starting a FRESH session next "
-                                  f"(not resuming) to avoid a reconnect loop.")
+                                  f"rejected audio payload). Starting FRESH session next.")
                         else:
                             print(f"  ⚠️  send error (session likely closing): {e}")
                         return
@@ -2333,10 +1050,8 @@ async def run_session(client, resume_handle: str | None,
                                "-f", PLAYBACK_FORMAT,
                                "-r", str(PLAYBACK_RATE),
                                "-c", str(PLAYBACK_CHANNELS),
-                               "-t", "raw",
-                               "--buffer-size=96000",
-                               "--period-size=4800",
-                               f"--start-delay={SPEAKER_START_DELAY_US}"]
+                               "-t", "raw", "-q",
+                               "--buffer-size=96000"]
                         # --start-delay and --period-size are worth 600ms of the
                         # reply latency, measured rather than reasoned:
                         #
@@ -2418,26 +1133,7 @@ async def run_session(client, resume_handle: str | None,
                                     print("  ⚠️  Speaker watchdog fired")
                                     await end_of_turn(proc, buf)
                                     buf = bytearray()
-                                # IDLE CLOSE. Nothing is playing, nothing is
-                                # queued, the ALSA buffer has drained and no
-                                # song is running: release the device so the
-                                # amplifier stops hissing into the mic. Every
-                                # guard here is load-bearing — closing while
-                                # adam_speaking would clip a reply, closing
-                                # before drain_deadline would cut its tail, and
-                                # closing during a song would strand the song
-                                # task's writes.
-                                elif (not adam_speaking.is_set()
-                                        and not song_playing.is_set()
-                                        and not buf
-                                        and time.time() > drain_deadline[0]
-                                        and time.time() - watchdog_t
-                                            > SPEAKER_IDLE_CLOSE_S):
-                                    print(f"  🔇 Playback idle "
-                                          f"{SPEAKER_IDLE_CLOSE_S:.1f}s — closing "
-                                          f"the device so the amp stops raising "
-                                          f"the mic floor")
-                                    break
+                                # aplay is held permanently open across turns to prevent VoiceHAT I2S clock wedging.
                                 continue
                             except asyncio.CancelledError:
                                 # MUST re-raise — swallowing this here lets
