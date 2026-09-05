@@ -95,20 +95,15 @@ def build_system_prompt() -> str:
                                 for pid, info in faces.items()))
     if conv_log:
         recent = conv_log[-CONV_PROMPT_TURNS:]
-        lines = ["━━━ RECENT CONVERSATION HISTORY ━━━",
-                 "(This is your memory of past sessions. Use it for "
-                 "CONTINUITY — remembering names, ongoing topics, things "
-                 "the user told you — reference it naturally if relevant, "
-                 "never pretend it doesn't exist. "
-                 "IMPORTANT: do NOT treat an old logged answer as still "
-                 "correct just because the same or a similar question was "
-                 "asked before. If the user asks something again, answer "
-                 "it fresh based on the current moment/situation — don't "
-                 "just repeat what you said last time as if nothing could "
-                 "have changed. This especially applies to anything "
-                 "time-sensitive, but also applies generally: a repeated "
-                 "question deserves a real fresh answer, not a memory "
-                 "playback.)"]
+        lines = [
+            "━━━ RECENT CONVERSATION HISTORY (PASSIVE BACKGROUND ONLY) ━━━",
+            "(CRITICAL: This history is strictly for passive background context. "
+            "Focus 100% on what the user said RIGHT NOW in the most recent turn. "
+            "Never drag up old topics, past jokes, or previous turns from minutes ago "
+            "unless the user explicitly asks you to recall them. When the user moves "
+            "to a new subject, drop the past subject immediately. Never reply to "
+            "an old message from minutes ago.)"
+        ]
         # Scrub any past ADAM reply containing the "just a language
         # model"/generic-AI-disclaimer pattern before it's re-injected.
         # A single slip into that voice getting replayed verbatim into

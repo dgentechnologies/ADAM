@@ -20,8 +20,10 @@ import random
 import asyncio
 from pathlib import Path
 
-from config import SONG_FILE_PATHS, PLAYBACK_CHANNELS, PLAYBACK_RATE
+from config import (SONG_FILE_PATHS, PLAYBACK_CHANNELS, PLAYBACK_RATE,
+                    SONG_CHUNK_FRAMES, SONG_PACE_FRAC)
 from hardware import tft_set
+from audio_utils import write_all
 
 
 async def _play_song_task(song_playing: asyncio.Event,
@@ -92,8 +94,19 @@ async def _play_song_task(song_playing: asyncio.Event,
                   f"s16 {Path(song_path).stem}.wav")
             return
 
-        chunk_frames = 4096  # frames per read, matches speaker()'s own
-                              # 4096-byte write granularity for out_q chunks
+        chunk_frames = SONG_CHUNK_FRAMES  # frames per read/write
+        # Real-time pace between chunks. Reading the WAV and writing it into a
+        # pipe both run at disk/memcpy speed, i.e. thousands of times faster
+        # than 48 kHz, so an unpaced loop tries to push the whole 3-minute file
+        # through as fast as the pipe will take it. On a Pi Zero 2 W that means
+        # one asyncio task spinning through hundreds of to_thread hops per
+        # second, starving the camera/servo/Gemini tasks and the ALSA writer
+        # thread — audible as stutter in the song AND lag everywhere else.
+        # Sleeping slightly LESS than one chunk's true duration (0.9×) keeps
+        # aplay's buffer comfortably ahead without ever running the loop at
+        # more than ~11% over realtime; the pipe's own backpressure absorbs
+        # that surplus, so this self-corrects rather than drifting.
+        pace_s = (chunk_frames / float(PLAYBACK_RATE)) * SONG_PACE_FRAC
         pending_data = None  # a chunk that failed to write, retried below
         write_fail_streak = 0
         MAX_WRITE_FAIL_STREAK = 50  # ~10s of retries at 0.2s each before giving up
@@ -131,7 +144,8 @@ async def _play_song_task(song_playing: asyncio.Event,
 
             try:
                 if proc.stdin:
-                    await asyncio.to_thread(proc.stdin.write, data)
+                    await asyncio.to_thread(
+                        write_all, proc.stdin, data, PLAYBACK_CHANNELS * 2)
                     await asyncio.to_thread(proc.stdin.flush)
                     write_fail_streak = 0
                 else:
@@ -156,10 +170,13 @@ async def _play_song_task(song_playing: asyncio.Event,
                 await asyncio.sleep(0.2)
                 continue
 
-            # Yield control between chunks so this doesn't hog the event
-            # loop or the shared aplay stdin — camera/servo/Gemini tasks
-            # all get their turn between song chunks too.
-            await asyncio.sleep(0)
+            # Pace to (just under) realtime so this doesn't hog the event loop,
+            # the CPU, or the shared aplay stdin — camera/servo/Gemini tasks all
+            # get their turn between song chunks. A stop request is checked at
+            # the top of every iteration, so this sleep also bounds how long
+            # Touch3 or a spoken stop phrase waits to take effect (one chunk,
+            # ~77 ms) — short enough to feel immediate.
+            await asyncio.sleep(pace_s)
     except Exception as e:
         print(f"  ⚠️  Song playback error: {e}")
     finally:

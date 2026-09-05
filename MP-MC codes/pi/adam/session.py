@@ -50,7 +50,7 @@ import requests
 from google.genai import types
 
 from config import (
-    LIVE_MODEL, VOICE,
+    LIVE_MODEL, VOICE, STT_LANGUAGE_CODES,
     MIC_Q_MAX, CHUNK_FRAMES,
     CAPTURE_DEVICE, CAPTURE_FORMAT, CAPTURE_RATE, CAPTURE_CHANNELS,
     MIC_SILENCE_FLOOR,
@@ -59,9 +59,10 @@ from config import (
     MIC_VAD_HOLD_MARGIN, MIC_VAD_MAX_OPEN_S, MIC_VAD_ABS_MAX_OPEN_S,
     MIC_VAD_OPEN_MARGIN, MIC_VAD_MAX_HOLD_RATIO,
     MIC_NOISE_LEARN_COOLDOWN_S, MIC_WARMUP_S, MIC_STATS_S, MIC_VAD_ONSET_CHUNKS,
-    MIC_DEAD_STREAM_S, MIC_VAD_SUSTAIN_S,
+    MIC_VAD_ONSET_WINDOW,
+    MIC_DEAD_STREAM_S, MIC_DEAD_AFTER_PLAY_S, MIC_DEAD_AFTER_PLAY_WINDOW_S,
+    MIC_VAD_SUSTAIN_S,
     MIC_ADAPTIVE,
-    MIC_SHAPE_FLAT_MAX,
     DOA_ANGLE_DEADZONE, GEMINI_SEND_RATE, POST_MUTE_S,
     MIC_ECHO_GUARD_S, MIC_ECHO_GUARD_MARGIN,
     PLAYBACK_DEVICE, PLAYBACK_FORMAT, PLAYBACK_RATE, PLAYBACK_CHANNELS,
@@ -79,9 +80,10 @@ from config import (
 from hardware import servo_pan, servo_tilt, tft_set, servo_moving   # tft_set re-exported for main.py
 from esp32_link import esp_link
 from audio_utils import (
-    read_exact, drain_stderr, rms_pcm16, is_valid_pcm16_chunk,
+    read_exact, write_all, drain_stderr, rms_pcm16, is_valid_pcm16_chunk,
     beep_s16_stereo, spk_clip_samples, spk_total_samples,
     s32_stereo_to_s16_mono_16k, s32_stereo_to_s16_stereo_channels,
+    denoise_16k, denoise_reset, denoise_db,
     estimate_doa_angle, s16_mono_24k_to_s16_stereo_48k,
     AdaptiveGate,
 )
@@ -162,7 +164,16 @@ async def run_session(client, resume_handle: str | None,
         system_instruction=system_prompt,
         tools=build_tools(),
         session_resumption=types.SessionResumptionConfig(handle=resume_handle),
-        input_audio_transcription=types.AudioTranscriptionConfig(),
+        # LANGUAGE HINTS, not full auto-detection. An empty
+        # AudioTranscriptionConfig() means "score this audio against every
+        # language you know and return the best match", which is how accented
+        # Hindi fragments came back as Portuguese and Spanish. Naming the
+        # languages actually spoken removes those candidates entirely. See
+        # STT_LANGUAGE_CODES in config.py for the measurement and the trade.
+        # Only the INPUT side is constrained — the output transcription is of
+        # ADAM's own speech, which the model already knows the language of.
+        input_audio_transcription=types.AudioTranscriptionConfig(
+            language_codes=STT_LANGUAGE_CODES or None),
         output_audio_transcription=types.AudioTranscriptionConfig(),
         # MANUAL TURN BOUNDARIES — the fix for "I spoke three times before
         # ADAM answered, and it answered all three at once."
@@ -184,7 +195,7 @@ async def run_session(client, resume_handle: str | None,
         # So: disable the server VAD and send the boundaries ourselves.
         # listen()'s Schmitt-trigger gate is already a better VAD for this
         # room than a remote one working through a hard-gated stream can be,
-        # and it knows the instant speech ends — MIC_VAD_HANGOVER_S (0.8s)
+        # and it knows the instant speech ends — MIC_VAD_HANGOVER_S (1.0s)
         # after the level drops, comfortably above the 500ms minimum Google
         # documents for a client-side end-of-speech threshold. send() emits
         # activity_start on the first chunk of an utterance and activity_end
@@ -414,10 +425,20 @@ async def run_session(client, resume_handle: str | None,
                 _rms_hist: list[float] = []
                 _win_opens = [0]
                 _win_sent  = [0]
-                # Consecutive chunks currently over open_th while the gate is
-                # shut, and how many partial runs died before reaching
-                # MIC_VAD_ONSET_CHUNKS (i.e. transients rejected on duration).
-                _onset_run   = [0]
+                # ONSET QUORUM. _onset_win holds one 1/0 verdict per chunk for
+                # the last MIC_VAD_ONSET_WINDOW chunks while the gate is shut;
+                # the gate opens when MIC_VAD_ONSET_CHUNKS of them passed, in
+                # any order. It replaced a consecutive-run counter, which
+                # ordinary speech could not satisfy — an unvoiced consonant or
+                # a stop closure reset it to zero, so "Hey ADAM" never got 5
+                # clean chunks in a row and the gate never opened. See the
+                # MIC_VAD_ONSET_WINDOW block in config.py.
+                # _win_blocked counts onset attempts that collected passing
+                # chunks but decayed back to zero without reaching the quorum:
+                # transients rejected on duration, i.e. what the test is
+                # actually buying, measured rather than assumed.
+                _onset_win   = collections.deque(
+                    maxlen=max(MIC_VAD_ONSET_CHUNKS, MIC_VAD_ONSET_WINDOW))
                 _win_blocked = [0]
                 _dropped_bad_chunks = [0]
                 _last_bad_warn_t = [0.0]
@@ -491,6 +512,12 @@ async def run_session(client, resume_handle: str | None,
                 _preroll         = collections.deque(maxlen=_preroll_n or 1)
                 _dead_limit      = max(1, int(round(MIC_DEAD_STREAM_S
                                                     * _chunks_per_s)))
+                # Shorter fuse for the window right after a playback close,
+                # where the wedge is not a mystery but the known consequence of
+                # tearing down the shared I2S device. See
+                # MIC_DEAD_AFTER_PLAY_S.
+                _dead_limit_amp  = max(1, int(round(MIC_DEAD_AFTER_PLAY_S
+                                                    * _chunks_per_s)))
                 # SUSTAIN WINDOW — the fix for the gate latching OPEN forever.
                 #
                 # Measured live, four consecutive 10s windows with the gate
@@ -517,8 +544,8 @@ async def run_session(client, resume_handle: str | None,
                 # while connected speech sits above hold_th for far more than
                 # half of any half-second. Intra-word stops are 50-150ms, well
                 # under the window, so they cannot release the gate either.
-                # ATTACK stays on the instantaneous chunk plus
-                # MIC_VAD_ONSET_CHUNKS, so opening is as fast as it ever was.
+                # ATTACK stays on the instantaneous chunk plus the onset
+                # quorum, so opening is as fast as it ever was.
                 _sustain_n       = max(3, int(round(MIC_VAD_SUSTAIN_S
                                                     * _chunks_per_s)))
                 _lvl_win         = collections.deque(maxlen=_sustain_n)
@@ -528,9 +555,12 @@ async def run_session(client, resume_handle: str | None,
                 # the speech it measures, unlike the EMA trackers, which is why
                 # they needed a MIC_AMBIENT_MAX clamp that then became the very
                 # thing capping them below a noisy room's floor), and it carries
-                # a second, LEVEL-INDEPENDENT vote from webrtcvad so a room whose
-                # noise sits ON TOP of speech level is still separable. See the
-                # ADAPTIVE SPEECH GATE block in audio_utils.py for the full
+                # a second, LEVEL-INDEPENDENT vote from the spectral shape of
+                # each chunk — flatness plus a low/high band ratio, with the
+                # flatness threshold itself learned from the room's own noise
+                # bed — so a room whose noise sits ON TOP of speech level is
+                # still separable, and a room nobody measured still works. See
+                # the ADAPTIVE SPEECH GATE block in audio_utils.py for the full
                 # rationale and the measurements that forced it.
                 #
                 # Constructed per session, but its learned floor persists to
@@ -544,12 +574,25 @@ async def run_session(client, resume_handle: str | None,
 
                 def _read_and_convert(pipe, nbytes):
                     """Read one chunk AND band-limit it in a single worker-thread
-                    hop. Returns (raw_s32, mono16k) — mono16k is None while the
-                    mic is muted, so the FIR work is skipped at exactly the
-                    moment the speaker task needs the CPU."""
+                    hop. Returns (raw_s32, mono16k, mono16k_nr) — mono16k is
+                    None while the mic is muted, so the FIR work is skipped at
+                    exactly the moment the speaker task needs the CPU.
+
+                    mono16k     — what the GATE sees: unmodified, so every
+                                  threshold and learned statistic keeps the
+                                  meaning it was tuned with.
+                    mono16k_nr  — what GEMINI and VOSK see: noise-suppressed.
+                                  Measured SNR in this room is only ~+6 dB,
+                                  which the gate handles and a recogniser does
+                                  not. Denoising runs on every chunk, including
+                                  the ones the gate rejects, because its noise
+                                  estimator needs the continuous stream — that
+                                  is also why it lives here and not at the
+                                  queue, where gate-closed chunks never arrive.
+                    """
                     raw = read_exact(pipe, nbytes)
                     if adam_speaking.is_set():
-                        return raw, None
+                        return raw, None, None
                     # song_playing used to mute here too. It no longer does,
                     # because the OFFLINE stop-word detector needs audio during a
                     # song: the songs are 182-215s long and the only other way to
@@ -559,7 +602,8 @@ async def run_session(client, resume_handle: str | None,
                     # playing the song": three and a half minutes of deafness with
                     # no way out. The audio still never reaches Gemini; the song
                     # branch in the gate below routes it to Vosk and nowhere else.
-                    return raw, s32_stereo_to_s16_mono_16k(raw)
+                    mono16k = s32_stereo_to_s16_mono_16k(raw)
+                    return raw, mono16k, denoise_16k(mono16k)
 
                 while not stop.is_set():
                     proc = None
@@ -644,7 +688,7 @@ async def run_session(client, resume_handle: str | None,
 
                         while not stop.is_set():
                             try:
-                                raw, mono16k = await asyncio.to_thread(
+                                raw, mono16k, mono16k_nr = await asyncio.to_thread(
                                     _read_and_convert, proc.stdout, read_bytes)
                             except Exception as e:
                                 errors += 1
@@ -676,6 +720,14 @@ async def run_session(client, resume_handle: str | None,
                                 if _vad_open[0]:
                                     _vad_open[0]     = False
                                     _vad_closed_t[0] = time.time()
+                                # The 16 kHz stream genuinely stops here, so the
+                                # denoiser's overlap-add buffer must not splice
+                                # the audio from before ADAM's reply onto the
+                                # audio after it. Its noise estimate survives —
+                                # same room, and re-learning it would leave the
+                                # moment right after a reply unprocessed, which
+                                # is exactly when the user speaks next.
+                                denoise_reset()
                                 while not mic_q.empty():
                                     try: mic_q.get_nowait()
                                     except asyncio.QueueEmpty: break
@@ -747,6 +799,13 @@ async def run_session(client, resume_handle: str | None,
                                     except asyncio.QueueEmpty: break
                                 if VOSK_AVAILABLE:
                                     try:
+                                        # Deliberately the RAW chunk, not the
+                                        # denoised one. The interfering sound
+                                        # here is music, which is anything but
+                                        # stationary, so the minimum-statistics
+                                        # noise estimate is meaningless against
+                                        # it — and a wrong estimate suppresses
+                                        # the stop phrase along with the song.
                                         wake_word_q.put_nowait(mono16k)
                                     except asyncio.QueueFull:
                                         pass
@@ -801,13 +860,24 @@ async def run_session(client, resume_handle: str | None,
                             # respawn it.
                             if _rms_now < 1.0:
                                 _dead_run[0] += 1
-                                if _dead_run[0] >= _dead_limit:
+                                # Two fuses, one detector. Inside the window
+                                # after a playback close the cause is KNOWN, so
+                                # waiting the full MIC_DEAD_STREAM_S there just
+                                # donates the seconds in which the user replies
+                                # to a stream of zeros.
+                                _recent_close = (now - amp_quiet_t[0]
+                                                 < MIC_DEAD_AFTER_PLAY_WINDOW_S)
+                                _lim = (_dead_limit_amp if _recent_close
+                                        else _dead_limit)
+                                if _dead_run[0] >= _lim:
                                     print(f"  ⚠️  Capture DEAD — "
-                                          f"{MIC_DEAD_STREAM_S:.0f}s of exact "
-                                          f"digital silence from arecord "
-                                          f"(voiceHAT I2S capture wedged, "
-                                          f"usually after a playback close). "
-                                          f"Restarting arecord.")
+                                          f"{_dead_run[0] / _chunks_per_s:.1f}s "
+                                          f"of exact digital silence from "
+                                          f"arecord (voiceHAT I2S capture "
+                                          f"wedged"
+                                          f"{', playback closed ' if _recent_close else ''}"
+                                          f"{f'{now - amp_quiet_t[0]:.1f}s ago' if _recent_close else ''}"
+                                          f"). Restarting arecord.")
                                     break
                             else:
                                 _dead_run[0] = 0
@@ -863,25 +933,40 @@ async def run_session(client, resume_handle: str | None,
                             # and the whole point is to only ever learn air.
                             #
                             # shape_ok() is NOT skipped, and that asymmetry is
-                            # deliberate. It is a per-chunk feature, not an
-                            # adaptation — nothing it computes persists into a
-                            # threshold — so hiss cannot poison it, and its
-                            # rolling window has to stay contiguous for the
-                            # HOLD fraction to mean what it says. Hiss is also
-                            # exactly what it is best at rejecting: broadband
-                            # noise reads flatness ~1.0 against a 0.35 limit
-                            # and lo/hi ~0.15 against a 0.60 floor, so it
-                            # fails both halves of the shape test on its own
-                            # merits. That is what keeps the stale-floor
-                            # window from turning into false opens: during it
-                            # the hiss does clear open_th, and the shape vote
-                            # is the only reason the gate stays shut.
+                            # deliberate. Its per-chunk features cannot be
+                            # poisoned by hiss, and its rolling window has to
+                            # stay contiguous for the HOLD fraction to mean
+                            # what it says. Hiss is also exactly what it is
+                            # best at rejecting: broadband noise reads flatness
+                            # ~1.0 against a 0.35 limit and lo/hi ~0.15
+                            # against a 0.60 floor, so it fails both halves of
+                            # the shape test on its own merits. That is what
+                            # keeps the stale-floor window from turning into
+                            # false opens: during it the hiss does clear
+                            # open_th, and the shape vote is the only reason
+                            # the gate stays shut.
+                            #
+                            # Its ONE piece of adaptation — the learned
+                            # flatness threshold — is fed separately, through
+                            # learn_noise, and that flag repeats the amp guard
+                            # for the same reason observe() has it: the
+                            # threshold is meant to describe the ROOM. A chunk
+                            # only teaches it when the gate is shut, the level
+                            # is under the open threshold, and the amplifier is
+                            # off — i.e. when this code already believes the
+                            # chunk is silence. Speech cannot teach it, and
+                            # neither can ADAM's own hiss.
                             _amp_hot = (amp_open[0]
                                         or now - amp_quiet_t[0]
                                             < MIC_ECHO_GUARD_S)
                             if not _amp_hot:
                                 _agate.observe(_rms_now)
-                            _shape_now  = _agate.shape_ok(mono16k)
+                            _shape_now  = _agate.shape_ok(
+                                mono16k,
+                                learn_noise=(not _amp_hot
+                                             and not _vad_open[0]
+                                             and _agate.ready
+                                             and _rms_now < _agate.open_th))
                             _shape_hold = _agate.shape_hold_ok()
                             if now - _last_rms[0] > MIC_STATS_S:
                                 # Print the LIVE thresholds, not the static
@@ -937,12 +1022,15 @@ async def run_session(client, resume_handle: str | None,
                                 _floor_s = (f"floor {_agate.floor:.0f}"
                                             f"{'' if _agate.ready else '?'} "
                                             f"flat {_agate.flat:.2f}"
-                                            f"/{MIC_SHAPE_FLAT_MAX:.2f} "
+                                            f"/{_agate.flat_max:.2f} "
                                             f"lohi {_agate.lohi:.2f} "
                                             f"shp {100*_agate.shape_frac:.0f}%"
                                             if MIC_ADAPTIVE else
                                             f"ambient {_ambient_rms[0]:.0f} "
                                             f"peak {_noise_peak[0]:.0f}")
+                                _nr_db = denoise_db()
+                                _nr_s = ("" if _nr_db is None
+                                         else f"nr {_nr_db:+.1f}dB | ")
                                 print(f"  📊 Mic {MIC_STATS_S:.0f}s: p50 {_pct(0.50):.0f} "
                                       f"p90 {_pct(0.90):.0f} p99 {_pct(0.99):.0f} "
                                       f"max {(_h[-1] if _n else 0):.0f} | "
@@ -950,6 +1038,7 @@ async def run_session(client, resume_handle: str | None,
                                       f"{_floor_s} | "
                                       f"opens {_win_opens[0]} sent {_win_sent[0]} | "
                                       f"blocked {_win_blocked[0]} | "
+                                      f"{_nr_s}"
                                       f"{_mode}")
                                 _rms_hist.clear()
                                 _win_opens[0] = 0
@@ -1238,9 +1327,9 @@ async def run_session(client, resume_handle: str | None,
                                 if _vad_open[0]:
                                     _vad_last_loud_t[0] = now
                                     _vad_last_strong_t[0] = now
-                                _onset_run[0] = 0
+                                _onset_win.clear()
                             elif now < _refractory_until[0]:
-                                _onset_run[0] = 0   # forced-shut window, see watchdogs
+                                _onset_win.clear()  # forced-shut window, see watchdogs
                             elif _gate_pass:
                                 # ATTACK (gate shut) reads the instantaneous
                                 # chunk — fast, and already duration-tested by
@@ -1286,38 +1375,66 @@ async def run_session(client, resume_handle: str | None,
                                     # stay above transients, which cost every speech
                                     # chunk underneath it — and the measured
                                     # intra-word dips (1776/1913/2008) sit exactly
-                                    # there. Requiring N CONSECUTIVE chunks rejects
-                                    # transients on duration instead, which frees
-                                    # the level threshold to come down.
+                                    # there. A DURATION test rejects transients
+                                    # instead, which frees the level threshold to
+                                    # come down.
+                                    #
+                                    # A QUORUM, not a run: N of the last
+                                    # MIC_VAD_ONSET_WINDOW chunks, gaps allowed.
+                                    # The consecutive version of this test is what
+                                    # made ADAM look deaf — real speech is full of
+                                    # chunks that legitimately fail, an unvoiced
+                                    # /h/ or /s/ (broadband, flat, fails shape) and
+                                    # a stop closure (2-3 chunks of near-silence,
+                                    # fails level), and either one reset the run to
+                                    # zero. "Hey ADAM" does not contain 5 clean
+                                    # chunks in a row at conversational volume, so
+                                    # the run never completed and nothing was ever
+                                    # sent. The quorum keeps the duration test that
+                                    # rejects impulses (one chunk cannot make three)
+                                    # and drops the contiguity requirement that
+                                    # speech cannot meet.
                                     #
                                     # The delay is free: MIC_VAD_PREROLL_S of audio
                                     # from BEFORE the gate opened is already ringed
-                                    # and gets flushed on open, so N chunks costs
+                                    # and gets flushed on open, so the window costs
                                     # latency in the DECISION, not audio.
-                                    _onset_run[0] += 1
-                                    if _onset_run[0] >= MIC_VAD_ONSET_CHUNKS:
+                                    _onset_win.append(1)
+                                    if sum(_onset_win) >= MIC_VAD_ONSET_CHUNKS:
                                         _vad_open[0] = True
                                         _vad_last_strong_t[0] = now
                                         _vad_opened_t[0] = now
                                         _win_opens[0] += 1
                                         print(f"  🎙️  Speech detected "
                                               f"(RMS {_rms_now:.0f} ≥ {open_th:.0f}"
-                                              f"{f' x{_onset_run[0]}' if MIC_VAD_ONSET_CHUNKS > 1 else ''})")
+                                              f"{f', {sum(_onset_win)}/{len(_onset_win)} chunks' if MIC_VAD_ONSET_CHUNKS > 1 else ''})")
+                                        _onset_win.clear()
                             elif _vad_open[0] and (now - _vad_last_loud_t[0]
                                                    ) > MIC_VAD_HANGOVER_S:
                                 _vad_open[0] = False
                                 _vad_closed_t[0] = now
-                                _onset_run[0] = 0
+                                _onset_win.clear()
                                 print("  🤫 Speech ended")
                             else:
-                                # Quiet chunk. Breaks any partial onset run — and
-                                # a run that died before reaching N is exactly the
-                                # transient this rule exists to reject, so count it:
-                                # that number is how much the duration test is
-                                # actually buying, measured live rather than assumed.
-                                if not _vad_open[0] and _onset_run[0] > 0:
-                                    _win_blocked[0] += 1
-                                _onset_run[0] = 0
+                                # A chunk that failed. It does NOT reset the
+                                # quorum — it just ages out of the window like
+                                # any other, which is the whole point: a
+                                # consonant or a stop closure inside an
+                                # utterance must not undo the chunks around it.
+                                #
+                                # A window that collected passes but decayed
+                                # back to nothing without reaching the quorum is
+                                # exactly the transient this rule exists to
+                                # reject, so count that moment — not every quiet
+                                # chunk, which would just count silence.
+                                # `blocked` is then how much the duration test
+                                # is actually buying, measured live rather than
+                                # assumed.
+                                if not _vad_open[0]:
+                                    _had = sum(_onset_win) > 0
+                                    _onset_win.append(0)
+                                    if _had and sum(_onset_win) == 0:
+                                        _win_blocked[0] += 1
 
                             # LATCH WATCHDOGS. The trackers freeze while the gate
                             # is open (by design — speech must not teach them
@@ -1488,7 +1605,15 @@ async def run_session(client, resume_handle: str | None,
                                     # the peak — and the thresholds — up for as long
                                     # as the noise kept recurring.
                                     _noise_peak[0] *= _NOISE_PEAK_DECAY
-                                _preroll.append(mono16k)
+                                # Pre-roll holds the DENOISED chunks, because
+                                # its only consumer is mic_q — the gate has
+                                # already had its look at this chunk above.
+                                # denoise_16k() returns b"" while its first
+                                # frame fills, and those must not be queued as
+                                # empty audio blobs.
+                                # Keep pre-roll unattenuated so word onset is pristine
+                                if mono16k:
+                                    _preroll.append(mono16k)
                                 continue
 
                             if idle_mode.is_set():
@@ -1499,9 +1624,14 @@ async def run_session(client, resume_handle: str | None,
                                 # during idle, not just discarding the
                                 # response afterward.
                                 _preroll.clear()
-                                if VOSK_AVAILABLE:
+                                if VOSK_AVAILABLE and mono16k_nr:
                                     try:
-                                        wake_word_q.put_nowait(mono16k)
+                                        # Denoised here, unlike the song branch:
+                                        # idle-room noise is stationary, which is
+                                        # the case the suppressor is built for,
+                                        # and "adam" has to be picked out of it
+                                        # by a small offline model.
+                                        wake_word_q.put_nowait(mono16k_nr)
                                     except asyncio.QueueFull:
                                         pass
                                 continue
@@ -1545,8 +1675,8 @@ async def run_session(client, resume_handle: str | None,
                                 _win_sent[0] += 1
                             _preroll.clear()
 
-                            if not mic_q.full():
-                                mic_q.put_nowait(mono16k)
+                            if not mic_q.full() and mono16k_nr:
+                                mic_q.put_nowait(mono16k_nr)
                                 _win_sent[0] += 1
 
                             await asyncio.sleep(0)
@@ -1779,7 +1909,19 @@ async def run_session(client, resume_handle: str | None,
                                     # the case where they really did ask.
                                     if _idle_mode_requested[0]:
                                         _idle_mode_requested[0] = False
-                                        if last_user_turn_t[0] <= last_nudge_t[0]:
+                                        if not ENABLE_IDLE:
+                                            # ENABLE_IDLE=0 is the operator
+                                            # saying "never go deaf on me".
+                                            # The timeout path already honours
+                                            # it; the TOOL path has to as well,
+                                            # or Gemini can still put ADAM to
+                                            # sleep after mishearing a phone
+                                            # call, and the one switch that is
+                                            # supposed to rule idle mode out as
+                                            # the cause of silence would not.
+                                            print("  🙉 enter_idle_mode ignored"
+                                                  " — ENABLE_IDLE=0")
+                                        elif last_user_turn_t[0] <= last_nudge_t[0]:
                                             print("  🙉 enter_idle_mode ignored"
                                                   " — no one has spoken since"
                                                   " the last idle nudge, so"
@@ -2039,7 +2181,9 @@ async def run_session(client, resume_handle: str | None,
                     pending_bytes = len(buf)
                     if buf and proc.poll() is None:
                         try:
-                            await asyncio.to_thread(proc.stdin.write, bytes(buf))
+                            await asyncio.to_thread(
+                                write_all, proc.stdin, bytes(buf),
+                                PLAYBACK_CHANNELS * 2)
                             await asyncio.to_thread(proc.stdin.flush)
                         except Exception:
                             pass
@@ -2250,7 +2394,8 @@ async def run_session(client, resume_handle: str | None,
                         print(f"  ✅ aplay: {PLAYBACK_DEVICE} {PLAYBACK_FORMAT} "
                               f"{PLAYBACK_RATE}Hz {PLAYBACK_CHANNELS}ch")
                         if first_open[0]:
-                            proc.stdin.write(beep_s16_stereo())
+                            write_all(proc.stdin, beep_s16_stereo(),
+                                      PLAYBACK_CHANNELS * 2)
                             proc.stdin.flush()
                             print("  🔔 Startup beep sent")
                             first_open[0] = False
@@ -2322,7 +2467,23 @@ async def run_session(client, resume_handle: str | None,
                                 if len(buf) >= 4096:
                                     if proc.poll() is not None:
                                         raise RuntimeError("aplay exited")
-                                    await asyncio.to_thread(proc.stdin.write, bytes(buf))
+                                    # write_all(), not proc.stdin.write():
+                                    # aplay is spawned with bufsize=0, so
+                                    # proc.stdin is a raw _io.FileIO whose
+                                    # write() may accept FEWER bytes than
+                                    # offered and report how many. Ignoring
+                                    # that count silently drops the tail of
+                                    # the chunk; if the dropped count is not a
+                                    # multiple of 4 the stream de-aligns and
+                                    # every following int16 has its low and
+                                    # high bytes swapped — a ×256 error, i.e.
+                                    # full-scale buzz, that persists for the
+                                    # rest of the session because nothing
+                                    # re-syncs a PCM pipe. See write_all() in
+                                    # audio_utils.py.
+                                    await asyncio.to_thread(
+                                        write_all, proc.stdin, bytes(buf),
+                                        PLAYBACK_CHANNELS * 2)
                                     await asyncio.to_thread(proc.stdin.flush)
                                     buf.clear()
 

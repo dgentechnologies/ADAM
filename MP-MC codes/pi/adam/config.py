@@ -26,6 +26,29 @@ if not API_KEY:
 LIVE_MODEL = "gemini-3.1-flash-live-preview"
 VOICE      = "Charon"
 
+# ── Which languages the speech-to-text is allowed to consider ─────────────
+# BCP-47 hints passed to AudioTranscriptionConfig(language_codes=...).
+#
+# WHY THIS EXISTS. Leaving it unset is not "neutral" — the SDK documents that
+# an omitted/empty language_codes means "automatic language detection", i.e.
+# the recogniser scores the audio against 100+ languages and returns whichever
+# scores highest. On clean, long utterances that works. On a SHORT fragment of
+# accented Hindi it does not: measured live, real Hindi came back as Portuguese
+# ("Tô com não, não") and Spanish ("peléan"), because "nahi nahi" / "karo na"
+# genuinely are close phonetic matches to "não não" once a clause is only a
+# second long. The downstream damage is bigger than a bad transcript: the
+# system prompt tells ADAM to reply in the language the user just spoke, so one
+# mis-detected fragment makes ADAM abandon Hindi mid-conversation.
+#
+# Naming the two languages actually in use collapses that search space. Keep
+# this list SHORT — every extra entry re-widens exactly the confusion it is
+# meant to remove, so add a language only when someone really speaks it.
+# Hinglish (Hindi/English code-switching) needs no third code; it is covered by
+# listing both. Set to an empty string to fall back to full auto-detection.
+STT_LANGUAGE_CODES = [c.strip() for c in
+                      os.getenv("STT_LANGUAGE_CODES", "hi-IN,en-IN").split(",")
+                      if c.strip()]
+
 # ═════════════════════════════════════════════════════════════════════════════
 # FILE PATHS
 # ═════════════════════════════════════════════════════════════════════════════
@@ -178,6 +201,93 @@ OUT_Q_MAX        = 200
 MIC_HP_HZ = float(os.getenv("MIC_HP_HZ", "120"))    # kill rumble below this
 MIC_LP_HZ = float(os.getenv("MIC_LP_HZ", "6800"))   # kill hiss above this
 
+# Where the anti-alias low-pass must be FULLY down, not merely -6 dB.
+#
+# MIC_LP_HZ is the -6 dB point of a windowed-sinc, and a windowed-sinc's
+# transition band straddles that point symmetrically. The old design used a
+# fixed 63 taps, which at 48 kHz gives a Hamming transition width of about
+# 3.3*48000/63 = 2514 Hz — so the stopband did not begin until roughly
+# 6800 + 1257 = 8057 Hz, i.e. just ABOVE the 8 kHz Nyquist of the 16 kHz
+# stream we decimate to. Two consequences, both measurable:
+#   * everything from 8000 Hz up to ~8057 Hz folded back onto 7943-8000 Hz;
+#   * attenuation AT 8 kHz was only ~40 dB instead of the window's -53 dB,
+#     which matters on this hardware because the INMP441 puts 53% of its
+#     energy above 8 kHz.
+# Neither is large on its own, and neither is the reason speech is misheard
+# (that is SNR — see MIC_NR below). But it is a genuine design error, and the
+# fix is nearly free: specify the stopband edge instead of the tap count and
+# let the filter designer solve for the taps it needs.
+#
+# Do NOT "fix" this by lowering MIC_LP_HZ instead. That throws away real
+# fricative energy at 6-8 kHz, which is exactly the band that distinguishes
+# the consonants being confused (/s/ vs /t/ vs /d/ — "code" heard as "course"
+# or "court"). Keep the passband and pay for the taps.
+MIC_LP_STOP_HZ = float(os.getenv("MIC_LP_STOP_HZ",
+                                 str(GEMINI_SEND_RATE / 2)))   # 8000
+
+# ── MIC NOISE SUPPRESSION (the fix that actually addresses mis-hearing) ─────
+# Measured on this unit during a real conversation, post-filter int16 RMS:
+#   noise floor      1550-1591
+#   speech p90       2041-4256
+#   speech max       2783-6487
+# That is an in-band SNR of +2 to +12 dB, typically about +6 dB. No speech
+# recogniser is reliable there; humans need ~+15 dB and neural STT degrades
+# sharply below ~+10 dB. This — not clipping, not filter ripple — is why words
+# come back wrong ("ADAM" as "madam", "code" as "course"/"court").
+#
+# Nothing about gain fixes it. Digital gain scales signal and noise together;
+# the ratio is what is broken. The room noise here is STATIONARY (fan, amp
+# hiss, the 26 Hz electrical fault on the left channel, switching noise), and
+# stationary noise is the one case classical single-channel suppression handles
+# well: estimate the noise magnitude spectrum, subtract it, keep the phase.
+#
+# Applied ONLY to the copy of the audio that goes to Gemini and to the Vosk
+# wake-word detector. The adaptive gate keeps seeing the ORIGINAL signal, so
+# every threshold, learned floor and flatness statistic behaves exactly as
+# before and none of the gate tuning is invalidated. Set MIC_NR=0 to send the
+# unprocessed stream and confirm the difference for yourself.
+MIC_NR          = os.getenv("MIC_NR", "0").strip().lower() not in (
+                      "0", "false", "no", "off")
+# Frame/hop for the WOLA analysis. 512 @ 16 kHz = 32 ms with a 16 ms hop, which
+# resolves pitch harmonics for adult voices while keeping the added latency to
+# frame-hop = 16 ms. Must satisfy hop == frame/2 (sqrt-Hann is COLA there).
+MIC_NR_FRAME    = int(os.getenv("MIC_NR_FRAME", "512"))
+# How much of the estimated noise POWER to remove. This number has to carry two
+# separate jobs, so it is bigger than the textbook 1.5-2.0:
+#
+#   1. Minimum-statistics estimation is biased LOW by construction — the
+#     minimum of a fluctuating estimate is below its mean. Measured on this
+#     unit's own noise with MIC_NR_SMOOTH=0.9: the tracker reads 2.3 dB (1.68x)
+#     under the true mean noise power. Ignore that and the subtraction does
+#     essentially nothing, which is exactly what the first version of this code
+#     did (2.8 dB of noise removed, 3.1 dB of speech removed — a net loss).
+#   2. Genuine over-subtraction on top, because removing exactly the mean
+#     leaves half the noise bins above the estimate and those survivors are
+#     what "musical noise" is made of.
+#
+# 3.5 = 1.68 bias x ~2.1 over-subtraction. If you change MIC_NR_SMOOTH you must
+# re-measure the bias; the two are not independent.
+MIC_NR_OVERSUB  = float(os.getenv("MIC_NR_OVERSUB", "1.8"))
+# One-pole smoothing applied to the per-bin power before the minimum tracker
+# sees it. Higher = steadier estimate = less downward bias to compensate for
+# (0.70 -> 4.9 dB of bias, 0.90 -> 2.3 dB, 0.95 -> 1.4 dB), but the effective
+# averaging window grows as 1/(1-a) frames and must stay well under the length
+# of a sustained vowel or speech starts defining the noise floor. 0.90 is ~10
+# frames = 160 ms, comfortably below the 400 ms of the longest vowel and
+# comfortably below the 1.5 s minimum window.
+MIC_NR_SMOOTH   = float(os.getenv("MIC_NR_SMOOTH", "0.90"))
+# Maximum attenuation per bin. -12 dB is deliberately conservative: deeper
+# floors (-25 dB and below) sound cleaner to a human but strip the low-energy
+# consonants an STT model needs, and they produce "musical noise" — isolated
+# surviving bins warbling in the residual — which recognisers dislike more than
+# honest hiss. Going deeper here is the most likely way to make things worse.
+MIC_NR_FLOOR_DB = float(os.getenv("MIC_NR_FLOOR_DB", "-6"))
+# Length of the sliding window the per-bin noise minimum is tracked over. Must
+# be comfortably longer than the longest continuous vowel (~0.4 s) so that
+# speech cannot be mistaken for the noise floor, and short enough to follow a
+# room that changes: 1.5 s satisfies both.
+MIC_NR_NOISE_S  = float(os.getenv("MIC_NR_NOISE_S", "1.5"))
+
 # Which physical mic feeds the SPEECH path: auto | mix | left | right.
 # Measured ambient, ADAM stopped, raw S32 before filtering: left peaks at
 # -1.6 dBFS and right at -6.7 dBFS, 80.85% of the energy below 60 Hz with the
@@ -200,6 +310,29 @@ MIC_CHANNEL = os.getenv("MIC_CHANNEL", "auto").strip().lower()
 if MIC_CHANNEL not in ("auto", "mix", "left", "right"):
     MIC_CHANNEL = "auto"
 MIC_CH_CLIP_FRAC = float(os.getenv("MIC_CH_CLIP_FRAC", "0.995"))
+
+# THE HOLE IN THE ABOVE, AND WHAT CLOSES IT. "auto" decides by looking for
+# saturated samples — but it only looked during the FIRST SECOND after arecord
+# starts. At that moment ADAM has just booted and nobody is talking, so the one
+# thing it is trying to detect is the one thing that cannot be present. It
+# therefore latched "mix" every single time and never revisited the decision,
+# including when a syllable later drove L into the rails. That is not a
+# conservative default, it is a detector pointed at the wrong second.
+#
+# So the saturation count keeps running for the whole session. Every
+# MIC_CH_WATCH_S of audio, if one channel has accumulated at least
+# MIC_CH_WATCH_MIN_CLIPS saturated samples and the other is essentially clean
+# (under an eighth as many), the hot channel is dropped and the switch is
+# logged with the counts that caused it.
+#
+# The switch is ONE-WAY and only happens in "auto": clipping is unrepairable
+# downstream, so evidence of it outweighs the 5.4 dB in-band penalty measured
+# above, but a channel that has proven it can hit the rails should not be
+# readmitted just because the room went quiet again — that would flap on every
+# loud/quiet cycle. An explicit MIC_CHANNEL=mix/left/right disables the watch
+# entirely, so a forced choice stays forced.
+MIC_CH_WATCH_S         = float(os.getenv("MIC_CH_WATCH_S", "10.0"))
+MIC_CH_WATCH_MIN_CLIPS = int(os.getenv("MIC_CH_WATCH_MIN_CLIPS", "20"))
 
 # ── ADAPTIVE SPEECH GATE (the production path) ──────────────────────────────
 # MIC_ADAPTIVE=1 is the default and means NO threshold below this line has to
@@ -267,7 +400,7 @@ MIC_HOLD_MAX_RATIO = float(os.getenv("MIC_HOLD_MAX_RATIO", "0.95"))
 #     flat <= 0.40   noise 9.9% false pass   speech 97.2% @2357  100% @3000+
 #     flat <= 0.35   noise 4.3% false pass   speech 74.4% @2357  99.7% @3000+
 #     flat <= 0.30   noise 2.3% false pass   speech 22.0% @2357  98.8% @3000+
-# 0.35 is the knee, and the 5-chunk onset requirement below is what turns its
+# 0.35 is the knee, and the onset quorum below is what turns its
 # residual 4.3% into zero false opens: this room's noise crosses the level
 # threshold in runs whose MEDIAN length is 1 chunk and whose longest is 3.
 #
@@ -275,13 +408,45 @@ MIC_HOLD_MAX_RATIO = float(os.getenv("MIC_HOLD_MAX_RATIO", "0.95"))
 # bottom-heavy; hiss and fan whine are not. >= 0.60 → 12.9% noise, 97.8%
 # speech on its own; it earns its place as the second AND term.
 #
-# SLACK/HOLD_FRAC: holding uses flat <= 0.35+0.05 and requires only 40% of
+# SLACK/HOLD_FRAC: holding uses flat <= flat_max+0.05 and requires only 40% of
 # the sustain window to pass, so consonants and inter-syllable dips do not
 # truncate a turn while noise (which passes ~5-10% of chunks) still closes it.
 MIC_SHAPE_FLAT_MAX   = float(os.getenv("MIC_SHAPE_FLAT_MAX", "0.35"))
 MIC_SHAPE_FLAT_SLACK = float(os.getenv("MIC_SHAPE_FLAT_SLACK", "0.05"))
 MIC_SHAPE_RATIO_MIN  = float(os.getenv("MIC_SHAPE_RATIO_MIN", "0.60"))
 MIC_SHAPE_HOLD_FRAC  = float(os.getenv("MIC_SHAPE_HOLD_FRAC", "0.40"))
+
+# ── SHAPE THRESHOLD, LEARNED PER ROOM ───────────────────────────────────────
+# Every number in the block above came from ONE room. Shipping it as a constant
+# ships that room's acoustics to a customer who does not have them, and the
+# failure is not symmetric: too loose costs a phantom Gemini turn, too tight
+# costs EVERY turn — ADAM simply never answers, which is the complaint this
+# whole subsystem keeps generating.
+#
+# So MIC_SHAPE_FLAT_MAX becomes a FLOOR rather than the threshold. ADAM
+# measures the flatness of its own room's noise bed (only on chunks the gate
+# already judged to be silence, so speech cannot poison it), takes the
+# MIC_SHAPE_FLAT_PCTL percentile, backs off by MIC_SHAPE_FLAT_MARGIN, and uses
+# that instead whenever it is LOOSER than the measured 0.35:
+#
+#     flat_max = clamp(p5(noise flatness) * 0.95, MIC_SHAPE_FLAT_MAX, CEIL)
+#
+# One-sided on purpose. In a hissy room (fan, AC, a PC next to the mic) the
+# bed's flatness is high, 0.35 is far stricter than it needs to be, and the
+# learned value opens the test up — worth real capture, because speech at low
+# SNR is itself flatter than clean speech: the noise fills the spectral
+# valleys between the harmonics this statistic exists to see. In a TONAL room
+# (a whine, a hum) the bed's flatness can be LOWER than speech's, and a
+# two-sided rule would walk the threshold down until nothing passed at all.
+# The floor makes that unreachable: worst case is exactly today's behaviour.
+# p5 also means ~5% of noise chunks pass the shape test by construction, which
+# the onset quorum below is sized to absorb.
+# MIC_SHAPE_ADAPT=0 pins it to the constant.
+MIC_SHAPE_ADAPT       = os.getenv("MIC_SHAPE_ADAPT", "1").strip().lower() not in (
+    "0", "false", "no", "off")
+MIC_SHAPE_FLAT_CEIL   = float(os.getenv("MIC_SHAPE_FLAT_CEIL", "0.70"))
+MIC_SHAPE_FLAT_MARGIN = float(os.getenv("MIC_SHAPE_FLAT_MARGIN", "0.95"))
+MIC_SHAPE_FLAT_PCTL   = float(os.getenv("MIC_SHAPE_FLAT_PCTL", "5"))
 
 # webrtcvad was the FIRST design for the shape vote and it was refuted by
 # measurement on this HAT: on 25 s of ordinary room noise it called 100.0% of
@@ -392,7 +557,6 @@ MIC_AMBIENT_MAX   = float(os.getenv("MIC_AMBIENT_MAX", "1650"))
 # gate, whether because it stays above hold_th (1,475 at settled trackers, so
 # the as-measured dips clear it) or because it is shorter than the hangover
 # (which covers the quieter dips that do not).
-MIC_VAD_RELEASE_RATIO = float(os.getenv("MIC_VAD_RELEASE_RATIO", "0.72"))
 #
 # The standard fix, and what these three constants implement:
 #   RELEASE_RATIO — two thresholds instead of one. Opening the gate needs the
@@ -529,7 +693,23 @@ SPEAKER_START_DELAY_US = int(os.getenv("SPEAKER_START_DELAY_US", "400000"))
 # the measured working point, and raising it toward 1.3s buys tail safety with
 # exactly that much extra deafness.
 SPEAKER_DRAIN_ALLOWANCE_S = float(os.getenv("SPEAKER_DRAIN_ALLOWANCE_S", "0.5"))
-MIC_VAD_HANGOVER_S    = float(os.getenv("MIC_VAD_HANGOVER_S", "0.6"))
+# HANGOVER = how long the gate stays open after the level drops, i.e. how long
+# a pause is allowed to be before ADAM decides your turn ended.
+#
+# 0.6s was too short and it cost recognition accuracy, not just convenience.
+# Natural pauses between CLAUSES run 0.5-0.8s, so at 0.6s a normal sentence got
+# cut in half: the gate closed, activity_end went out, and the second half
+# arrived as its own isolated ~1s turn. A one-second fragment carries no
+# grammatical context, which is when the recogniser starts guessing phonetically
+# (see STT_LANGUAGE_CODES above — that is where the Portuguese came from).
+#
+# 1.0s sits above the top of the natural-clause-pause range, so clauses stay
+# joined. It is paid for directly in latency: activity_end is what makes Gemini
+# start answering, so every reply is ~0.4s later than at 0.6s. That is the
+# trade, and it is deliberate — a right answer 0.4s later beats a wrong answer
+# in the wrong language. Set MIC_VAD_HANGOVER_S=0.6 to get the snappier,
+# choppier behaviour back.
+MIC_VAD_HANGOVER_S    = float(os.getenv("MIC_VAD_HANGOVER_S", "1.0"))
 # 0.6s is the end-of-speech budget, and under manual activity detection it is
 # also pure conversational latency: activity_end is only sent when this expires,
 # and Gemini does not start generating until it arrives. Google documents ~500ms
@@ -569,11 +749,11 @@ MIC_VAD_PREROLL_S     = float(os.getenv("MIC_VAD_PREROLL_S", "0.8"))
 #
 # The cost is zero audio: MIC_VAD_PREROLL_S (0.8s = ~24 chunks) of history is
 # already buffered and flushed on open, so N chunks delays the DECISION, not
-# the speech. 5 chunks = 167 ms, comfortably inside that 0.8 s of pre-roll.
+# the speech. Even 5 chunks = 167 ms sits comfortably inside that 0.8 s.
 #
-# 5 rather than 2 is MEASURED, and it is the single biggest false-open lever
-# there is. On 25 s of this room's noise, the runs of consecutive chunks that
-# cross the open threshold are:
+# A LONG duration test is MEASURED, and it is the single biggest false-open
+# lever there is. On 25 s of this room's noise, the runs of consecutive chunks
+# that cross the open threshold are:
 #     1.20x floor  13.7% of chunks   48 runs   longest 7   median run 1
 #     1.35x floor   4.0% of chunks   22 runs   longest 3   median run 1
 #     1.50x floor   2.1% of chunks   14 runs   longest 2   median run 1
@@ -581,7 +761,35 @@ MIC_VAD_PREROLL_S     = float(os.getenv("MIC_VAD_PREROLL_S", "0.8"))
 # (adam-tools/_gatesim2.py), holding everything else fixed:
 #     N=2  ~12-22 false opens/min      N=3  4.8-7.2/min      N=5  0.0/min
 # and the capture cost of N=5 is only the onset, which the pre-roll covers.
-MIC_VAD_ONSET_CHUNKS  = int(os.getenv("MIC_VAD_ONSET_CHUNKS", "5"))
+#
+# ── WHY "CONSECUTIVE" WAS WRONG, AND WHAT REPLACED IT ───────────────────────
+# The 0.0 false opens/min above is real. The "capture cost is only the onset"
+# is not, and the reason is a flaw in how it was measured: the simulated
+# positives were SUSTAINED SYNTHETIC VOWELS. Real speech is not. "Hey ADAM"
+# is /h/ — aspiration, broadband, flatness near 1.0, fails the shape test on
+# its own merits — then a vowel, then the /d/ STOP CLOSURE, which is 50-80 ms
+# of near-silence, i.e. 2-3 whole chunks BELOW the level threshold. Both are
+# speech; neither passes; and under a consecutive rule either one resets the
+# counter to zero. The gate then wants 5 clean chunks in a row that ordinary
+# English does not contain at conversational level, so `blocked` climbs, and
+# `opens` stays 0 unless the user shouts a sustained vowel at the mic. That
+# is precisely the reported symptom: ADAM hears a hum but never a sentence.
+#
+# The duration test is still the right idea — it is what rejects impulses on
+# a dimension where the gap is enormous. Only the shape of the test changes,
+# from a RUN to a QUORUM: MIC_VAD_ONSET_CHUNKS chunks must pass within the
+# last MIC_VAD_ONSET_WINDOW chunks, in any order, gaps allowed.
+#
+# 3 of 6 (200 ms) is the default, and it costs nothing in false opens because
+# the two votes multiply. In the measured room a chunk clears the level
+# threshold 12.9% of the time and the shape test 4.3%; independent, that is
+# 0.55% per chunk, and the chance of 3 such chunks landing inside any 6-chunk
+# window is ~3e-6, i.e. of order 0.01 false opens/min — below the 0.0/min the
+# consecutive rule measured only because that number was already at the floor
+# of what 25 s can resolve (±2.4/min). What the quorum buys back is the whole
+# class of real utterances the run test was silently discarding.
+MIC_VAD_ONSET_CHUNKS  = int(os.getenv("MIC_VAD_ONSET_CHUNKS", "3"))
+MIC_VAD_ONSET_WINDOW  = int(os.getenv("MIC_VAD_ONSET_WINDOW", "6"))
 # Seconds of playback silence after which speaker() CLOSES the ALSA playback
 # device instead of holding it open for the whole session.
 #
@@ -617,6 +825,27 @@ MIC_VAD_ONSET_CHUNKS  = int(os.getenv("MIC_VAD_ONSET_CHUNKS", "5"))
 # mid-sentence (gated on adam_speaking), never during a song (gated on
 # song_playing), and never before the drain deadline set by end_of_turn().
 # 2.5s is comfortably past the ~0.5s ALSA buffer drain.
+#
+# THE OTHER SIDE OF THIS TRADE, and the reason for the escape hatch below: the
+# voiceHAT is ONE I2S device serving capture and playback, so every teardown is
+# a chance for the capture DMA to be left running but delivering zeros (see
+# MIC_DEAD_STREAM_S). Closing after every reply turned a once-per-session race
+# into a once-per-turn one. There are two mitigations in the code — the
+# teardown is graceful (EOF, not SIGTERM) and listen() detects the wedge and
+# respawns arecord — but on a unit where the wedge is chronic, the way out is
+# to stop tearing the device down at all:
+#
+#     SPEAKER_IDLE_CLOSE_S=0     → never close; hold the device for the
+#                                  session, as ADAM did before this constant
+#
+# That costs the +4 dB of amp hiss above, permanently. It is survivable now in
+# a way it was not when this comment was first written, because the gate no
+# longer trusts level alone: the learned floor simply settles onto the hissier
+# bed (observe() is skipped only while the amp is HOT, so a permanently-open
+# device is learned as the room it now is), and the shape vote rejects hiss on
+# its merits — broadband switching noise reads flatness ~1.0 against a 0.35
+# limit. Expect reduced sensitivity to quiet speech, not deafness. Prefer the
+# default; reach for 0 only if "Capture DEAD" keeps appearing in the journal.
 SPEAKER_IDLE_CLOSE_S  = float(os.getenv("SPEAKER_IDLE_CLOSE_S", "2.5"))
 # How often listen() reports the mic level DISTRIBUTION (p50/p90/p99/max) plus
 # the live thresholds, gate-open count and chunks-sent count. This replaced a
@@ -644,6 +873,19 @@ MIC_STATS_S           = float(os.getenv("MIC_STATS_S", "10.0"))
 # that a wedge costs one sentence rather than the rest of the conversation.
 MIC_DEAD_STREAM_S     = float(os.getenv("MIC_DEAD_STREAM_S", "3.0"))
 
+# Same detector, shorter fuse, for the window where the wedge is EXPECTED.
+# 3s is the right number when the cause is unknown — it has to be long enough
+# that nothing transient can trip it. But right after a playback close the
+# cause is not unknown: that teardown is the one event known to wedge this
+# soundcard's capture DMA. Waiting the full 3s there throws away the two
+# seconds immediately after ADAM stops talking, which is exactly when the user
+# replies. Inside MIC_DEAD_AFTER_PLAY_WINDOW_S of the device closing, this
+# shorter run of exact zeros is enough to declare the stream dead and respawn.
+# 0.7s ~= 21 chunks of digital silence; live hardware cannot produce one.
+MIC_DEAD_AFTER_PLAY_S        = float(os.getenv("MIC_DEAD_AFTER_PLAY_S", "0.7"))
+MIC_DEAD_AFTER_PLAY_WINDOW_S = float(os.getenv("MIC_DEAD_AFTER_PLAY_WINDOW_S",
+                                               "3.0"))
+
 # ═════════════════════════════════════════════════════════════════════════════
 # SONG / CONCERT PLAYBACK
 # ═════════════════════════════════════════════════════════════════════════════
@@ -660,6 +902,22 @@ SONG_FILE_PATHS = [
     str(BASE_DIR / "song2.wav"),
     str(BASE_DIR / "song3.wav"),
 ]
+
+# Song playback pacing. The song is written into speaker()'s aplay pipe from a
+# loop, and the loop used to yield with `await asyncio.sleep(0)` — which is not
+# a wait at all: it returns on the very next event-loop pass. The loop then
+# reads and writes as fast as the 64 KiB pipe will accept, so on this
+# single-core Pi it spins against arecord, the Vosk recogniser and the Gemini
+# tasks for the whole song, and the audible result is underruns and crackle in
+# the thing it is trying to play well.
+#
+# Nothing is gained by running ahead: aplay consumes at exactly real time. So
+# the loop is paced to the audio it just wrote. SONG_CHUNK_FRAMES at
+# PLAYBACK_RATE is 4096/48000 = 85.3 ms; sleeping SONG_PACE_FRAC of that per
+# chunk keeps roughly one chunk of slack in the pipe (enough that ALSA never
+# starves) while handing ~77 ms of every 85 ms back to the rest of the system.
+SONG_CHUNK_FRAMES = int(os.getenv("SONG_CHUNK_FRAMES", "4096"))
+SONG_PACE_FRAC    = float(os.getenv("SONG_PACE_FRAC", "0.9"))
 
 # ═════════════════════════════════════════════════════════════════════════════
 # NECK SERVO (pan only; tilt goes over UART to Pico via ESP32-CAM relay)
@@ -770,8 +1028,21 @@ GESTURE_STOP    = 3   # Touch3 alone — interrupt speech immediately
 
 ATTENTION_TIMEOUT_S = 30
 
-ENABLE_IDLE    = True
-IDLE_TIMEOUT_S = 90
+# Idle ("sleep") mode. While it is set, every mic chunk goes to the offline
+# Vosk wake-word detector and NOTHING goes to Gemini, so ADAM ignores ordinary
+# questions BY DESIGN — a fact that is invisible from the outside and has cost
+# hours of "the mic is broken" debugging. Both of these are env-overridable
+# because the fastest way to rule idle mode out as the cause of silence is to
+# turn it off entirely and see whether ADAM starts answering:
+#
+#     ENABLE_IDLE=0      → never enter idle mode from a timeout OR a tool call
+#     IDLE_TIMEOUT_S=…   → seconds of silence before ADAM offers to sleep
+#
+# The stats line in listen() prints IDLE when this is active; that is the
+# authoritative check, not guessing from the face on the screen.
+ENABLE_IDLE    = os.getenv("ENABLE_IDLE", "1").strip().lower() not in (
+    "0", "false", "no", "off")
+IDLE_TIMEOUT_S = float(os.getenv("IDLE_TIMEOUT_S", "90"))
 
 # Hard ceiling on a single idle period. Idle mode routes every mic chunk to
 # the offline Vosk detector and NOTHING to Gemini, so while it is set ADAM is
@@ -840,7 +1111,7 @@ CONV_MAX_TURNS    = 40   # max turns persisted to disk
 # (confirmed via usage screenshot at 62.31K/65K). Full 40-turn history
 # stays on disk for continuity across long gaps; only a much shorter
 # recent window is actually injected per-session.
-CONV_PROMPT_TURNS = 12
+CONV_PROMPT_TURNS = int(os.getenv("CONV_PROMPT_TURNS", "4"))
 
 # ═════════════════════════════════════════════════════════════════════════════
 # WEBSOCKET FACE SERVER

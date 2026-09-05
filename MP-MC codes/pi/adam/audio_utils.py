@@ -40,7 +40,11 @@ from config import (
     PLAYBACK_RATE,
     MIC_HP_HZ,
     MIC_LP_HZ,
+    MIC_LP_STOP_HZ,
+    MIC_NR, MIC_NR_FRAME, MIC_NR_OVERSUB, MIC_NR_FLOOR_DB, MIC_NR_NOISE_S,
+    MIC_NR_SMOOTH,
     MIC_CHANNEL,
+    MIC_CH_WATCH_S, MIC_CH_WATCH_MIN_CLIPS,
     MIC_CH_CLIP_FRAC,
     MIC_FLOOR_WINDOW_S,
     MIC_FLOOR_PERCENTILE,
@@ -63,6 +67,10 @@ from config import (
     MIC_SHAPE_FLAT_SLACK,
     MIC_SHAPE_RATIO_MIN,
     MIC_SHAPE_HOLD_FRAC,
+    MIC_SHAPE_ADAPT,
+    MIC_SHAPE_FLAT_CEIL,
+    MIC_SHAPE_FLAT_MARGIN,
+    MIC_SHAPE_FLAT_PCTL,
     MIC_DISTANCE_M,
     SOUND_SPEED_MPS,
     SPEAKER_LIMITER_KNEE,
@@ -102,14 +110,34 @@ from config import (
 DECIM = max(1, CAPTURE_RATE // GEMINI_SEND_RATE)      # 48000/16000 = 3
 
 def _design_lowpass(fc: float, fs: float, ntaps: int) -> np.ndarray:
-    """Windowed-sinc (Hamming) low-pass, unity DC gain. 63 taps is plenty for
-    an anti-alias filter whose only job is to be well down by fs/2/DECIM."""
+    """Windowed-sinc (Hamming) low-pass, unity DC gain. fc is the -6 dB point;
+    the transition band straddles it, so ntaps has to be chosen from where the
+    stopband must START, not from where the corner is (see _lp_taps_for)."""
     n = np.arange(ntaps, dtype=np.float64) - (ntaps - 1) / 2.0
     h = np.sinc(2.0 * fc / fs * n) * np.hamming(ntaps)
     return (h / h.sum()).astype(np.float32)
 
-_LP_TAPS = 63
-_LP_FIR  = _design_lowpass(MIC_LP_HZ, CAPTURE_RATE, _LP_TAPS)
+
+def _lp_taps_for(f_pass: float, f_stop: float, fs: float) -> int:
+    """Odd tap count whose Hamming transition band fits inside f_pass..f_stop.
+
+    A Hamming-windowed sinc has a transition width of about 3.3*fs/ntaps
+    between the passband and the -53 dB stopband. Solving for ntaps and forcing
+    it odd keeps the filter linear-phase with an integer group delay, which is
+    what lets the decimator below stay sample-accurate.
+    """
+    width = max(1.0, float(f_stop) - float(f_pass))
+    return max(31, int(math.ceil(3.3 * fs / width)) | 1)
+
+
+# Passband edge, stopband edge, and the -6 dB corner half way between them.
+# 6800 -> 8000 needs 132 taps at 48 kHz, so this is 133 rather than the 63 it
+# used to be. The polyphase decimation below computes only the 1-in-3 outputs
+# that survive, so the real cost is 533x133 MACs per 33 ms chunk: ~2.1 MMAC/s,
+# which numpy hands to BLAS and the Pi Zero 2 W does not notice.
+_LP_TAPS = _lp_taps_for(MIC_LP_HZ, MIC_LP_STOP_HZ, CAPTURE_RATE)
+_LP_FIR  = _design_lowpass((MIC_LP_HZ + MIC_LP_STOP_HZ) * 0.5,
+                           CAPTURE_RATE, _LP_TAPS)
 # Reversed copy: a dot product against a forward-ordered sliding window equals
 # a convolution only if the kernel is flipped. _LP_FIR is symmetric so this is
 # the same array, but relying on that silently would break the moment the
@@ -165,6 +193,169 @@ class _MicChain:
 _mic_chain = _MicChain()
 
 
+# ── NOISE SUPPRESSION FOR THE RECOGNISER-BOUND STREAM ───────────────────────
+# Why this exists, and why it is not in the gate's path:
+#
+# Measured live on this unit, post-filter int16 RMS: noise floor 1550-1591,
+# speech p90 2041-4256, speech peaks 2783-6487. That is roughly +6 dB SNR. The
+# adaptive gate copes fine with that — it is a ratio detector and it opened on
+# every utterance — but a speech RECOGNISER does not. Words come back wrong
+# because the acoustic evidence really is buried, not because anything upstream
+# is broken.
+#
+# So the recogniser gets a cleaned copy and the gate keeps the original. That
+# split is deliberate: the gate's floor percentile, learned flatness ceiling and
+# lo/hi ratio were all tuned against the raw signal's statistics, and quietly
+# changing what it sees would invalidate that tuning and risk trading a
+# recognition problem for a "cannot hear me at all" problem.
+#
+# Method: WOLA spectral magnitude subtraction with a per-bin noise floor from
+# minimum statistics. No VAD input at all — the noise estimate is the running
+# minimum of the smoothed power in each frequency bin over MIC_NR_NOISE_S, and
+# a minimum over 1.5 s cannot be contaminated by speech because no phoneme
+# sustains one bin's energy that long. That independence matters here: the gate
+# and the suppressor cannot cascade each other's mistakes.
+#
+# sqrt-Hann analysis AND synthesis windows with hop = frame/2 satisfy COLA
+# (their squares sum to a periodic Hann, which sums to exactly 1.0), so with all
+# gains at 1.0 this reconstructs the input bit-for-bit apart from a hop of
+# delay. That property is what makes MIC_NR=0 a genuine A/B test rather than a
+# different signal path.
+class _NoiseSuppressor:
+    """Streaming single-channel denoiser for int16 mono at GEMINI_SEND_RATE."""
+
+    def __init__(self, frame: int, oversub: float, floor_db: float,
+                 noise_s: float, rate: int, smooth: float = MIC_NR_SMOOTH) -> None:
+        self._n   = max(64, int(frame) & ~1)          # even
+        self._h   = self._n // 2                      # COLA hop for sqrt-Hann
+        # Periodic (not symmetric) Hann is the one that satisfies COLA at N/2.
+        hann      = np.hanning(self._n + 1)[:self._n]
+        self._w   = np.sqrt(hann).astype(np.float32)
+        self._in   = np.zeros(0, dtype=np.float32)
+        self._acc  = np.zeros(self._n, dtype=np.float32)
+        nb         = self._n // 2 + 1
+        self._pwr  = np.zeros(nb, dtype=np.float32)   # smoothed power
+        self._gain = np.ones(nb, dtype=np.float32)    # previous frame's gain
+        self._floor   = float(10.0 ** (floor_db / 20.0))
+        self._oversub = float(oversub)
+        self._alpha   = min(0.99, max(0.0, float(smooth)))
+        # Minimum statistics: a deque of per-sub-window minima plus the minimum
+        # so far in the current sub-window. min(deque + current) is the estimate.
+        # Four sub-windows is the usual compromise — enough that the estimate
+        # updates several times a second, few enough that the window really is
+        # noise_s long.
+        frames_per_s   = float(rate) / float(self._h)
+        self._sub_len  = max(1, int(round(noise_s * frames_per_s / 4.0)))
+        self._subs     = collections.deque(maxlen=4)
+        self._cur_min  = None                         # np.ndarray | None
+        self._sub_n    = 0
+        self._primed   = False
+        # Mean applied gain over the speech band, in dB, for the stats line.
+        # Without this the suppressor is invisible: you cannot tell "working"
+        # from "primed but doing nothing" from "MIC_NR=0" by listening to a
+        # 16 kHz stream you are not holding.
+        lo_bin = max(1, int(round(300.0 * self._n / float(rate))))
+        hi_bin = min(nb, int(round(3400.0 * self._n / float(rate))) + 1)
+        self._band = slice(lo_bin, hi_bin)
+        self._db   = 0.0
+
+    def reset(self) -> None:
+        """Drop the overlap state at a stream discontinuity (ADAM speaking mutes
+        the mic, so the 16 kHz stream really does have gaps). The NOISE estimate
+        is kept — the room is the same room on the other side of the gap, and
+        re-learning it would leave the first second after every reply
+        unprocessed, which is exactly when the user is most likely to talk."""
+        self._in  = np.zeros(0, dtype=np.float32)
+        self._acc = np.zeros(self._n, dtype=np.float32)
+        self._gain[:] = 1.0
+
+    def _noise_est(self, pwr: np.ndarray) -> np.ndarray:
+        self._cur_min = (pwr.copy() if self._cur_min is None
+                         else np.minimum(self._cur_min, pwr))
+        self._sub_n += 1
+        if self._sub_n >= self._sub_len:
+            self._subs.append(self._cur_min)
+            self._cur_min = None
+            self._sub_n   = 0
+            if len(self._subs) == self._subs.maxlen:
+                self._primed = True
+        est = self._cur_min
+        for s in self._subs:
+            est = s if est is None else np.minimum(est, s)
+        return est
+
+    def process(self, pcm: bytes) -> bytes:
+        x = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+        if x.size == 0:
+            return pcm
+        self._in = np.concatenate((self._in, x)) if self._in.size else x
+        out = []
+        while self._in.size >= self._n:
+            spec = np.fft.rfft(self._in[:self._n] * self._w)
+            pwr  = (spec.real ** 2 + spec.imag ** 2).astype(np.float32)
+            # Smooth the power before the minimum tracker. The heavier this
+            # smoothing, the less the minimum sits below the true mean — which
+            # is the bias MIC_NR_OVERSUB has to make up for. See the note there.
+            self._pwr = (self._alpha * self._pwr
+                         + (1.0 - self._alpha) * pwr)
+            noise = self._noise_est(self._pwr)
+            if self._primed:
+                # Magnitude subtraction, expressed in power to avoid two sqrts:
+                # gain = sqrt(max(P - a*N, 0) / P).
+                clean = np.maximum(pwr - self._oversub * noise, 0.0)
+                g     = np.sqrt(clean / np.maximum(pwr, 1e-9))
+                np.maximum(g, self._floor, out=g)
+                # Smooth across frequency (3-bin) and time (1-pole). Both fight
+                # musical noise: isolated surviving bins get pulled down by
+                # their neighbours, and bins cannot flip between full pass and
+                # full floor from one 16 ms hop to the next.
+                g[1:-1] = (g[:-2] + g[1:-1] + g[2:]) / 3.0
+                # Fast-attack on rising speech (preserves word onsets), smooth decay on noise
+                alpha = np.where(g > self._gain, 0.15, 0.65).astype(np.float32)
+                g = alpha * self._gain + (1.0 - alpha) * g
+                self._gain = g.astype(np.float32)
+                spec *= self._gain
+                self._db = 20.0 * math.log10(
+                    max(float(self._gain[self._band].mean()), 1e-6))
+            y = np.fft.irfft(spec, self._n).astype(np.float32) * self._w
+            self._acc += y
+            out.append(self._acc[:self._h].copy())
+            self._acc = np.concatenate(
+                (self._acc[self._h:], np.zeros(self._h, dtype=np.float32)))
+            self._in = self._in[self._h:]
+        if not out:
+            return b""
+        y = np.concatenate(out)
+        return np.clip(y, -32768, 32767).astype(np.int16).tobytes()
+
+
+_mic_nr = (_NoiseSuppressor(MIC_NR_FRAME, MIC_NR_OVERSUB, MIC_NR_FLOOR_DB,
+                            MIC_NR_NOISE_S, GEMINI_SEND_RATE)
+           if MIC_NR else None)
+
+
+def denoise_16k(pcm: bytes) -> bytes:
+    """Cleaned copy of one 16 kHz mono chunk for the recogniser. Returns the
+    input unchanged when MIC_NR=0. May return fewer or more bytes than it was
+    given (WOLA runs on a fixed frame/hop, not on chunk boundaries) and returns
+    b"" while the first frame is still filling — callers must tolerate both."""
+    return pcm if _mic_nr is None else _mic_nr.process(pcm)
+
+
+def denoise_reset() -> None:
+    """Call at a discontinuity in the 16 kHz stream, i.e. whenever the mic has
+    been muted. Cheap; safe to call when MIC_NR=0."""
+    if _mic_nr is not None:
+        _mic_nr.reset()
+
+
+def denoise_db() -> float | None:
+    """Mean gain the suppressor is currently applying across 300-3400 Hz, in dB.
+    None when MIC_NR=0. 0.0 means primed-but-passing (the frame looked like pure
+    speech) or not yet primed; the floor is MIC_NR_FLOOR_DB."""
+    return None if _mic_nr is None else _mic_nr._db
+
+
 # ── Which physical mic feeds the speech path ────────────────────────────
 # Measured on this hardware, 5.9s of AMBIENT room with ADAM stopped (so no
 # servo PWM), raw S32 before any filtering:
@@ -210,6 +401,16 @@ _mic_ch_clip  = [0, 0]
 _mic_ch_n     = [0]
 _MIC_CH_CAL_CHUNKS = 30                      # 30 x 1600 frames @48k = 1.0 s
 
+# Continuous saturation watch — see the MIC_CH_WATCH_S block in config.py for
+# why the one-shot calibration above could never fire. `_mic_ch_forced` is the
+# session-long flag that stops the watch once a channel has been dropped (or
+# when the operator named a channel explicitly).
+_MIC_CH_WATCH_CHUNKS = max(1, int(round(MIC_CH_WATCH_S * 48000.0 / 1600.0)))
+_mic_ch_wclip   = [0, 0]
+_mic_ch_wn      = [0]
+_mic_ch_wpeak   = [0.0, 0.0]
+_mic_ch_forced  = [MIC_CHANNEL != "auto"]
+
 
 def _mic_ch_calibrate(l: np.ndarray, r: np.ndarray) -> None:
     """Track each channel's peak/saturation for 1s, then latch a mode."""
@@ -237,6 +438,49 @@ def _mic_ch_calibrate(l: np.ndarray, r: np.ndarray) -> None:
               f"filter. That is hardware (see the note in audio_utils.py).")
 
 
+def _mic_ch_watch(l: np.ndarray, r: np.ndarray) -> None:
+    """Keep counting saturation for the whole session, not just the first
+    second, and drop a channel that proves it hits the converter rails.
+
+    This is what makes MIC_CHANNEL=auto actually mean something: the initial
+    1s calibration runs on boot silence, where clipping is impossible by
+    construction, so without this the decision was always "mix" regardless of
+    the hardware. Clipping is created inside the ADC, upstream of every filter
+    in this file, so it is the one defect no amount of DSP can repair — which
+    is why it is allowed to override the 5.4 dB in-band SNR advantage that
+    mixing otherwise has.
+    """
+    fs  = 2.0 ** 31
+    thr = MIC_CH_CLIP_FRAC * fs
+    for i, ch in ((0, l), (1, r)):
+        _mic_ch_wclip[i] += int(np.count_nonzero(np.abs(ch) >= thr))
+        _mic_ch_wpeak[i]  = max(_mic_ch_wpeak[i], float(np.abs(ch).max()))
+    _mic_ch_wn[0] += 1
+    if _mic_ch_wn[0] < _MIC_CH_WATCH_CHUNKS:
+        return
+
+    cl, cr = _mic_ch_wclip
+    hot    = None
+    if cl >= MIC_CH_WATCH_MIN_CLIPS and cr * 8 <= cl:
+        hot = ("left", "right", cl, cr)
+    elif cr >= MIC_CH_WATCH_MIN_CLIPS and cl * 8 <= cr:
+        hot = ("right", "left", cr, cl)
+
+    if hot:
+        bad, good, nbad, ngood = hot
+        _mic_ch_mode[0]   = good
+        _mic_ch_forced[0] = True
+        print(f"  🎚️  Mic channel → {good.upper()}: the {bad} channel "
+              f"saturated {nbad} samples in the last "
+              f"{MIC_CH_WATCH_S:.0f}s (the {good} channel: {ngood}). "
+              f"Clipping happens inside the ADC, so no filter can undo it — "
+              f"dropping {bad} even though mixing is ~5.4 dB better in band. "
+              f"Set MIC_CHANNEL=mix in ~/adam/.env to override.")
+    _mic_ch_wclip[0] = _mic_ch_wclip[1] = 0
+    _mic_ch_wpeak[0] = _mic_ch_wpeak[1] = 0.0
+    _mic_ch_wn[0] = 0
+
+
 def s32_stereo_to_s16_mono_16k(raw: bytes) -> bytes:
     s32 = np.frombuffer(raw, dtype=np.int32)
     if s32.size < 2:
@@ -249,6 +493,8 @@ def s32_stereo_to_s16_mono_16k(raw: bytes) -> bytes:
     _r = s32[1::2].astype(np.float32)
     if _mic_ch_mode[0] is None:
         _mic_ch_calibrate(_l, _r)               # mixes until it latches
+    elif not _mic_ch_forced[0]:
+        _mic_ch_watch(_l, _r)                   # keeps watching for clipping
     _m = _mic_ch_mode[0]
     if   _m == "left":  mono48 = _l
     elif _m == "right": mono48 = _r
@@ -642,6 +888,32 @@ class AdaptiveGate:
         self.flat     = 1.0     # last measured flatness   (1.0 = pure noise)
         self.lohi     = 0.0     # last measured lo/hi ratio
         self.backend  = "shape"
+        # LEARNED FLATNESS THRESHOLD — the shape test's own version of the
+        # learned level floor, and the reason this gate can be shipped to a
+        # room nobody has measured.
+        #
+        # MIC_SHAPE_FLAT_MAX = 0.35 was measured in ONE room: there the noise
+        # bed's flatness sat high enough that 0.35 passed only 4.3% of noise
+        # chunks. In a room with a flatter, hissier bed (a fan, an air
+        # conditioner, a PC next to the mic) 0.35 is far stricter than it
+        # needs to be, and strictness here is not free — it is paid for in
+        # rejected speech, because speech recorded at low SNR is itself
+        # flatter than clean speech: the noise fills in the spectral valleys
+        # between the harmonics that this statistic exists to see.
+        #
+        # So the bed's flatness is measured, at a low percentile, from chunks
+        # the caller labels as known noise (gate shut, level under the open
+        # threshold, amplifier off), and the threshold is placed just under
+        # it. Deliberately ONE-SIDED: the learned value may only ever LOOSEN
+        # the test, never tighten it past the measured 0.35. A learned
+        # threshold that can tighten could, in a room whose noise is TONAL
+        # (a whine, a hum — low flatness, lower than speech), walk itself
+        # down until nothing passes and deafen ADAM completely. The floor at
+        # MIC_SHAPE_FLAT_MAX means the worst case is exactly today's
+        # behaviour and the best case is a room that finally works.
+        self._flat_ring = collections.deque(maxlen=self._n_win)
+        self._flat_max  = MIC_SHAPE_FLAT_MAX
+        self._flat_calc = 0
         # webrtcvad wants exactly 10/20/30 ms frames; a 1600-frame @48k
         # capture chunk decimates to 533 samples (33.3 ms), which is not a
         # legal size, so frames are cut from a carry buffer instead. Off by
@@ -716,10 +988,24 @@ class AdaptiveGate:
                    max(MIC_OPEN_MIN * 0.75, self._floor * MIC_HOLD_RATIO))
 
     # ── speech-shape vote ───────────────────────────────────────────
-    def shape_ok(self, mono16k: bytes) -> bool:
+    @property
+    def flat_max(self) -> float:
+        """The flatness threshold actually in force this chunk — learned from
+        the room's own noise bed, floored at MIC_SHAPE_FLAT_MAX so it can only
+        ever be looser than the measured default (see __init__)."""
+        return self._flat_max
+
+    def shape_ok(self, mono16k: bytes, learn_noise: bool = False) -> bool:
         """Score this chunk's SPECTRUM for speech and return the strict
         (opening) verdict. Also pushes the relaxed (holding) verdict into
         the sustain window, so callers make exactly one call per chunk.
+
+        learn_noise: True when the CALLER knows this chunk is not speech —
+        gate shut, level below the open threshold, amplifier off. Only those
+        chunks teach the learned flatness threshold. The caller has to say so
+        because only the caller knows the gate state; this class deliberately
+        never consults level, and inferring "quiet" from the spectrum alone
+        would be circular.
 
         Level is not consulted anywhere in here — that is the point.
         """
@@ -749,12 +1035,25 @@ class AdaptiveGate:
         if self.backend == "level":
             self._shp_win.append(1.0)
             return True
-        strict = (self.flat <= MIC_SHAPE_FLAT_MAX
+        if learn_noise and MIC_SHAPE_ADAPT:
+            self._flat_ring.append(self.flat)
+            self._flat_calc += 1
+            if (self._flat_calc >= self._recalc_every
+                    and len(self._flat_ring) >= self._min_n):
+                self._flat_calc = 0
+                n  = len(self._flat_ring)
+                p  = float(np.percentile(
+                    np.fromiter(self._flat_ring, np.float64, n),
+                    MIC_SHAPE_FLAT_PCTL))
+                self._flat_max = min(MIC_SHAPE_FLAT_CEIL,
+                                     max(MIC_SHAPE_FLAT_MAX,
+                                         p * MIC_SHAPE_FLAT_MARGIN))
+        strict = (self.flat <= self._flat_max
                   and self.lohi >= MIC_SHAPE_RATIO_MIN)
         # Holding gets slack on flatness only: an unvoiced consonant is
         # flatter than a vowel but still is not a fan.
         self._shp_win.append(
-            1.0 if self.flat <= MIC_SHAPE_FLAT_MAX + MIC_SHAPE_FLAT_SLACK
+            1.0 if self.flat <= self._flat_max + MIC_SHAPE_FLAT_SLACK
             else 0.0)
         if strict and self._vad is not None:
             strict = self._webrtc_vote(mono16k)
@@ -835,6 +1134,58 @@ def read_exact(pipe, n: int) -> bytes:
             raise EOFError("pipe closed")
         buf.extend(chunk)
     return bytes(buf)
+
+
+def write_all(pipe, data: bytes, frame_bytes: int = 4) -> int:
+    """Write every byte of `data` into `pipe`, looping over partial writes.
+
+    THIS IS NOT PEDANTRY — a dropped byte is audible, and the failure mode is
+    spectacular. aplay is spawned with bufsize=0, which makes proc.stdin a raw
+    _io.FileIO. A raw write() on a pipe is allowed to be SHORT: it returns the
+    number of bytes the kernel accepted, and when the 64 KiB pipe buffer is
+    full (a loaded Pi Zero 2 W, a song and a reply competing for one aplay)
+    that is less than len(data). `pipe.write(data)` on its own therefore
+    silently loses the remainder.
+
+    Playback is s16 stereo, so a frame is 4 bytes: [L_lo, L_hi, R_lo, R_hi].
+    Lose a number of bytes that is not a multiple of 4 and every following
+    sample is reassembled from the wrong pair of bytes — the low and high
+    halves of each int16 swap. A quiet passage at amplitude 100 comes back as
+    100 * 256 = 25,600, i.e. +48 dB, and the rest of the stream is full-scale
+    buzz until the stream is restarted. That is exactly the "volume suddenly
+    jumps and turns into distortion" symptom, and no amount of gain tuning
+    can fix it because the samples are structurally wrong.
+
+    Returns the number of bytes written (== len(data) unless it raised).
+    Raises whatever the underlying write raises, having written a whole
+    number of frames where possible so a retry stays aligned.
+    """
+    if not data:
+        return 0
+    if frame_bytes > 1 and (len(data) % frame_bytes):
+        # Never hand ALSA a partial frame. The tail is dropped rather than
+        # written, because writing it would shift every subsequent frame.
+        data = data[:len(data) - (len(data) % frame_bytes)]
+        if not data:
+            return 0
+    mv    = memoryview(data)
+    total = 0
+    while mv:
+        n = pipe.write(mv)
+        # A buffered stream returns None on success (it took everything); a
+        # raw FileIO returns the count, and may return 0 on a full pipe.
+        if n is None:
+            total += len(mv)
+            break
+        if n <= 0:
+            # Nothing accepted and no exception: the pipe is full. Give the
+            # reader a moment rather than spinning on the CPU it needs to
+            # drain us.
+            time.sleep(0.002)
+            continue
+        total += n
+        mv = mv[n:]
+    return total
 
 def drain_stderr(proc: subprocess.Popen, label: str,
                  benign_underrun=None) -> None:
