@@ -15,6 +15,10 @@ import sys
 import time
 import traceback
 
+from heartbeat import clear_heartbeat, record_heartbeat
+clear_heartbeat()
+record_heartbeat(status="booting", mic_rms=0.0, zero_run=0)
+
 from config import (
     LIVE_MODEL,
     VOICE,
@@ -31,6 +35,7 @@ from esp32_link import esp_link
 from memory_store import save_conversation_log, save_json, memory, faces, MEMORY_FILE, FACE_MEMORY_FILE
 from ws_server import start_ws_server
 from session import run_session, tft_set
+from heartbeat import clear_heartbeat, record_heartbeat
 
 from google import genai
 
@@ -69,6 +74,9 @@ async def main() -> None:
         print(f"  Laptop : ⚠️  not configured (set LAPTOP_AGENT_IP in .env, "
               f"or pip install zeroconf for auto-discovery)")
     print("=" * 66)
+
+    clear_heartbeat()
+    record_heartbeat(status="starting", mic_rms=0.0, zero_run=0)
 
     await start_ws_server()
     esp_link.start()
@@ -202,6 +210,7 @@ async def main() -> None:
         save_conversation_log()
         save_json(MEMORY_FILE, memory)
         save_json(FACE_MEMORY_FILE, faces)
+        clear_heartbeat()
         print("\n  👋 Goodbye")
 
 

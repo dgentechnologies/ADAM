@@ -104,6 +104,7 @@ from laptop_agent_client import (
 )
 
 from pathlib import Path
+from heartbeat import record_heartbeat
 
 # ═════════════════════════════════════════════════════════════════════════════
 # VOSK OFFLINE WAKE-WORD — preloaded ONCE at import (see module docstring)
@@ -368,8 +369,8 @@ async def run_session(client, resume_handle: str | None,
                 _last_rms  = [0.0]
                 _dropped_bad_chunks = [0]
                 _last_bad_warn_t = [0.0]
-                _dead_run = [0]
-                _chunks_per_s = max(1.0, CAPTURE_RATE / float(CHUNK_FRAMES))
+                _zero_rms_run = [0]
+                _last_hb_t = [0.0]
 
                 while not stop.is_set():
                     proc = None
@@ -424,7 +425,17 @@ async def run_session(client, resume_handle: str | None,
                             # The microphone MUST BE COMPLETELY OFF:
                             # Drain mic_q immediately, drop all capture, send zero audio to Gemini.
                             if adam_speaking.is_set() or song_playing.is_set():
-                                _dead_run[0] = 0
+                                _zero_rms_run[0] = 0
+                                now_hb = time.time()
+                                if now_hb - _last_hb_t[0] >= 1.0:
+                                    _last_hb_t[0] = now_hb
+                                    record_heartbeat(
+                                        status="healthy",
+                                        mic_rms=0.0,
+                                        zero_run=0,
+                                        listening=False,
+                                        speaking=True,
+                                    )
                                 while not mic_q.empty():
                                     try: mic_q.get_nowait()
                                     except asyncio.QueueEmpty: break
@@ -453,15 +464,21 @@ async def run_session(client, resume_handle: str | None,
 
                             _rms_now = rms_pcm16(mono16k)
 
-                            # Safety dead-stream check: only if arecord gives 0.0 RMS for >5s of active listening
-                            if _rms_now < 1.0:
-                                _dead_run[0] += 1
-                                if _dead_run[0] >= int(5.0 * _chunks_per_s):
-                                    print("  ⚠️  Capture DEAD (continuous digital silence from arecord). Restarting arecord.")
-                                    _dead_run[0] = 0
-                                    break
+                            if _rms_now < 0.1:
+                                _zero_rms_run[0] += 1
                             else:
-                                _dead_run[0] = 0
+                                _zero_rms_run[0] = 0
+
+                            now_hb = time.time()
+                            if now_hb - _last_hb_t[0] >= 1.0:
+                                _last_hb_t[0] = now_hb
+                                record_heartbeat(
+                                    status="i2s_dead" if _zero_rms_run[0] >= 240 else "healthy",
+                                    mic_rms=round(_rms_now, 1),
+                                    zero_run=_zero_rms_run[0],
+                                    listening=True,
+                                    speaking=False,
+                                )
 
                             # Direction-of-arrival (DOA) for neck tracking
                             if not idle_mode.is_set():
@@ -493,7 +510,10 @@ async def run_session(client, resume_handle: str | None,
                                         pass
                                 continue
 
-                            # Put chunk into mic_q for send() task to stream to Gemini
+                            # Stream expanded PCM chunk to mic_q for Gemini Live.
+                            # The downward expander in audio_utils already transparently quiets
+                            # room silence by ~22 dB, so no hard client-side gate is needed.
+                            # Gemini's native server VAD detects conversational speech turns.
                             if not mic_q.full():
                                 mic_q.put_nowait(mono16k)
 
@@ -881,20 +901,7 @@ async def run_session(client, resume_handle: str | None,
                 print("  🔊 Speaker task started")
 
                 async def end_of_turn(proc, buf: bytearray) -> None:
-                    # Two separate concerns, handled separately:
-                    #   1. Mic echo guard — short, fixed (POST_MUTE_S).
-                    #      Reopens the mic promptly so the user's next
-                    #      sentence isn't swallowed.
-                    #   2. Playback drain — aplay's own ALSA buffer
-                    #      (--buffer-size=96000) can hold up to ~0.5s of
-                    #      audio that's been handed to it but hasn't
-                    #      actually played through the speaker yet. If the
-                    #      outer loop tears this `proc` down (new turn
-                    #      starts, reconnect, etc.) before that finishes,
-                    #      the last words of ADAM's sentence get cut off.
-                    #      This does NOT block clearing adam_speaking /
-                    #      reopening the mic — it only protects against
-                    #      the aplay process itself being killed too early.
+                    # Flush any remaining buffer in Python memory to aplay's stdin
                     pending_bytes = len(buf)
                     if buf and proc.poll() is None:
                         try:
@@ -906,75 +913,53 @@ async def run_session(client, resume_handle: str | None,
                             pass
 
                     bytes_per_sec = PLAYBACK_RATE * PLAYBACK_CHANNELS * 2  # s16 = 2 bytes/sample
-                    # FIX: pending_bytes only reflects whatever was left in
-                    # the local `buf` accumulator at the moment this turn
-                    # ended — but buf gets flushed to aplay's stdin in
-                    # 4096-byte increments THROUGHOUT the turn (see the
-                    # main receive loop's `if len(buf) >= 4096` write).
-                    # By the time end_of_turn() runs, buf is almost always
-                    # just the small leftover remainder since the last
-                    # flush — NOT the full sentence. That made est_drain_s
-                    # drastically underestimate how much audio was still
-                    # sitting in aplay's own internal ALSA buffer
-                    # (--buffer-size=96000 = up to ~0.5s at 48kHz stereo
-                    # s16) from all the earlier writes this turn, which is
-                    # exactly why sentence tails kept getting clipped —
-                    # the mic reopened/muted-drain math thought there was
-                    # almost nothing left to play when there often still
-                    # was. Since we can't reliably know how full ALSA's
-                    # buffer actually is from our side without querying
-                    # the driver directly, the safe fix is to always
-                    # account for close to the FULL configured buffer
-                    # window on top of whatever's still in `buf`, not just
-                    # the leftover fragment.
-                    # How much audio to assume is still sitting inside aplay's
-                    # own ALSA ring buffer, on top of whatever was left in `buf`.
-                    # This used to be written `96000 / bytes_per_sec`, mixing the
-                    # FRAME count from --buffer-size with a BYTES-per-second
-                    # divisor; `aplay -v` reports the driver actually grants
-                    # 62400 frames (1.3s), so neither the literal nor the "~0.5s"
-                    # in the comments above described this card. The 0.5s the old
-                    # arithmetic happened to produce is what stopped sentence
-                    # tails being clipped in practice, so it is preserved as an
-                    # explicit, measured, tunable value rather than corrected into
-                    # a 1.3s worst case — that would also add up to 0.8s to
-                    # mute_wait_s below, i.e. keep the mic shut that much longer
-                    # after every reply.
-                    ALSA_BUFFER_DRAIN_S = SPEAKER_DRAIN_ALLOWANCE_S
-                    est_drain_s = (pending_bytes / bytes_per_sec
-                                   if bytes_per_sec else 0.0) + ALSA_BUFFER_DRAIN_S
-                    # Track how long this specific aplay process still
-                    # needs before its buffer is safe to consider empty.
-                    # Read by the outer loop before it spawns a fresh
-                    # aplay/closes this one.
-                    drain_deadline[0] = time.time() + est_drain_s + 0.1
 
-                    # Wait scales with the realistic drain time (including
-                    # ALSA's own buffer, not just our leftover fragment),
-                    # capped higher than before since underestimating is
-                    # what caused the clipping in the first place — a
-                    # slightly longer mic-mute window on long replies is a
-                    # much smaller problem than cutting off words.
-                    mute_wait_s = max(POST_MUTE_S, min(est_drain_s, 1.8))
-                    await asyncio.sleep(mute_wait_s)
+                    # Wait for the ALSA hardware ring buffer to physically play out of the speaker.
+                    # On the Google VoiceHAT (sndrpigooglevoi), ALSA grants up to ~1.3s - 2.0s of buffer.
+                    # Rather than guessing a static timeout which either cuts off sentence tails or reopens
+                    # the mic prematurely (causing ADAM to hear its own voice at 22,000 RMS), we poll
+                    # /proc/asound/sndrpigooglevoi/pcm0p/sub0/status directly.
+                    # When aplay finishes playing, ALSA transitions to state != RUNNING (e.g. XRUN or closed)
+                    # or delay <= 480 frames (<= 10ms).
+                    status_path = "/proc/asound/sndrpigooglevoi/pcm0p/sub0/status"
+                    drain_start = time.time()
+                    max_drain_wait_s = (pending_bytes / bytes_per_sec if bytes_per_sec else 0.0) + 2.5
+                    while time.time() - drain_start < max_drain_wait_s:
+                        if proc.poll() is not None:
+                            break
+                        try:
+                            if not os.path.exists(status_path):
+                                break
+                            with open(status_path, "r") as f:
+                                status_txt = f.read()
+                            if "RUNNING" not in status_txt:
+                                break
+                            delay = None
+                            for line in status_txt.splitlines():
+                                if line.startswith("delay"):
+                                    delay = int(line.split(":")[1].strip())
+                                    break
+                            if delay is not None and delay <= 480:
+                                break
+                        except Exception:
+                            break
+                        await asyncio.sleep(0.025)
 
+                    # Acoustic room reverberation decay: allow 200ms for sound waves to dissipate
+                    # from the room before reopening the microphone, preventing acoustic echo.
+                    await asyncio.sleep(0.20)
+
+                    # Update drain deadline for outer cleanup logic
+                    drain_deadline[0] = time.time() + 0.1
+
+                    # Purge any microphone chunks that arrived while speaker audio was playing
                     drained = 0
                     while not mic_q.empty():
                         try: mic_q.get_nowait(); drained += 1
                         except asyncio.QueueEmpty: break
                     if drained:
                         print(f"  🧹 Drained {drained} echo chunks")
-                    # Report how much of the turn exceeded int16 full scale. This
-                    # used to warn about "audible distortion" and tell the user to
-                    # lower SPEAKER_GAIN and raise the ALSA volume instead — the
-                    # first half was right, the second half impossible: amixer
-                    # exposes no controls at all on this card. With SPEAKER_GAIN at
-                    # 1.0 Gemini's samples cannot exceed full scale by
-                    # construction, so anything reported here is resampler
-                    # overshoot and is soft-limited rather than flat-topped. A
-                    # non-trivial number means SPEAKER_GAIN has been raised in .env
-                    # past what the ceiling allows, and the distortion the user
-                    # described ("gain goes high, lots of noise") is back.
+
                     _tot = spk_total_samples[0]
                     if _tot:
                         _pct = 100.0 * spk_clip_samples[0] / _tot
@@ -985,22 +970,9 @@ async def run_session(client, resume_handle: str | None,
                                   f"from. Lower SPEAKER_GAIN in .env.")
                         spk_clip_samples[0] = 0
                         spk_total_samples[0] = 0
+
                     adam_speaking.clear()
                     mic_open_t[0] = time.time()   # arms the echo guard
-                    # FIX (v3): v2 removed the happy-fallback entirely to
-                    # stop emotions reverting to happy on every plain
-                    # reply — but that also removed the ONLY code that
-                    # ever reset the generic "speaking" placeholder face
-                    # back to resting once speech actually ended, so it
-                    # stayed stuck on screen indefinitely. The correct
-                    # fix distinguishes two cases:
-                    #   - Model deliberately called set_emotion() (love,
-                    #     angry, etc.) → that emotion persists, untouched.
-                    #   - No deliberate emotion was set, so the generic
-                    #     "speaking" placeholder was shown as a fallback
-                    #     → THAT specific placeholder resets to a resting
-                    #     face now that speech has ended, since nothing
-                    #     else will ever reset it otherwise.
                     if _face_is_generic_speaking[0]:
                         tft_set("happy")
                         _face_is_generic_speaking[0] = False
@@ -1104,7 +1076,7 @@ async def run_session(client, resume_handle: str | None,
                             kwargs={"benign_underrun": lambda: (
                                 not adam_speaking.is_set()
                                 and not song_playing.is_set()
-                                and time.time() > drain_deadline[0])},
+                                or out_q.empty())},
                             daemon=True).start()
                         print(f"  ✅ aplay: {PLAYBACK_DEVICE} {PLAYBACK_FORMAT} "
                               f"{PLAYBACK_RATE}Hz {PLAYBACK_CHANNELS}ch")
@@ -1133,7 +1105,16 @@ async def run_session(client, resume_handle: str | None,
                                     print("  ⚠️  Speaker watchdog fired")
                                     await end_of_turn(proc, buf)
                                     buf = bytearray()
-                                # aplay is held permanently open across turns to prevent VoiceHAT I2S clock wedging.
+                                elif not adam_speaking.is_set() and proc and proc.poll() is None:
+                                    # Feed digital silence to keep ALSA PCM active and prevent
+                                    # VoiceHAT DAPM power-down from suspending the audio amp into Broken Pipe.
+                                    try:
+                                        await asyncio.to_thread(
+                                            write_all, proc.stdin, b"\x00" * 3840,
+                                            PLAYBACK_CHANNELS * 2)
+                                        await asyncio.to_thread(proc.stdin.flush)
+                                    except Exception:
+                                        pass
                                 continue
                             except asyncio.CancelledError:
                                 # MUST re-raise — swallowing this here lets

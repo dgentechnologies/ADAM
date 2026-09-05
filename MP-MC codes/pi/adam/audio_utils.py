@@ -205,6 +205,57 @@ class _MicChain:
 _mic_chain = _MicChain()
 
 
+class _NoiseExpander:
+    """Downward expander / transparent noise reduction: smoothly quiets room
+    silence and background hiss without spectral distortion or cutting speech formants.
+
+    When speech is present (RMS > ambient * 1.25 or > 2200), gain opens immediately
+    (fast attack ~5ms) to 1.0 (unity gain, 0 dB). During intra-sentence pauses,
+    a 450ms release hangover holds the gain open. During room silence, gain drops
+    down to min_gain (~0.158 = -16 dB), reducing ambient room noise from ~2000 RMS
+    down to ~300 RMS (completely silent to Gemini VAD).
+    """
+    def __init__(self, floor_db: float = -16.0) -> None:
+        self.min_gain = float(10.0 ** (floor_db / 20.0))
+        self.current_gain = self.min_gain
+        self.ambient_rms = 2000.0
+
+    def process(self, chunk: np.ndarray) -> np.ndarray:
+        if chunk.size == 0:
+            return chunk
+        c_float = chunk.astype(np.float32)
+        rms = float(np.sqrt(np.mean(c_float ** 2)))
+
+        # Leaky tracker for ambient room noise floor (updates only on quiet stretches)
+        if rms < self.ambient_rms * 1.25:
+            self.ambient_rms = 0.98 * self.ambient_rms + 0.02 * rms
+
+        # With ENABLE_SERVOS=0, there is zero 50 Hz PWM electrical crosstalk.
+        # Normal conversational speech from 1-2m is 2,800 - 8,000 RMS.
+        speech_thr = max(2200.0, self.ambient_rms * 1.25)
+
+        if rms >= speech_thr:
+            target_gain = 1.0
+        elif rms <= self.ambient_rms * 1.05:
+            target_gain = self.min_gain
+        else:
+            low = self.ambient_rms * 1.05
+            ratio = (rms - low) / (speech_thr - low)
+            target_gain = self.min_gain + (1.0 - self.min_gain) * (ratio ** 2)
+
+        # Ultra-fast attack (5ms), smooth release (450ms)
+        if target_gain > self.current_gain:
+            self.current_gain = 0.15 * self.current_gain + 0.85 * target_gain
+        else:
+            self.current_gain = 0.95 * self.current_gain + 0.05 * target_gain
+
+        out = c_float * self.current_gain
+        return np.clip(out, -32768, 32767).astype(np.int16)
+
+
+_noise_expander = _NoiseExpander()
+
+
 # ── Which physical mic feeds the speech path ────────────────────────────
 # Measured on this hardware, 5.9s of AMBIENT room with ADAM stopped (so no
 # servo PWM), raw S32 before any filtering:
@@ -274,9 +325,10 @@ def _mic_ch_calibrate(l: np.ndarray, r: np.ndarray) -> None:
     dbl = 20.0 * math.log10(max(_mic_ch_peak[0], 1.0) / fs)
     dbr = 20.0 * math.log10(max(_mic_ch_peak[1], 1.0) / fs)
     cl, cr = _mic_ch_clip
-    if   cl and not cr: _mic_ch_mode[0] = "right"
+    if cl and not cr: _mic_ch_mode[0] = "right"
     elif cr and not cl: _mic_ch_mode[0] = "left"
-    else:               _mic_ch_mode[0] = "mix"
+    else: _mic_ch_mode[0] = "mix"
+
     print(f"  🎚️  Mic headroom L {dbl:+.1f} dBFS / R {dbr:+.1f} dBFS, "
           f"saturated samples L {cl} / R {cr} (raw, pre-filter) → speech "
           f"path uses {_mic_ch_mode[0].upper()}")
@@ -349,7 +401,8 @@ def s32_stereo_to_s16_mono_16k(raw: bytes) -> bytes:
     elif _m == "right": mono48 = _r
     else:               mono48 = (_l + _r) * 0.5
     mono16 = _mic_chain.process(mono48) / float(1 << S32_SHIFT)
-    return np.clip(mono16, -32768, 32767).astype(np.int16).tobytes()
+    pcm = np.clip(mono16, -32768, 32767).astype(np.int16)
+    return pcm.tobytes()
 
 def s32_stereo_to_s16_stereo_channels(raw: bytes) -> tuple[np.ndarray, np.ndarray]:
     """Same S32->S16 downshift as s32_stereo_to_s16_mono_16k, but returns

@@ -46,7 +46,7 @@ VOICE      = "Charon"
 # Hinglish (Hindi/English code-switching) needs no third code; it is covered by
 # listing both. Set to an empty string to fall back to full auto-detection.
 STT_LANGUAGE_CODES = [c.strip() for c in
-                      os.getenv("STT_LANGUAGE_CODES", "en-IN,hi-IN").split(",")
+                      os.getenv("STT_LANGUAGE_CODES", "").split(",")
                       if c.strip()]
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -93,8 +93,9 @@ CHUNK_FRAMES     = 1600      # 33ms at 48kHz
 # in audio_utils. It's effectively the mic's *digital gain*: smaller shift =
 # louder (and closer to clipping); +1 to the shift HALVES the level.
 #
-# S32_SHIFT=16 is the mathematically exact 1:1 scale: provides pristine headroom (18 dB),
-# leaving speech undistorted and dropping ambient room silence floor to ~400-500 RMS.
+# S32_SHIFT=16 is the native 32-to-16 bit downshift (divide by 65536). It provides
+# a quiet ambient noise floor (~300-600 RMS) and +25 dB clean headroom so speech
+# never clips or distorts, preserving vowel and consonant formants.
 S32_SHIFT        = int(os.getenv("MIC_S32_SHIFT", "16"))
 
 # ── SPEAKER SOFTWARE GAIN ───────────────────────────────────────────────────
@@ -199,10 +200,13 @@ MIC_LP_STOP_HZ = float(os.getenv("MIC_LP_STOP_HZ",
                                  str(GEMINI_SEND_RATE / 2)))   # 8000
 
 # Which physical mic feeds the SPEECH path: auto | mix | left | right.
-# Default to "right" to bypass the Left mic's 220Hz/330Hz harmonic buzz.
-MIC_CHANNEL = os.getenv("MIC_CHANNEL", "right").strip().lower()
+# Default to "mix": both Left and Right INMP441 mics are physically active and
+# acoustically correlated (r=0.70). Averaging them cancels ~4 dB of uncorrelated
+# sensor noise, giving optimal SNR.
+MIC_CHANNEL = os.getenv("MIC_CHANNEL", "mix").strip().lower()
 if MIC_CHANNEL not in ("auto", "mix", "left", "right"):
-    MIC_CHANNEL = "right"
+    MIC_CHANNEL = "mix"
+
 MIC_CH_CLIP_FRAC = float(os.getenv("MIC_CH_CLIP_FRAC", "0.995"))
 
 # THE HOLE IN THE ABOVE, AND WHAT CLOSES IT. "auto" decides by looking for
@@ -228,8 +232,9 @@ MIC_CH_CLIP_FRAC = float(os.getenv("MIC_CH_CLIP_FRAC", "0.995"))
 MIC_CH_WATCH_S         = float(os.getenv("MIC_CH_WATCH_S", "10.0"))
 MIC_CH_WATCH_MIN_CLIPS = int(os.getenv("MIC_CH_WATCH_MIN_CLIPS", "20"))
 
-# RMS threshold (in int16 scale) to flag human vocal presence for attention/idle tracking
-MIC_LIVE_RMS_THRESHOLD = int(os.getenv("MIC_LIVE_RMS_THRESHOLD", "700"))
+# RMS threshold (in int16 scale) to flag human vocal presence for attention/idle tracking.
+# At S32_SHIFT=16, ambient room noise sits at 300-600 RMS; speech sits at 2000-8000 RMS.
+MIC_LIVE_RMS_THRESHOLD = int(os.getenv("MIC_LIVE_RMS_THRESHOLD", "1200"))
 
 # ── ADAPTIVE SPEECH GATE (the production path) ──────────────────────────────
 # MIC_ADAPTIVE=1 is the default and means NO threshold below this line has to
@@ -820,6 +825,7 @@ SONG_PACE_FRAC    = float(os.getenv("SONG_PACE_FRAC", "0.9"))
 # NECK SERVO (pan only; tilt goes over UART to Pico via ESP32-CAM relay)
 # ═════════════════════════════════════════════════════════════════════════════
 
+ENABLE_SERVOS     = os.getenv("ENABLE_SERVOS", "0") == "1"
 NECK_GPIO_PIN     = 12
 NECK_SERVO_MIN_PW = 0.0005
 NECK_SERVO_MAX_PW = 0.0025

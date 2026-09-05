@@ -22,6 +22,7 @@ it so `from session import tft_set` keeps working for main.py.
 import threading
 
 from config import (
+    ENABLE_SERVOS,
     NECK_GPIO_PIN,
     NECK_SERVO_MIN_PW,
     NECK_SERVO_MAX_PW,
@@ -31,29 +32,32 @@ from config import (
 from esp32_link import esp_link
 
 pan_servo = None
-try:
-    from gpiozero import AngularServo
-    import warnings as _w
-    with _w.catch_warnings():
-        _w.simplefilter("ignore")
-        pan_servo = AngularServo(
-            NECK_GPIO_PIN,
-            initial_angle=None,          # Start DETACHED: gpiozero's default
-                                         # initial_angle=0 emits a PWM pulse at
-                                         # construction, snapping the servo to
-                                         # center the instant this module is
-                                         # imported (the boot-time jerk). None
-                                         # sends NO pulse, so the servo stays
-                                         # wherever it is until the first real
-                                         # servo_pan() call (active tracking,
-                                         # head gesture, or idle re-center).
-            min_angle=-90, max_angle=90,
-            min_pulse_width=NECK_SERVO_MIN_PW,
-            max_pulse_width=NECK_SERVO_MAX_PW,
-        )
-    print(f"✅ Pan servo on GPIO {NECK_GPIO_PIN}")
-except Exception as e:
-    print(f"⚠️  Pan servo unavailable: {e}")
+if ENABLE_SERVOS:
+    try:
+        from gpiozero import AngularServo
+        import warnings as _w
+        with _w.catch_warnings():
+            _w.simplefilter("ignore")
+            pan_servo = AngularServo(
+                NECK_GPIO_PIN,
+                initial_angle=None,          # Start DETACHED: gpiozero's default
+                                             # initial_angle=0 emits a PWM pulse at
+                                             # construction, snapping the servo to
+                                             # center the instant this module is
+                                             # imported (the boot-time jerk). None
+                                             # sends NO pulse, so the servo stays
+                                             # wherever it is until the first real
+                                             # servo_pan() call (active tracking,
+                                             # head gesture, or idle re-center).
+                min_angle=-90, max_angle=90,
+                min_pulse_width=NECK_SERVO_MIN_PW,
+                max_pulse_width=NECK_SERVO_MAX_PW,
+            )
+        print(f"✅ Pan servo on GPIO {NECK_GPIO_PIN}")
+    except Exception as e:
+        print(f"⚠️  Pan servo unavailable: {e}")
+else:
+    print("ℹ️  Servos disabled (ENABLE_SERVOS=0) — running in audio/vision mode")
 
 
 # Set while the pan servo is being driven, cleared once it has been released.
