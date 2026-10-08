@@ -6,7 +6,7 @@ made all of this necessary.
 
 ## 1. What the agent is
 
-`pcAPP/backend.py` is a Flask app on the Windows machine that registers a set of
+`adam-desktop/src/backend.py` is a Flask app on the Windows machine that registers a set of
 *p*actions* — volume, brightness, media keys, clipboard, screen lock, coding-task
 dispatch. It:
 
@@ -195,7 +195,7 @@ fails, set `LAPTOP_AGENT_IP` in `.env` to the PC's address as a fallback.
 | `adam/laptop_agent_client.py` | discovery, transport, `get_laptop_actions()` |
 | `adam/tool_handler.py` | `_handle_laptop_control()` — coercion, the untrusted-data label |
 | `adam/tools_schema.py` | the `laptop_control` declaration, its enum built from the live manifest |
-| `pcAPP/backend.py` | `@action` registry, `GET /actions`, the executors |
+| `adam-desktop/src/backend.py` | `@action` registry, `GET /actions`, the executors |
 | `adam/config.py` | `CLIPBOARD_MAX_CHARS` |
 | `adam/prompts.txt` | `clipboard_safety` |
 | `adam/adam_smoketest.py` | the `laptop` group — 65 assertions |

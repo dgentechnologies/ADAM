@@ -5,8 +5,8 @@
 **Target Path:** `MP-MC codes/pi/docs/tasks_left.md`  
 **Related Guides:**
 - [`setup.md`](file:///d:/Dgen%20Technologies%20Pvt.%20Ltd/ADAM/MP-MC%20codes/pi/docs/setup.md) — Tested bring-up guide for Pi Zero 2 W (Debian 13 Trixie)
-- [`ADAM_Mobile_App_Setup_Spec.md`](file:///d:/Dgen%20Technologies%20Pvt.%20Ltd/ADAM/mobileAPP/docs/ADAM_Mobile_App_Setup_Spec.md) — Mobile onboarding & Lite Mode spec
-- [`ADAM_App_Technical_Build_Spec.md`](file:///d:/Dgen%20Technologies%20Pvt.%20Ltd/ADAM/mobileAPP/docs/ADAM_App_Technical_Build_Spec.md) — Mobile app & Capacitor build architecture
+- [`ADAM_Mobile_App_Setup_Spec.md`](file:///d:/Dgen%20Technologies%20Pvt.%20Ltd/ADAM/adam-mobile/docs/ADAM_Mobile_App_Setup_Spec.md) — Mobile onboarding & Lite Mode spec
+- [`ADAM_App_Technical_Build_Spec.md`](file:///d:/Dgen%20Technologies%20Pvt.%20Ltd/ADAM/adam-mobile/docs/ADAM_App_Technical_Build_Spec.md) — Mobile app & Capacitor build architecture
 
 ---
 
@@ -89,7 +89,7 @@ Production units must allow out-of-the-box pairing with the **ADAM Companion App
 
 #### 2.1. Device Naming & Identity Specification
 * **Hardware Serial Number:** `DGEN-ADAM-XXXX` (e.g., `DGEN-ADAM-0007`), laser-engraved on the base and printed on the box packaging. Founder Edition units are `DGEN-ADAM-0001` through `DGEN-ADAM-0010`.
-* **BLE Advertisement Name:** `ADAM-[0-9A-F]{4}` (e.g., `ADAM-3F2A`), matching `DeviceShortId` in the mobile app types (`mobileAPP/packages/types/src/common.ts`). The 4-character suffix is derived from the last 2 bytes of the unit's hardware MAC address.
+* **BLE Advertisement Name:** `ADAM-[0-9A-F]{4}` (e.g., `ADAM-3F2A`), matching `DeviceShortId` in the mobile app types (`adam-mobile/packages/types/src/common.ts`). The 4-character suffix is derived from the last 2 bytes of the unit's hardware MAC address.
 * **Wi-Fi Hotspot Fallback SSID:** `ADAM-Setup-[0-9A-F]{4}` (e.g., `ADAM-Setup-3F2A`), matching `SetupSsid`. Broadcast as a 2.4GHz SoftAP if BLE is unavailable or pairing fails after 60s.
 
 #### 2.2. Hardware BLE Controller Architecture
@@ -248,7 +248,7 @@ Extending the modular laptop agent running on the user's laptop to turn ADAM int
 | `sleep_display` | **not implemented** | see 8.2.b |
 
 - [x] **8.1. Laptop Clipboard Read & Write Integration:**
-  - `read_clipboard` and `write_clipboard` are registered in `pcAPP/backend.py`'s `@action` registry and in the shared manifest. ADAM can answer *"What's on my clipboard?"*, act on that text, and write generated content back to the laptop's clipboard.
+  - `read_clipboard` and `write_clipboard` are registered in `adam-desktop/src/backend.py`'s `@action` registry and in the shared manifest. ADAM can answer *"What's on my clipboard?"*, act on that text, and write generated content back to the laptop's clipboard.
   - `pyperclip` **is** the dependency, as originally specified — `backend.py:564` (`read_clipboard`) and `:580` (`write_clipboard`) import it lazily inside the action bodies, and `build_exe.py` names it as a hidden import so PyInstaller cannot drop it. Only the action *names* diverged from this spec, not the library.
   - **Trust boundary:** clipboard contents are treated as untrusted *data*, never instructions. Enforced in three independent places — a permanent `clipboard_safety` section in `prompts.txt`, an `untrusted_user_data: True` label on the tool result, and truncation at `CLIPBOARD_MAX_CHARS` (4,000). The label travels with the content so a prompt edit cannot silently remove it.
   - Values are typed by the shared manifest (`none` / `int` / `str` / `enum`), with ints **clamped** to the declared range rather than trusted, and `str` capped at `MAX_STRING_VALUE_CHARS` (200,000).

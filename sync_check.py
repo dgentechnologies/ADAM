@@ -4,7 +4,7 @@ sync_check.py — verify the Pi and the laptop are running the same code
 ==============================================================================
 Two independent checks, both hash-based:
 
-    python sync_check.py              # shared files: pi tree vs pcAPP tree
+    python sync_check.py              # shared files: pi tree vs adam-desktop tree
     python sync_check.py --pi         # also: local pi tree vs the real Pi
     python sync_check.py --pi --host pi@adam-pi.local
 
@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PI_DIR = ROOT / "MP-MC codes" / "pi" / "adam"
-PC_DIR = ROOT / "pcAPP"
+PC_DIR = ROOT / "adam-desktop" / "src"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Files that must be BYTE-IDENTICAL in both trees.
@@ -75,7 +75,7 @@ def sha(path: Path) -> str:
 
 def check_shared() -> int:
     """Compare the files both trees must share."""
-    print("Shared protocol files (pi/adam  vs  pcAPP)")
+    print("Shared protocol files (pi/adam  vs  adam-desktop)")
     print("-" * 70)
     problems = 0
     for name in SHARED_FILES:
@@ -85,7 +85,7 @@ def check_shared() -> int:
             problems += 1
             continue
         if not b.exists():
-            print(f"  {RED}MISSING{RESET}  {name}  (not in pcAPP) — "
+            print(f"  {RED}MISSING{RESET}  {name}  (not in adam-desktop) — "
                   f"copy it: cp '{a}' '{b}'")
             problems += 1
             continue
@@ -96,7 +96,7 @@ def check_shared() -> int:
         else:
             print(f"  {RED}DIFFERS{RESET}  {name}")
             print(f"           pi/adam  {ha[:12]}  {a.stat().st_size} bytes")
-            print(f"           pcAPP    {hb[:12]}  {b.stat().st_size} bytes")
+            print(f"           adam-desktop    {hb[:12]}  {b.stat().st_size} bytes")
             print(f"           {YELLOW}One of these is stale. Decide which is "
                   f"correct, then copy it over the other.{RESET}")
             problems += 1

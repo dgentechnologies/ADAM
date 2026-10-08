@@ -1,0 +1,19 @@
+.venv/
+artifacts/
+config/local/*
+!config/local/.gitkeep
+__pycache__/
+.pytest_cache/
+.playwright-cli/
+*.pyc
+.env
+client_secret_*.json
+firebase-desktop-client.json
+build/
+dist/
+output/
+releases/*.exe
+releases/*.zip
+
+# Windows Explorer metadata is intentional for the branded project folder.
+!desktop.ini

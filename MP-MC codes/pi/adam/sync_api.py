@@ -45,6 +45,7 @@ write path.
 """
 
 import asyncio
+import hmac
 import json
 import time
 
@@ -78,8 +79,8 @@ _server = None
 # ═════════════════════════════════════════════════════════════════════════════
 
 _REASON = {200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found",
-           405: "Method Not Allowed", 413: "Payload Too Large",
-           500: "Internal Server Error"}
+           405: "Method Not Allowed", 408: "Request Timeout",
+           413: "Payload Too Large", 500: "Internal Server Error"}
 
 
 async def _reply(writer, status: int, payload: dict) -> None:
@@ -110,10 +111,17 @@ def _authorised(headers: dict) -> bool:
         auth = headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
             supplied = auth[7:].strip()
-    # compare_digest keeps the comparison from leaking the token's length and
-    # prefix through timing, which a plain == would.
-    import hmac
-    return hmac.compare_digest(supplied, SYNC_TOKEN)
+    # Compare as BYTES, not str. hmac.compare_digest raises TypeError on str
+    # containing non-ASCII ("comparing strings with non-ASCII characters is not
+    # supported"), and headers are attacker-controlled — so a token header with
+    # one accented character used to escape into the generic 500 handler and log
+    # a line, instead of being the plain 403 it is. Encoding first makes every
+    # malformed token take the same path as a wrong one.
+    #
+    # compare_digest (not ==) keeps the comparison from leaking the token's
+    # length and prefix through timing.
+    return hmac.compare_digest(supplied.encode("utf-8", "replace"),
+                               SYNC_TOKEN.encode("utf-8", "replace"))
 
 
 async def _read_body(reader, headers: dict):
@@ -126,7 +134,16 @@ async def _read_body(reader, headers: dict):
         return None, 413
     if length <= 0:
         return {}, None
-    raw = await reader.readexactly(length)
+    # Timeout the body read. Every other read in _handle is wrapped in
+    # wait_for(10s), but this one was not: a client could declare a legal
+    # Content-Length, send nothing, and hold this coroutine plus its socket
+    # open forever. IncompleteReadError only fires if the peer actually
+    # disconnects, so a peer that simply stalls was never caught. On a 512 MB
+    # Pi, accumulating stalled connections leaks file descriptors.
+    try:
+        raw = await asyncio.wait_for(reader.readexactly(length), timeout=10)
+    except asyncio.TimeoutError:
+        return None, 408
     try:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -135,6 +152,17 @@ async def _read_body(reader, headers: dict):
         return None, 400
     return data, None
 
+
+# Reads that expose PERSONAL data and therefore need the token, unlike the
+# schedule/todo reads which stay open so the companion app can show something
+# before it has been paired.
+#
+# Without this the Pi served the user's real name, saved memories and the last
+# 60 conversation turns to ANY device on the LAN, unauthenticated, over plain
+# HTTP on 0.0.0.0 — fine on a trusted home network, not fine on office, hostel
+# or hotel Wi-Fi, where `curl http://adam-pi.local:8766/api/conversations` from
+# any phone was enough.
+_SENSITIVE_GET = {"/api/memories", "/api/conversations"}
 
 _ROUTES_GET = {
     "/api/ping":          "_r_ping",
@@ -189,7 +217,14 @@ async def _handle(reader, writer) -> None:
             if fn is None:
                 await _reply(writer, 404, {"error": "unknown path", "path": path})
                 return
-            await _reply(writer, 200, await globals()[fn]())
+            auth = _authorised(headers)
+            if path in _SENSITIVE_GET and not auth:
+                await _reply(writer, 403, {
+                    "error": "forbidden",
+                    "reason": ("this read needs X-ADAM-Token — set SYNC_TOKEN "
+                               "in ~/adam/.env and pair the app")})
+                return
+            await _reply(writer, 200, await globals()[fn](auth))
             return
 
         if method in ("PUT", "POST"):
@@ -246,7 +281,7 @@ async def _handle(reader, writer) -> None:
 # lock around every read-modify-write below.
 # ═════════════════════════════════════════════════════════════════════════════
 
-async def _r_ping() -> dict:
+async def _r_ping(authorised: bool = False) -> dict:
     return {"ok": True, "app": "adam", "kind": "pi", "api": API_VERSION,
             "readonly": not bool(SYNC_TOKEN), "time": int(time.time()),
             "local": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -254,7 +289,7 @@ async def _r_ping() -> dict:
                              "laptop_pairing": laptop_pairing.available()}}
 
 
-async def _r_touch_assignments() -> dict:
+async def _r_touch_assignments(authorised: bool = False) -> dict:
     return {"ok": True, "api": API_VERSION, "assignments": touch_controls.read_assignments(),
             "sensors": touch_controls.SENSOR_INFO}
 
@@ -285,28 +320,33 @@ async def _w_laptop_unpair(body: dict, method: str):
         return 500, {"ok": False, "error": "The laptop connection could not be revoked"}
 
 
-async def _r_snapshot() -> dict:
+async def _r_snapshot(authorised: bool = False) -> dict:
     snap = scheduler.snapshot()
-    snap["memories"] = dict(memory)
+    # Gating /api/memories alone would have been theatre: the snapshot embeds
+    # the same dict, so an unauthenticated caller could just read it here.
+    # Omit the key entirely rather than send an empty one, so a client can tell
+    # "not allowed to see this" from "there are no memories".
+    if authorised:
+        snap["memories"] = dict(memory)
     return {"ok": True, "api": API_VERSION, "data": snap}
 
 
-async def _r_schedules() -> dict:
+async def _r_schedules(authorised: bool = False) -> dict:
     return {"ok": True, "api": API_VERSION,
             "data": scheduler.snapshot()["schedules"]}
 
 
-async def _r_todos() -> dict:
+async def _r_todos(authorised: bool = False) -> dict:
     return {"ok": True, "api": API_VERSION,
             "data": scheduler.snapshot()["todos"]}
 
 
-async def _r_memories() -> dict:
+async def _r_memories(authorised: bool = False) -> dict:
     return {"ok": True, "api": API_VERSION,
             "data": {k: v for k, v in memory.items()}}
 
 
-async def _r_conversations() -> dict:
+async def _r_conversations(authorised: bool = False) -> dict:
     log = conv_log if isinstance(conv_log, list) else []
     return {"ok": True, "api": API_VERSION, "total": len(log),
             "data": log[-_CONV_LIMIT:]}

@@ -1,8 +1,8 @@
 """Persistent, nonblocking touch-to-laptop controls.
 
 Consumes the existing ESP32 T/G packets without changing firmware. Raw presses
-are classified once; firmware gestures for mapped pads are filtered so a touch
-cannot also trigger the old robot reaction. Unmapped pads keep legacy behavior.
+are classified once. Single taps keep fixed robot reactions; custom gestures
+are holds on every pad and double/triple taps on Touch 3 only.
 """
 from __future__ import annotations
 
@@ -20,7 +20,8 @@ import uuid
 import laptop_actions
 
 SENSORS = ("touch1", "touch2", "touch3", "touch4")
-EVENTS = ("tap", "double", "hold")
+EVENTS = ("double", "triple", "hold")
+CUSTOM_EVENTS = {sensor: EVENTS if sensor == "touch3" else ("hold",) for sensor in SENSORS}
 SENSOR_INFO = {
     "touch1": {"label": "Left cheek", "gpio": 12},
     "touch2": {"label": "Right cheek", "gpio": 14},
@@ -35,8 +36,8 @@ def validate_assignments(value):
         raise ValueError("Choose a valid touch sensor")
     result = {}
     for sensor, events in value.items():
-        if not isinstance(events, dict) or set(events) - set(EVENTS):
-            raise ValueError("Choose tap, double or hold")
+        if not isinstance(events, dict) or set(events) - set(CUSTOM_EVENTS[sensor]):
+            raise ValueError("Single taps are fixed. Only Touch 3 supports custom double/triple taps.")
         result[sensor] = {}
         for event, binding in events.items():
             if not isinstance(binding, dict) or set(binding) - {"action", "value"}:
@@ -70,9 +71,15 @@ class AssignmentStore:
             if self.path.stat().st_size > 16384:
                 raise ValueError("Touch settings exceed the supported size")
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if data.get("version") != 1:
+            if data.get("version") not in (1, 2):
                 raise ValueError("Unsupported touch settings version")
-            return validate_assignments(data.get("assignments"))
+            assignments = data.get("assignments")
+            if data.get("version") == 1 and isinstance(assignments, dict):
+                assignments = {sensor: {event: binding for event, binding in events.items()
+                                       if event in CUSTOM_EVENTS[sensor]}
+                               for sensor, events in assignments.items()
+                               if sensor in CUSTOM_EVENTS and isinstance(events, dict)}
+            return validate_assignments(assignments)
         self.assignments = await asyncio.to_thread(read)
 
     def snapshot(self):
@@ -88,7 +95,7 @@ class AssignmentStore:
                     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
                                                      prefix=".touch-", delete=False) as handle:
                         temporary = Path(handle.name)
-                        json.dump({"version": 1, "assignments": validated}, handle, separators=(",", ":"))
+                        json.dump({"version": 2, "assignments": validated}, handle, separators=(",", ":"))
                         handle.flush()
                         os.fsync(handle.fileno())
                     os.chmod(temporary, 0o600)
@@ -109,7 +116,8 @@ class _Pad:
     started: float = 0
     released: float = -100
     pending: float | None = None
-    second: bool = False
+    taps: int = 0
+    reaction: int | None = None
     held: bool = False
     blocked: bool = False
     cycle: int = 0
@@ -142,40 +150,55 @@ class TouchClassifier:
             if pressed:
                 pad.cycle += 1
                 pad.started, pad.held = now, False
-                pad.second = pad.pending is not None and now - pad.pending <= self.DOUBLE_S
+                if pad.pending is None or now - pad.pending > self.DOUBLE_S:
+                    pad.taps = 0
+                pad.reaction = None
                 pad.blocked = bool(self.protected(sensor))
                 if pad.blocked:
-                    pad.pending = None
+                    pad.pending, pad.taps = None, 0
             else:
                 pad.released = now
                 if pad.blocked or pad.held:
-                    pad.pending = None
-                elif pad.second:
-                    pad.pending = None
-                    self._event(sensor, "double")
+                    pad.pending, pad.taps = None, 0
+                elif sensor == "touch3":
+                    pad.taps += 1
+                    if pad.taps == 3:
+                        pad.pending, pad.taps = None, 0
+                        self._event(sensor, "triple")
+                    else:
+                        pad.pending = now
                 else:
-                    pad.pending = now
+                    self._fixed_tap(sensor)
 
     def tick(self, now):
         for sensor, pad in self.pads.items():
             if (pad.pressed or pad.pending is not None) and self.protected(sensor):
-                pad.blocked, pad.pending = True, None
+                pad.blocked, pad.pending, pad.taps = True, None, 0
             if pad.pressed and not pad.blocked and not pad.held and now - pad.started >= self.HOLD_S:
-                pad.held, pad.pending = True, None
+                pad.held, pad.pending, pad.taps = True, None, 0
                 self._event(sensor, "hold")
             if not pad.pressed and pad.pending is not None and now - pad.pending >= self.DOUBLE_S:
-                pad.pending = None
-                self._event(sensor, "tap")
+                taps = pad.taps
+                pad.pending, pad.taps = None, 0
+                if taps == 2:
+                    self._event(sensor, "double")
+                else:
+                    self._fixed_tap(sensor)
+
+    def _fixed_tap(self, sensor):
+        if not self.assignments().get(sensor):
+            return  # Unconfigured firmware gestures were already forwarded.
+        code = self.pads[sensor].reaction or {"touch1": 1, "touch2": 1, "touch3": 3, "touch4": 2}[sensor]
+        self.legacy(code)
 
     def _event(self, sensor, event):
+        if event not in CUSTOM_EVENTS.get(sensor, ()):
+            return
         configured = self.assignments()
         if sensor not in configured or not configured[sensor]:
             return  # Firmware's unchanged gesture supplies the default.
         binding = configured[sensor].get(event)
         if binding is None:
-            code = {"touch1": 1, "touch2": 1, "touch3": 3}.get(sensor)
-            if code is not None:
-                self.legacy(code)
             return
         self.emit(sensor, event, binding)
 
@@ -189,8 +212,15 @@ class TouchClassifier:
         # arrived, discard the stale gesture rather than inventing an action.
         if not active:
             return
+        chord = code == 2 and len(active) == 2
+        if chord:
+            for sensor in active:
+                self.pads[sensor].blocked = True
+                self.pads[sensor].pending, self.pads[sensor].taps = None, 0
+        for sensor in active:
+            self.pads[sensor].reaction = code
         available = [s for s in active if not configured.get(s) or self.pads[s].blocked or self.protected(s)]
-        if not available or (code == 2 and len(available) != len(active)):
+        if not available:
             return
         signature = tuple((s, self.pads[s].cycle) for s in available)
         if self.legacy_seen.get(code) == signature:
@@ -201,6 +231,7 @@ class TouchClassifier:
     def reset_pending(self):
         for pad in self.pads.values():
             pad.pending = None
+            pad.taps, pad.reaction = 0, None
             pad.blocked = pad.pressed
 
 
@@ -339,7 +370,8 @@ async def stop_touch_controls():
 
 
 def capabilities():
-    return {"touch_assignments": _runtime is not None, "touch_events": _runtime is not None}
+    return {"touch_assignments": _runtime is not None, "touch_events": _runtime is not None,
+            "touch_gesture_policy": 2 if _runtime is not None else 0}
 
 
 async def save_assignments(assignments):

@@ -210,5 +210,5 @@ verified only by reading the code.
 | `adam/tools_schema.py` | the nine declarations |
 | `adam/sync_api.py` | HTTP read/write for the companion app |
 | `adam/prompts.txt` | `confirmation` pools; the reminder injection section |
-| `pcAPP/static/js/clock.js` | the Clock tab |
+| `adam-desktop/resources/static/js/clock.js` | the Clock tab |
 | `adam/config.py` | `SCHEDULE_FILE`, `CLOCK_JUMP_S`, `MISSED_GRACE_S` |

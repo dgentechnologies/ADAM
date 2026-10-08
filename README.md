@@ -35,7 +35,8 @@ ADAM/
 │   ├── esp32_tft_emotions/     # TFT emotion display firmware
 │   └── adam_neck_servo/        # Servo neck controller firmware
 │
-├── mobileAPP/                  # Mobile companion application (Turborepo monorepo)
+├── adam-desktop/               # Windows companion: source, resources, tools and releases
+├── adam-mobile/                # Android companion (Turborepo monorepo)
 ├── adam-web-demo/              # Web demonstration & relay server
 ├── Hardware_Docs/              # Schematics, blueprints, and setup documentation
 ├── design/                     # Hardware CAD / industrial design assets
@@ -43,6 +44,10 @@ ADAM/
 ```
 
 ---
+
+Companion projects: [ADAM Desktop](adam-desktop/README.md) ·
+[ADAM Mobile](adam-mobile/README.md). Desktop folder details are documented in
+[Project structure](adam-desktop/docs/PROJECT_STRUCTURE.md).
 
 ## Quick Start (v30)
 

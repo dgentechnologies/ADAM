@@ -3,7 +3,7 @@
 // tests the shipped code path, not a copy of it.
 const fs = require('fs');
 
-const SRC = fs.readFileSync('pcAPP/static/js/dashboard.js', 'utf8');
+const SRC = fs.readFileSync('adam-desktop/resources/static/js/dashboard.js', 'utf8');
 
 // ---- slice out setupPanelTabs by brace matching -------------------------
 const start = SRC.indexOf('function setupPanelTabs()');

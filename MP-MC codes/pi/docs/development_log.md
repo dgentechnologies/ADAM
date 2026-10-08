@@ -3591,7 +3591,7 @@ frame, and the agreement between the tool declarations, the handler's dispatch
 map and the router's kinds.
 
 **§16 parity against the PC app.** All 18 required actions are present in
-`pcAPP/backend.py`; zero missing. After resolving `value_type` the way the
+`adam-desktop/src/backend.py`; zero missing. After resolving `value_type` the way the
 `@action` decorator actually does — at runtime, from the shared manifest rather
 than from the decorator literal — **all 19 registrations agree with
 `laptop_actions.py`**: zero mismatches. The one action outside the parity set,

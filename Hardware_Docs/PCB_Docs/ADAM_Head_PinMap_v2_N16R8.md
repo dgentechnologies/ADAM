@@ -228,7 +228,54 @@ schematic changes, change it there — it is the single place pins are declared.
 
 ---
 
-## 7. Open items for the hardware team
+## 7. Verified build (2026-10-08)
+
+Both sketches compile clean against **esp32 Arduino core 3.3.12**, with
+`--warnings all`: **0 errors, 0 warnings** in either sketch.
+
+| Sketch | Flash | RAM | Free RAM |
+|---|---|---|---|
+| `esp32_s3_head` | 704,098 B — **33%** of the 2 MB OTA slot | 45,448 B — 13% | 282 KB |
+| `esp32_cam` | 378,049 B — **12%** of 3 MB | 34,332 B — 10% | 293 KB |
+
+Libraries: TFT_eSPI 2.5.43, NimBLE-Arduino 2.5.1.
+
+```bash
+arduino-cli compile \
+  --fqbn "esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=fatflash" \
+  "MP-MC codes/esp32_s3_head" --warnings all
+
+arduino-cli compile --fqbn esp32:esp32:esp32cam \
+  "MP-MC codes/esp32_cam" --warnings all
+```
+
+**`PSRAM=opi` is mandatory** on N16R8. The default `PSRAM=enabled` configures a
+quad interface and the 8 MB octal part will not be fully usable.
+
+The S3 build passing is itself evidence the pin map took effect: the sketch
+carries `#error` on `TFT_MOSI == 35 || TFT_SCLK == 36`, so a compile could only
+succeed with the corrected GPIO21/38 assignment loaded from
+`User_Setup_ADAM_S3.h`.
+
+Three defects were found and fixed only by actually compiling — they are worth
+knowing because they are not visible by reading:
+
+1. **The `.ino` prototype hoist.** The Arduino builder inserts generated
+   prototypes just below the includes. `feedChunk()`'s prototype names
+   `struct ChunkAsm`, so with the struct defined further down (next to the BLE
+   code, where it belongs) the generated prototype referenced an undeclared
+   type and every call site failed with the misleading
+   `'feedChunk' cannot be used as a function`. The struct is now hoisted above
+   all functions with a comment saying why it cannot be moved back.
+2. **NimBLE 2.x changed `onWrite`** to `onWrite(NimBLECharacteristic*,
+   NimBLEConnInfo&)`, and `getValue()` returns `NimBLEAttValue` rather than
+   `std::string`.
+3. **`NimBLEService::start()` is deprecated and does nothing** in 2.x —
+   services start with the *server*. The original call would have left the
+   characteristics unregistered, so BLE would have advertised and then failed
+   every read and write.
+
+## 8. Open items for the hardware team
 
 1. **Apply the GPIO21/GPIO38 change to the schematic and layout** before fab.
    Nothing else on this board is blocking.

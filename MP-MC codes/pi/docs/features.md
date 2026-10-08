@@ -16,7 +16,7 @@ reports are really "the piece that does that isn't running".
 | Machine | Runs | Provides |
 |---|---|---|
 | **Raspberry Pi Zero 2 W** | `~/adam/` (flat imports, no package) | the brain, audio, scheduler, memory, tools |
-| **Windows PC** | `pcAPP/` → `ADAM.exe` | laptop control target, 3D face mirror, Clock tab |
+| **Windows PC** | `adam-desktop/` → `ADAM.exe` | laptop control target, 3D face mirror, Clock tab |
 | **ESP32-CAM + RP2040 Pico** | `esp32_cam.ino` + Pico firmware | camera, TFT face, tilt servo, touch sensors |
 
 The Pi is the source of truth for everything stateful. The PC app is a **view**

@@ -1,0 +1,43 @@
+ADAM COMPANION FOR WINDOWS — 0.01
+8 October 2026
+
+Run adamV0.01.exe on Windows 10/11 x64 with Microsoft Edge WebView2 Runtime.
+Python and Node.js are not needed. Run as your normal Windows user.
+
+1. Keep the executable in a permanent folder.
+2. Set up ADAM with the Android app, then keep ADAM and this PC on the same network.
+3. Use the bottom profile icon to sign in with the same ADAM account as mobile.
+   The supplied Google Desktop OAuth configuration is included.
+4. Go to My ADAM > Connection. Choose an account device or enter ADAM's address.
+5. Authorize laptop control, then choose permissions in Controls.
+6. Customize touch shortcuts on Dashboard. Save preferences, then Apply to ADAM.
+
+NAVIGATION
+Dashboard: ADAM scene and touch shortcuts.
+Controls: permissions, local tests, pause/resume and history.
+My ADAM: connection, planner and memories.
+Workspace: your installed coding assistant, project and task output.
+Profile: account, sync and desktop preferences.
+
+TOUCH SHORTCUTS
+Touch 1, 2 and 4: long press.
+Touch 3: double tap, triple tap and long press.
+Single taps retain ADAM's built-in reactions. View rear reveals the fourth pad.
+Robot application requires the matching touch service with gesture policy 2.
+
+BACKGROUND OPERATION
+Closing the window keeps ADAM running in the system tray. Use the tray menu
+to reopen it or Quit. Launch at sign-in is optional in Profile & settings.
+
+PORT CONFLICTS
+ADAM reserves an available port and verifies its own process before opening
+the window. It saves the actual port for pairing and future launches. If the
+address/port of an already paired PC changes, authorize laptop control again.
+
+UPDATES AND DATA
+Quit ADAM before replacing the executable. Your data remains in %APPDATA%\ADAM.
+Check adamV0.01.exe.sha256 to identify this build.
+
+See UPDATE_REPORT.md for changes and reasons, and RELEASE.md for verification.
+This executable is unsigned. Physical ADAM and live cloud account exchange
+need acceptance testing; the Pi source extensions have not been deployed.

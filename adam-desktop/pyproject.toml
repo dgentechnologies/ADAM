@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+cache_dir = "artifacts/cache/pytest"
+
+[tool.ruff]
+src = ["src"]
+target-version = "py311"
+extend-exclude = ["artifacts", "design", "releases"]

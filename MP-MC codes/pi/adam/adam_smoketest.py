@@ -464,14 +464,14 @@ def t_laptop(c):
          CLIPBOARD_MAX_CHARS > 500)
 
     # --- both deployed copies are byte-identical (§16, §38) --------------
-    pc_copy = HERE.parents[2] / "pcAPP" / "laptop_actions.py"
+    pc_copy = HERE.parents[2] / "adam-desktop" / "src" / "laptop_actions.py"
     if pc_copy.exists():
         import hashlib
         h1 = hashlib.sha256((HERE / "laptop_actions.py").read_bytes()).hexdigest()
         h2 = hashlib.sha256(pc_copy.read_bytes()).hexdigest()
-        c.eq("pi and pcAPP copies of laptop_actions.py are identical", h1, h2)
+        c.eq("pi and adam-desktop copies of laptop_actions.py are identical", h1, h2)
     else:
-        c.skip("pi/pcAPP copy comparison", "pcAPP tree not present")
+        c.skip("pi/adam-desktop copy comparison", "adam-desktop tree not present")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -593,6 +593,95 @@ def t_router(c):
          f"{sorted(tool_handler._GEN_KIND)}")
     c.ok("every router kind is reachable from a tool",
          set(tool_handler._GEN_KIND.values()) <= set(mr.KINDS))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GROUP: security — the sync API is the only network-listening surface on this
+# device. It binds 0.0.0.0:8766 over plain HTTP, so every one of these
+# assertions is about what an arbitrary device on the same Wi-Fi can reach.
+#
+# Offline, like every other group: no socket is opened, the handlers are called
+# directly.
+# ═════════════════════════════════════════════════════════════════════════════
+
+@group("security", "sync API auth fails closed and personal data needs a token")
+def t_security(c):
+    import asyncio
+    try:
+        import sync_api as api
+        import memory_store
+    except ImportError as e:
+        c.skip("import sync_api", str(e))
+        return
+
+    saved = api.SYNC_TOKEN
+    try:
+        api.SYNC_TOKEN = "smoketest-token-not-a-real-secret"
+
+        # ── the token check ────────────────────────────────────────────────
+        c.ok("correct token accepted",
+             api._authorised({"x-adam-token": api.SYNC_TOKEN}))
+        c.ok("wrong token rejected",
+             not api._authorised({"x-adam-token": "wrong"}))
+        c.ok("absent token rejected", not api._authorised({}))
+        c.ok("Bearer form accepted",
+             api._authorised({"authorization": "Bearer " + api.SYNC_TOKEN}))
+
+        # hmac.compare_digest raises TypeError on non-ASCII str. Headers are
+        # attacker-controlled, so that turned a plain 403 into a 500 plus a log
+        # line. Must return False, never raise.
+        try:
+            c.ok("non-ASCII token returns False instead of raising",
+                 api._authorised({"x-adam-token": "tökén"}) is False)
+        except TypeError as e:
+            c.ok("non-ASCII token returns False instead of raising", False, str(e))
+
+        # ── fail CLOSED ───────────────────────────────────────────────────
+        api.SYNC_TOKEN = ""
+        c.ok("unset SYNC_TOKEN means read-only, NOT open",
+             not api._authorised({"x-adam-token": "anything"}))
+        api.SYNC_TOKEN = "smoketest-token-not-a-real-secret"
+
+        # ── personal data must not be readable unauthenticated ────────────
+        c.ok("/api/memories is classified sensitive",
+             "/api/memories" in api._SENSITIVE_GET)
+        c.ok("/api/conversations is classified sensitive",
+             "/api/conversations" in api._SENSITIVE_GET)
+        c.ok("/api/ping stays open", "/api/ping" not in api._SENSITIVE_GET)
+        c.ok("/api/schedules stays open",
+             "/api/schedules" not in api._SENSITIVE_GET)
+
+        # Gating /api/memories alone would be theatre — snapshot embeds the
+        # same dict. Prove the back door is shut with a recognisable canary.
+        canary = "__smoketest_canary_value__"
+        memory_store.memory["__smoketest_canary__"] = canary
+        try:
+            unauth = asyncio.run(api._r_snapshot(False))["data"]
+            auth = asyncio.run(api._r_snapshot(True))["data"]
+            c.ok("unauthenticated snapshot omits the memories key",
+                 "memories" not in unauth)
+            c.ok("authenticated snapshot includes memories",
+                 "memories" in auth)
+            c.ok("no memory value leaks into an unauthenticated snapshot",
+                 canary not in str(unauth))
+            c.ok("the same value IS present once authenticated",
+                 canary in str(auth))
+            c.ok("schedules still readable without a token (Clock tab)",
+                 "schedules" in unauth)
+            c.ok("todos still readable without a token (Clock tab)",
+                 "todos" in unauth)
+        finally:
+            memory_store.memory.pop("__smoketest_canary__", None)
+
+        # ── request body limits ───────────────────────────────────────────
+        c.ok("body size cap is set", getattr(api, "_MAX_BODY", 0) > 0)
+        c.ok("body cap is sane for a 512 MB Pi",
+             0 < api._MAX_BODY <= 4 * 1024 * 1024,
+             f"_MAX_BODY={getattr(api, '_MAX_BODY', None)}")
+        c.ok("408 has a reason phrase for the body-read timeout",
+             408 in api._REASON)
+    finally:
+        api.SYNC_TOKEN = saved
 
 
 # ═════════════════════════════════════════════════════════════════════════════

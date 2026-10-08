@@ -1,0 +1,81 @@
+/* A single-screen scene. Detailed controls only appear when a point is opened. */
+.sidebar{width:88px;padding:25px 12px 17px;align-items:stretch;background:#0b0c0f}
+.brand{padding:0 0 30px;text-align:center}.brand .brand-logo{width:58px;height:25px;object-fit:contain;mix-blend-mode:normal;margin:0 auto}
+.brand span,.rail-label,.nav-link>span,.rail-service,.profile-link>i,.profile-link>span:nth-child(2){display:none}
+.nav-link{justify-content:center;width:46px;height:46px;margin:0 auto 8px;padding:12px;border-radius:13px}
+.nav-link.active{background:#1d2027;box-shadow:inset 2px 0 0 #d7dbe4}
+.nav-link i{width:21px;height:21px}.profile-link{justify-content:center;padding:17px 0 0;border-color:#242730}.profile-link .avatar{width:35px;height:35px;background:#22262e}
+.profile-link[aria-current="page"] .avatar{outline:1px solid #b0b8c7;outline-offset:4px}
+.app-main{margin-left:88px}.nav-link[title],.profile-link[title]{position:relative}
+i[data-icon] svg{stroke-width:1.7}.sensor-label i.sensor-chevron{width:14px;height:14px;transform:none;color:#8e95a2}
+.sensor-pin[open] .sensor-label i.sensor-chevron{transform:rotate(180deg)}
+body[data-view="dashboard"]{height:100dvh;overflow:hidden}
+body[data-view="dashboard"] .app-main{height:100dvh;min-height:0;display:flex;flex-direction:column;background:#090a0c}
+body[data-view="dashboard"] .app-header{height:96px;flex:none;padding-top:23px;padding-bottom:18px;z-index:2}
+body[data-view="dashboard"] .app-header h1{font-size:27px;font-weight:500}
+body[data-view="dashboard"] #mainContent{flex:1;min-height:0;width:100%;max-width:none;padding-top:0;padding-bottom:16px;display:flex}
+#tab-dashboard.active{display:flex;flex-direction:column;min-height:0;flex:1;width:100%;animation:none}
+#tab-dashboard .dashboard-heading{flex:none;align-items:center;flex-direction:row;margin:1px 0 0;gap:12px;position:relative;z-index:2}
+.dashboard-heading h2{font-size:15px;font-weight:450;letter-spacing:-.2px}
+.dashboard-heading p{font-size:11px;margin-top:5px}
+#tab-dashboard .dashboard-heading .button{font-size:10px;min-height:34px;padding:8px 12px;color:var(--muted)}
+#tab-dashboard .dashboard-stage{flex:1;min-height:0;display:block;padding:0;margin:0 -16px;isolation:isolate;overflow:visible;gap:0}
+#tab-dashboard .robot-panel{position:absolute;inset:0;display:block;min-width:0;pointer-events:none;overflow:hidden}
+#tab-dashboard .robot-panel:before{inset:0 -20px;background:radial-gradient(ellipse at 52% 40%,#a1a7b20d,transparent 54%);z-index:-1}
+#tab-dashboard .robot-viewport{position:absolute;inset:0;width:100%;height:100%;min-width:0;max-width:none;pointer-events:auto}
+#tab-dashboard .robot-viewport canvas{position:absolute;width:100%;height:100%;inset:0}
+#tab-dashboard .robot-viewport img{width:70%;height:83%;inset:5% 15% 12%;object-fit:contain}
+#tab-dashboard .model-label{position:absolute;bottom:69px;left:50%;transform:translateX(-50%);z-index:2;font-size:8px;letter-spacing:2px;white-space:nowrap}
+#tab-dashboard .robot-caption{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);z-index:2;white-space:nowrap;flex-wrap:nowrap;pointer-events:auto;font-size:10px;gap:15px}
+#tab-dashboard .model-help{position:absolute;bottom:18px;left:0;right:0;text-align:center;font-size:9px;color:#6c6f78}
+#tab-dashboard .touch-footer{flex:none;min-height:55px;padding:9px 0 11px;margin:0;align-items:center;flex-direction:row;gap:12px;border-top:1px solid #ffffff0a}
+#tab-dashboard .touch-footer>div:first-child{font-size:10px;max-width:none;min-width:0}
+#tab-dashboard .touch-footer .button-row{flex-wrap:nowrap;justify-content:flex-end}
+#tab-dashboard .touch-footer .button{font-size:11px;min-height:35px;padding:9px 15px}
+#tab-dashboard .stat-grid{flex:none;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0 0;border-color:#ffffff0a}
+#tab-dashboard .stat-card{gap:8px;max-width:40%}
+#tab-dashboard .stat-card>i{width:15px;height:15px}
+#tab-dashboard .stat-card span{display:none}
+#tab-dashboard .stat-card strong{margin:0;font-size:10px;color:var(--quiet)}
+.sensor-controls{position:absolute;inset:0;pointer-events:none;z-index:5}
+.sensor-pin{position:absolute;width:155px;pointer-events:auto;margin:0;z-index:1}
+.sensor-pin[open]{z-index:15}
+.sensor-pin[data-point="touch1"]{left:8%;top:39%}
+.sensor-pin[data-point="touch2"]{right:8%;top:39%}
+.sensor-pin[data-point="touch3"]{left:18%;top:12%}
+.sensor-pin[data-point="touch4"]{right:12%;top:16%}
+.sensor-pin>summary{display:flex;align-items:center;gap:11px;min-height:42px;padding:7px 0;border-bottom:1px solid #676b775c;font-size:12px;color:#cbccd2;list-style:none;user-select:none;white-space:nowrap;line-height:1.3;transition:color .18s,border-color .18s}
+.sensor-pin>summary::-webkit-details-marker{display:none}
+.sensor-pin>summary::marker{content:""}
+.sensor-pin[open]>summary{margin-bottom:0;color:#fff;border-color:#d3d6df}
+.sensor-pin>summary:hover{color:#fff;border-color:#b2b6c0}
+.sensor-index{font-variant-numeric:tabular-nums;font-size:9px;color:#666c78;letter-spacing:1px}
+.sensor-chevron{margin-left:auto;font-size:17px;line-height:1;transform:translateY(-3px);color:#a5a8b2}
+.sensor-pin[open] .sensor-chevron{transform:translateY(3px) rotate(180deg)}
+.sensor-menu{position:fixed;padding:18px;background:#14161af5;border:1px solid #3a3e47;border-radius:15px;box-shadow:0 18px 60px #0009;backdrop-filter:blur(20px);max-height:calc(100dvh - 32px);overflow:auto;text-align:left;width:288px;z-index:30}
+.sensor-menu-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 13px}
+.sensor-menu-heading h3{font-size:13px;font-weight:500}
+.sensor-menu-heading .eyebrow{font-size:8px;letter-spacing:1px}
+.sensor-menu .sensor-event{margin-top:12px;grid-template-columns:minmax(0,1fr) 30px;gap:7px}
+.sensor-menu .sensor-event label{font-size:11px!important;gap:6px!important}
+.sensor-menu .sensor-event select{font-size:12px;min-height:35px}
+.sensor-menu .sensor-event .icon-button{width:30px;height:30px;min-height:30px;margin-top:23px}
+.sensor-menu .sensor-value{font-size:12px;min-height:34px}
+.sensor-menu .help{font-size:10px;margin-top:15px;padding-top:12px;border-top:1px solid #ffffff0c}
+.sensor-menu{padding:17px;border-radius:17px;background:linear-gradient(145deg,rgba(55,61,74,.59),rgba(16,19,26,.69));border:1px solid rgba(220,230,250,.19);border-top-color:rgba(235,241,255,.32);box-shadow:0 22px 64px #0008,inset 0 1px 0 #ffffff0c,inset 0 -1px 0 #ffffff04;backdrop-filter:blur(28px) saturate(145%);-webkit-backdrop-filter:blur(28px) saturate(145%)}
+.sensor-menu .sensor-event:first-child{margin-top:0}.sensor-menu .sensor-event+.sensor-event{padding-top:13px;border-top:1px solid #e1e8ff12}.sensor-menu .sensor-event label{color:#b7c0d0;letter-spacing:.15px;font-weight:450}
+.sensor-menu .sensor-event select,.sensor-menu .sensor-value{background-color:#060a123b;border:1px solid #e2e9ff24;border-radius:9px;box-shadow:inset 0 1px 0 #ffffff03;color:#eef1f7;transition:border-color .15s,background-color .15s}.sensor-menu .sensor-event select{min-height:37px}.sensor-menu select option{background:#171b24;color:#eef1f7}.sensor-menu select:hover,.sensor-menu .sensor-value:hover{border-color:#e2e9ff50;background-color:#ffffff08}
+.sensor-menu .sensor-event .icon-button{border:1px solid #e2e9ff26;background:#ffffff06;color:#d3dbea;border-radius:9px;margin-top:24px}.sensor-menu .sensor-event .icon-button:hover{background:#ffffff15;border-color:#e2e9ff60}
+.sensor-menu>.button{font-size:10px;margin-top:9px;min-height:26px;text-decoration:none;color:#bac4d6}.sensor-menu>.button i{width:12px;height:12px}
+@supports not (backdrop-filter:blur(1px)){.sensor-menu{background:#1a1e27}}
+.sensor-lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible}
+.sensor-lines path{fill:none;stroke:#868e9f66;stroke-width:1;vector-effect:non-scaling-stroke}
+.sensor-lines circle{fill:#b3bac8;stroke:#11141a;stroke-width:3;vector-effect:non-scaling-stroke}
+.sensor-lines .anchor-ring{fill:none;stroke:#a0a9b542;stroke-width:1}
+#tab-dashboard .model-label{display:none}
+#tab-dashboard .robot-caption{bottom:21px}
+#tab-dashboard .model-help{bottom:4px}
+@media(max-height:700px){body[data-view="dashboard"] .app-header{height:79px;padding-top:16px;padding-bottom:12px}.dashboard-heading p{display:none}#tab-dashboard .model-label{bottom:51px}#tab-dashboard .robot-caption{bottom:20px}#tab-dashboard .model-help{bottom:4px}#tab-dashboard .stat-grid{padding-top:9px}#tab-dashboard .touch-footer{min-height:48px}body[data-view="dashboard"] #mainContent{padding-bottom:11px}.sensor-pin[data-point="touch3"]{top:8%}.sensor-pin[data-point="touch4"]{top:13%}}
+@media(max-width:1100px){.sensor-pin{width:137px}.sensor-pin[data-point="touch1"]{left:4%}.sensor-pin[data-point="touch2"]{right:4%}.sensor-pin[data-point="touch3"]{left:12%}.sensor-pin[data-point="touch4"]{right:7%}.sensor-pin>summary{font-size:11px;gap:8px}}
+@media(max-width:770px){body[data-view="dashboard"] .app-header{padding-left:18px;padding-right:18px}body[data-view="dashboard"] #mainContent{padding-left:18px;padding-right:18px}#tab-dashboard .dashboard-stage{margin:0 -8px}.sensor-pin{width:122px}.sensor-pin[data-point="touch1"]{left:1%;top:42%}.sensor-pin[data-point="touch2"]{right:1%;top:42%}.sensor-pin[data-point="touch3"]{left:7%;top:11%}.sensor-pin[data-point="touch4"]{right:3%;top:19%}#tab-dashboard .touch-footer>div:first-child{font-size:9px;max-width:43%}#tab-dashboard .stat-card:last-child{display:none}.sensor-index{font-size:8px}.dashboard-heading h2{font-size:13px}}
+@media(max-width:540px){body[data-view="dashboard"] .app-header{height:81px;min-height:0;flex-direction:row;align-items:center;gap:10px}body[data-view="dashboard"] .app-header h1{font-size:21px}body[data-view="dashboard"] .app-header .eyebrow{display:none}.status-pill{max-width:130px;font-size:9px}.dashboard-heading p{display:none}#tab-dashboard .dashboard-heading h2{font-size:11px}#tab-dashboard .dashboard-heading .button{font-size:0;padding:7px;gap:0;width:32px}.sensor-pin{width:103px}.sensor-pin>summary{font-size:10px;gap:5px}.sensor-pin[data-point="touch3"]{left:1%;top:14%}.sensor-pin[data-point="touch4"]{right:0;top:23%}.sensor-pin[data-point="touch1"]{top:49%;left:0}.sensor-pin[data-point="touch2"]{top:58%;right:0}#tab-dashboard .touch-footer{min-height:77px;flex-wrap:wrap;gap:8px}#tab-dashboard .touch-footer>div:first-child{max-width:100%;width:100%}#tab-dashboard .touch-footer .button-row{width:100%;justify-content:space-between}#tab-dashboard .touch-footer .button{padding:8px 12px;font-size:10px}#tab-dashboard .stat-card strong{font-size:9px}}

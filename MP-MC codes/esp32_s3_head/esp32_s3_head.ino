@@ -74,6 +74,7 @@
 #include <Arduino.h>
 #include <esp_camera.h>
 #include <esp_heap_caps.h>
+#include <esp_mac.h>        // esp_read_mac / ESP_MAC_WIFI_STA (core 3.x)
 #include <driver/ledc.h>
 #include <TFT_eSPI.h>
 #include <NimBLEDevice.h>
@@ -82,6 +83,29 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // VERSION
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// BLE chunk reassembly state.
+//
+// Declared up here, before any function, ON PURPOSE. The Arduino .ino builder
+// hoists auto-generated function prototypes to just below the includes; the
+// prototype for feedChunk() names this struct, so if the struct were defined
+// further down (next to the BLE code where it belongs) the generated prototype
+// would reference an undeclared type and the build would fail with a confusing
+// "feedChunk cannot be used as a function" at every call site.
+// ─────────────────────────────────────────────────────────────────────────────
+static const size_t   CHUNK_ASM_MAX    = 1024;
+static const uint32_t CHUNK_TIMEOUT_MS = 10000;
+
+struct ChunkAsm {
+    String   buf;
+    int      expect  = -1;   // total chunk count, -1 = idle
+    int      next    = 0;    // next index we require
+    uint32_t startMs = 0;
+    void reset() { buf = ""; expect = -1; next = 0; startMs = 0; }
+};
+
+static ChunkAsm asmWifi, asmAiCfg, asmLoc;
+
 #define FW_NAME     "adam-head-s3"
 #define FW_VERSION  "1.0.0"
 
@@ -488,28 +512,15 @@ static char     pairingNonce[9]   = {0};
 // So the app sends frames: {"i":<idx>,"n":<total>,"d":"<slice>"} and this
 // reassembles them. An incomplete transfer is discarded after a timeout rather
 // than being forwarded half-formed to nmcli.
-static const size_t   CHUNK_ASM_MAX     = 1024;
-static const uint32_t CHUNK_TIMEOUT_MS  = 10000;
-
-struct ChunkAsm {
-    String   buf;
-    int      expect = -1;    // total chunk count, -1 = idle
-    int      next   = 0;     // next index we require
-    uint32_t startMs = 0;
-    void reset() { buf = ""; expect = -1; next = 0; startMs = 0; }
-};
-
-static ChunkAsm asmWifi, asmAiCfg, asmLoc;
-
 // Returns true when a complete payload is assembled into `out`.
-static bool feedChunk(ChunkAsm &a, const std::string &raw, String &out) {
+static bool feedChunk(ChunkAsm &a, const char *raw, String &out) {
     uint32_t now = millis();
     if (a.expect >= 0 && (now - a.startMs) > CHUNK_TIMEOUT_MS) {
         DBG("[ble] chunk transfer timed out, discarding\n");
         a.reset();
     }
 
-    String s(raw.c_str());
+    String s(raw ? raw : "");
 
     // Un-chunked single write: accept it only if it is plainly a whole JSON
     // object and not a chunk frame. Keeps the simple case simple.
@@ -607,9 +618,9 @@ static void relayLocation(const String &payload) {
 }
 
 class WifiCB : public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *c) override {
+    void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) override {
         String whole;
-        if (feedChunk(asmWifi, c->getValue(), whole)) {
+        if (feedChunk(asmWifi, c->getValue().c_str(), whole)) {
             relayWifi(whole);
             PiLink.print("PROV:END\n");
             setProvStatus("{\"status\":\"connecting\"}");
@@ -618,16 +629,16 @@ class WifiCB : public NimBLECharacteristicCallbacks {
 };
 
 class AiCfgCB : public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *c) override {
+    void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) override {
         String whole;
-        if (feedChunk(asmAiCfg, c->getValue(), whole)) relayAiCfg(whole);
+        if (feedChunk(asmAiCfg, c->getValue().c_str(), whole)) relayAiCfg(whole);
     }
 };
 
 class LocCB : public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *c) override {
+    void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) override {
         String whole;
-        if (feedChunk(asmLoc, c->getValue(), whole)) relayLocation(whole);
+        if (feedChunk(asmLoc, c->getValue().c_str(), whole)) relayLocation(whole);
     }
 };
 
@@ -692,7 +703,11 @@ static void startBle() {
         BLE_CHR_LOC_UUID, NIMBLE_PROPERTY::WRITE);
     cLoc->setCallbacks(new LocCB());
 
-    svc->start();
+    // NimBLE 2.x starts services with the SERVER, not individually —
+    // NimBLEService::start() is deprecated there and does nothing. Starting the
+    // server is what actually registers the characteristics, so this line is
+    // load-bearing rather than cosmetic.
+    srv->start();
 
     NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
     adv->addServiceUUID(BLE_SVC_UUID);

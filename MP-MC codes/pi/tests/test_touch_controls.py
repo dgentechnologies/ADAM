@@ -31,102 +31,97 @@ class ClassifierTests(unittest.TestCase):
         self.classifier.feed([0, 0, 0, 0], 0)
         return self.classifier
 
-    def test_single_tap_waits_for_double_window_and_fires_once(self):
-        c = self.build(mapping(tap="volume_up"))
-        c.feed([1, 0, 0, 0], .1)
-        c.firmware_gesture(1, .11)
-        c.feed([0, 0, 0, 0], .2)
-        c.tick(.49)
-        self.assertEqual(self.events, [])
-        c.tick(.51)
+    def test_single_tap_keeps_fixed_reaction_even_on_a_configured_pad(self):
+        c=self.build(mapping(hold="volume_up"))
+        c.feed([1,0,0,0], .1)
+        c.firmware_gesture(1,.11)
+        c.feed([0,0,0,0], .2)
         c.tick(1)
-        self.assertEqual([(e[0], e[1]) for e in self.events], [("touch1", "tap")])
-        self.assertEqual(self.legacy, [])
-
-    def test_double_tap_never_also_dispatches_single(self):
-        c = self.build(mapping(tap="volume_up", double="volume_down"))
-        for state, when in [(1, .1), (0, .2), (1, .3), (0, .4)]:
-            c.feed([state, 0, 0, 0], when)
-        c.tick(1)
-        self.assertEqual([e[1] for e in self.events], ["double"])
-
-    def test_long_press_never_repeats_or_dispatches_tap_on_release(self):
-        c = self.build(mapping(tap="volume_up", hold="volume_mute"))
-        c.feed([1, 0, 0, 0], .1)
-        for when in (.4, .76, 1.4, 2.4):
-            c.tick(when)
-            c.firmware_gesture(1, when)
-        c.feed([0, 0, 0, 0], 2.5)
-        c.tick(3)
-        self.assertEqual([e[1] for e in self.events], ["hold"])
-        self.assertEqual(self.legacy, [])
-
-    def test_unmapped_stop_preserves_legacy_and_deduplicates_firmware_repeats(self):
-        c = self.build()
-        c.feed([0, 0, 1, 0], .1)
-        for when in (.22, .4, .6, .8):
-            c.firmware_gesture(3, when)
-        c.feed([0, 0, 0, 0], 1)
-        c.feed([0, 0, 1, 0], 1.2)
-        c.firmware_gesture(3, 1.35)
-        self.assertEqual(self.legacy, [3, 3])
-        self.assertEqual(self.events, [])
-
-    def test_unmapped_cheek_and_petting_chord_keep_their_gestures(self):
-        c = self.build()
-        c.feed([1, 0, 0, 0], .1)
-        c.firmware_gesture(1, .11)
-        c.feed([0, 0, 1, 1], .2)
-        c.firmware_gesture(2, .21)
-        c.firmware_gesture(2, .4)
-        self.assertEqual(self.legacy, [1, 2])
-
-    def test_unmapped_event_on_configured_pad_falls_back_once(self):
-        c = self.build(mapping(hold="volume_mute"))
-        c.feed([1, 0, 0, 0], .1)
-        c.firmware_gesture(1, .11)
-        c.feed([0, 0, 0, 0], .2)
-        c.tick(.51)
         self.assertEqual(self.events, [])
         self.assertEqual(self.legacy, [1])
 
-    def test_explicit_none_suppresses_reaction_but_protected_press_keeps_stop(self):
-        protected = {"value": False}
-        c = self.build(mapping("touch3", tap="none", hold="volume_mute"),
-                       lambda sensor: protected["value"])
-        c.feed([0, 0, 1, 0], .1)
-        c.firmware_gesture(3, .23)
-        c.feed([0, 0, 0, 0], .3)
-        c.tick(.61)
-        self.assertEqual(self.legacy, [])
-        self.assertEqual(self.events[0][2]["action"], "none")
-        self.events.clear()
-        protected["value"] = True
-        c.feed([0, 0, 1, 0], 1)
-        c.firmware_gesture(3, 1.15)
-        protected["value"] = False  # Alarm dismissed while the same pad is held.
-        c.tick(2)
-        c.firmware_gesture(3, 2)
-        c.feed([0, 0, 0, 0], 2.1)
-        c.tick(3)
-        self.assertEqual(self.legacy, [3])
+    def test_touch3_double_waits_for_a_possible_third_tap(self):
+        c=self.build(mapping("touch3", double="volume_down", triple="volume_up"))
+        for state,when in [(1,.1),(0,.2),(1,.3),(0,.4)]:
+            c.feed([0,0,state,0],when)
+        c.tick(.69)
         self.assertEqual(self.events, [])
+        c.tick(.71)
+        self.assertEqual([e[1] for e in self.events], ["double"])
+        self.assertEqual(self.legacy, [])
 
-    def test_pad_already_held_at_start_does_not_execute_a_shortcut(self):
-        events = []
-        c = touch.TouchClassifier(lambda: mapping(hold="volume_mute"),
-                                  lambda *event: events.append(event), lambda code: None)
-        c.feed([1, 0, 0, 0], 0)
+    def test_touch3_triple_never_also_dispatches_double_or_single(self):
+        c=self.build(mapping("touch3", double="volume_down", triple="volume_up"))
+        for state,when in [(1,.1),(0,.2),(1,.3),(0,.4),(1,.5),(0,.6)]:
+            c.feed([0,0,state,0],when)
+            if state:c.firmware_gesture(3,when+.01)
         c.tick(2)
-        c.feed([0, 0, 0, 0], 3)
-        c.tick(4)
-        self.assertEqual(events, [])
+        self.assertEqual([e[1] for e in self.events], ["triple"])
+        self.assertEqual(self.legacy, [])
 
-    def test_wrong_sensor_and_private_clipboard_actions_are_rejected(self):
-        for bad in ({"top": {}}, mapping(tap="write_clipboard"), mapping(tap="dispatch_coding_task"),
-                    {"touch1": {"swipe": {"action": "none"}}}):
-            with self.assertRaises(ValueError):
-                touch.validate_assignments(bad)
+    def test_two_separate_touch3_taps_keep_two_fixed_reactions(self):
+        c=self.build(mapping("touch3", double="volume_up", hold="none"))
+        for state,when in [(1,.1),(0,.2),(1,.7),(0,.8)]:
+            c.feed([0,0,state,0],when)
+        c.tick(1.2)
+        self.assertEqual(self.events, [])
+        self.assertEqual(self.legacy, [3,3])
+
+    def test_long_press_fires_once_on_every_pad_with_no_trailing_tap(self):
+        for index,sensor in enumerate(touch.SENSORS):
+            c=self.build(mapping(sensor, hold="volume_mute"))
+            states=[0]*4;states[index]=1
+            c.feed(states,.1)
+            for when in (.4,.76,1.4,2.4):
+                c.tick(when)
+                c.firmware_gesture({0:1,1:1,2:3,3:2}[index],when)
+            c.feed([0]*4,2.5);c.tick(3)
+            self.assertEqual([(e[0],e[1]) for e in self.events], [(sensor,"hold")])
+            self.assertEqual(self.legacy, [])
+
+    def test_second_press_held_produces_hold_only(self):
+        c=self.build(mapping("touch3",double="volume_down",hold="volume_mute"))
+        c.feed([0,0,1,0],.1);c.feed([0,0,0,0],.2)
+        c.feed([0,0,1,0],.3);c.tick(1)
+        c.feed([0,0,0,0],1.2);c.tick(2)
+        self.assertEqual([e[1] for e in self.events],["hold"])
+        self.assertEqual(self.legacy,[])
+
+    def test_unmapped_stop_preserves_legacy_and_deduplicates_repeats(self):
+        c=self.build();c.feed([0,0,1,0],.1)
+        for when in (.22,.4,.6,.8):c.firmware_gesture(3,when)
+        c.feed([0,0,0,0],1);c.feed([0,0,1,0],1.2);c.firmware_gesture(3,1.35)
+        self.assertEqual(self.legacy,[3,3]);self.assertEqual(self.events,[])
+
+    def test_petting_chord_keeps_reaction_and_cancels_custom_holds(self):
+        c=self.build({**mapping("touch3",hold="volume_up"),**mapping("touch4",hold="volume_down")})
+        c.feed([0,0,1,1],.1);c.firmware_gesture(2,.11);c.firmware_gesture(2,.4)
+        c.tick(1);c.feed([0]*4,1.2);c.tick(2)
+        self.assertEqual(self.legacy,[2]);self.assertEqual(self.events,[])
+
+    def test_protected_state_stays_latched_until_finger_releases(self):
+        protected={"value":True}
+        c=self.build(mapping("touch3",hold="volume_mute"),lambda sensor:protected["value"])
+        c.feed([0,0,1,0],.1);c.firmware_gesture(3,.2)
+        protected["value"]=False;c.tick(1);c.firmware_gesture(3,1)
+        c.feed([0]*4,1.2);c.tick(2)
+        self.assertEqual(self.legacy,[3]);self.assertEqual(self.events,[])
+
+    def test_pad_held_at_start_does_not_execute(self):
+        events=[]
+        c=touch.TouchClassifier(lambda:mapping(hold="volume_mute"),lambda *e:events.append(e),lambda code:None)
+        c.feed([1,0,0,0],0);c.tick(2);c.feed([0]*4,3);c.tick(4)
+        self.assertEqual(events,[])
+
+    def test_fixed_taps_and_other_pad_multitaps_are_rejected(self):
+        for bad in (mapping(tap="none"),mapping(double="volume_up"),mapping("touch4",triple="volume_down"),
+                    mapping(hold="write_clipboard"),mapping(hold="dispatch_coding_task"),{"top":{}}):
+            with self.assertRaises(ValueError):touch.validate_assignments(bad)
+
+    def test_legacy_in_memory_tap_mapping_can_never_execute(self):
+        c=self.build(mapping(tap="volume_up"))
+        c.feed([1,0,0,0],.1);c.feed([0]*4,.2);c.tick(1)
+        self.assertEqual(self.events,[]);self.assertEqual(self.legacy,[1])
 
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
@@ -148,7 +143,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.directory.cleanup()
 
     async def test_persisted_ack_survives_restart_and_failed_save_keeps_old_state(self):
-        expected = touch.validate_assignments(mapping(tap="volume_up"))
+        expected = touch.validate_assignments(mapping(hold="volume_up"))
         self.assertEqual(await self.store.save(expected), expected)
         replacement = touch.AssignmentStore(self.store.path)
         await replacement.load()
@@ -156,7 +151,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         before = self.store.path.read_bytes()
         with patch.object(touch.os, "replace", side_effect=OSError("write failed")):
             with self.assertRaises(OSError):
-                await self.store.save(mapping(tap="volume_down"))
+                await self.store.save(mapping(hold="volume_down"))
         self.assertEqual(self.store.snapshot(), expected)
         self.assertEqual(self.store.path.read_bytes(), before)
 
@@ -169,9 +164,9 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.calls.append((action, value))
             return {"status": "ok"}
         self.runtime.dispatch = slow
-        await self.store.save(mapping(tap="volume_up"))
+        await self.store.save(mapping(hold="volume_up"))
         self.runtime.start()
-        self.runtime._enqueue("touch1", "tap", {"action": "volume_up", "value": None})
+        self.runtime._enqueue("touch1", "hold", {"action": "volume_up", "value": None})
         for _ in range(30):
             if entered.is_set(): break
             await asyncio.sleep(.01)
@@ -188,9 +183,9 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("value", self.events[0])
 
     async def test_stale_queued_action_is_discarded_when_assignments_change(self):
-        await self.store.save(mapping(tap="volume_up"))
-        self.runtime._enqueue("touch1", "tap", {"action": "volume_up", "value": None})
-        await self.store.save(mapping(tap="volume_down"))
+        await self.store.save(mapping(hold="volume_up"))
+        self.runtime._enqueue("touch1", "hold", {"action": "volume_up", "value": None})
+        await self.store.save(mapping(hold="volume_down"))
         self.runtime.start()
         await asyncio.wait_for(self.runtime.actions.join(), 1)
         self.assertEqual(self.calls, [])
@@ -225,7 +220,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 code, ping = await call("/api/ping")
                 self.assertEqual(code, 200)
                 self.assertTrue(ping["capabilities"]["touch_assignments"])
-                expected = touch.validate_assignments(mapping(tap="volume_up"))
+                expected = touch.validate_assignments(mapping(hold="volume_up"))
                 code, _ = await call("/api/touch/assignments", {"assignments": expected})
                 self.assertEqual(code, 403)
                 self.assertEqual(self.store.snapshot(), {})

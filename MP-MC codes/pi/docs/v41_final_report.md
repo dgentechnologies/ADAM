@@ -45,7 +45,7 @@ Around those, v41 added the scheduler, the Pi sync API, the Clock tab, and the m
 | `adam_smoketest.py` | 31,217 | **new** — 193 assertions across six groups |
 | `SystemPrompt.txt` | — | retired to legacy fallback; header records the four dead tool refs |
 
-### 3.2 PC app (`pcAPP/`)
+### 3.2 PC app (`adam-desktop/`)
 
 `static/js/clock.js` (new Clock tab), `backend.py` (19 `@action` registrations, `/pi/*` relay proxy), `build_exe.py` bundling.
 
@@ -73,7 +73,7 @@ Defaults, not hardcoded values — overridable from `.env`. The API key is reuse
 
 ## 5. PC-app gap analysis (§16)
 
-**Static — verified.** AST walk over `@action` decorators in `pcAPP/backend.py`:
+**Static — verified.** AST walk over `@action` decorators in `adam-desktop/src/backend.py`:
 
 - 19 registrations; all 18 `LIVE_PARITY_ACTIONS` **present**, zero missing.
 - `value_type`: after resolving it the way the decorator actually does — at runtime, from `laptop_actions.spec(name)`, not from the decorator literal — **all 19 agree** with the manifest, zero mismatches.

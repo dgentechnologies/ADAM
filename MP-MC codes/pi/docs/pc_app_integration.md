@@ -1,6 +1,6 @@
 # PC app integration
 
-The Windows companion app (`pcAPP/`) and the Pi talk over two independent
+The Windows companion app (`adam-desktop/`) and the Pi talk over two independent
 channels that are easy to confuse:
 
 | Channel | Port | Direction | Carries |
@@ -60,7 +60,7 @@ construction rather than by locking. **Adding a thread pool later would silently
 break that** and would need a real lock — there is a comment on the read path
 saying so.
 
-## 2. The laptop agent (`pcAPP/backend.py`)
+## 2. The laptop agent (`adam-desktop/src/backend.py`)
 
 Flask on Windows, serving `GET /actions` — the self-describing manifest the Pi
 reads to learn what this machine can do. Full detail in
@@ -77,7 +77,7 @@ whatever page the webview loads.
 `laptop_actions.parity_report(live_manifest)` diffs a live agent's manifest
 against the 18 actions a deployed agent must expose.
 
-**Static result (verified 2026-10-02, `pcAPP/backend.py`):**
+**Static result (verified 2026-10-02, `adam-desktop/src/backend.py`):**
 
 - 19 `@action` registrations, all 18 required actions present — zero missing.
 - After resolving `value_type` the way the decorator actually does (at runtime,
@@ -115,7 +115,7 @@ plain `<a href="#">` elements with nothing bound, so clicking them genuinely
 did nothing. Verify with:
 
 ```bash
-node --check pcAPP/static/js/dashboard.js
+node --check adam-desktop/resources/static/js/dashboard.js
 ```
 
 This is worth adding to any pre-build check: PyInstaller bundles `static/`
@@ -160,7 +160,7 @@ Pi advertise — see [`mobile_ble_sync.md`](mobile_ble_sync.md) §6.
 
 ## 5. The Clock tab
 
-`pcAPP/static/js/clock.js` renders the Pi's schedules, todos and memories.
+`adam-desktop/resources/static/js/clock.js` renders the Pi's schedules, todos and memories.
 
 Design decisions worth keeping:
 
@@ -209,10 +209,10 @@ The doubled slashes are required: MSYS rewrites `/F` into a drive path
 
 | File | Role |
 |---|---|
-| `pcAPP/backend.py` | action registry, `/actions`, `/pi/*` proxy, mDNS |
-| `pcAPP/static/js/clock.js` | the Clock tab |
-| `pcAPP/static/js/dashboard.js` | header clock, settings, the rest of the UI |
-| `pcAPP/build_exe.py` | PyInstaller packaging |
+| `adam-desktop/src/backend.py` | action registry, `/actions`, `/pi/*` proxy, mDNS |
+| `adam-desktop/resources/static/js/clock.js` | the Clock tab |
+| `adam-desktop/resources/static/js/dashboard.js` | header clock, settings, the rest of the UI |
+| `adam-desktop/scripts/build.py` | PyInstaller packaging |
 | `adam/sync_api.py` | the Pi's HTTP API |
 | `adam/laptop_actions.py` | shared action manifest, parity set, coercion |
 | `adam/laptop_agent_client.py` | Pi-side discovery and transport |
