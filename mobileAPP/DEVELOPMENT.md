@@ -1,5 +1,7 @@
 # ADAM Companion App — Developer Guide
 
+> **Historical guide:** the mock setup workflow below describes the earlier prototype. For the current 0.2.0 implementation, build commands, storage and external-service requirements, use [ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md) and [README.md](README.md). Hardware pairing remains deferred.
+
 Everything you need to open this repo cold: what the pieces are, how to run them, and
 where the rules live. Scope of this guide is the `mobileAPP/` workspace only — the rest
 of the `ADAM` folder is unrelated firmware/Python.

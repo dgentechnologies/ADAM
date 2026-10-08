@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IsoDateTime, Paise, Uuid } from './common.js';
+import { IsoDateTime, Paise, Uuid } from './common';
 
 /** The five packs from spec §2.6 / §13 of the Stitch brief. */
 export const CreditPackId = z.enum(['trial', 'starter', 'standard', 'value', 'pro']);

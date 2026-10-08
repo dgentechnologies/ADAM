@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import { Button, Screen, ScreenActions } from '@adam/ui';
 import { ArrowRight, CheckCircle2, Pencil, RotateCcw, RotateCw, Camera } from 'lucide-react';
@@ -308,6 +309,8 @@ function StepDots({ phase }: { phase: Phase }) {
 export default function FaceCapturePage() {
   const router = useRouter();
   const setUserNameForFace = useSetupStore((s) => s.setUserNameForFace);
+  const setUserFacePhoto = useSetupStore((s) => s.setUserFacePhoto);
+  const setUserFaceAngles = useSetupStore((s) => s.setUserFaceAngles);
   const complete = useSetupStore((s) => s.complete);
   const finish = useSetupStore((s) => s.finish);
 
@@ -445,7 +448,6 @@ export default function FaceCapturePage() {
       const sy = (vh - side) / 2;
 
       let faceDetectorDirection: 'front' | 'left' | 'right' | null = null;
-      let faceDetectorRelW: number | null = null;
 
       // 1. Native Shape Detection API (Chromium / Android Chrome)
       if (typeof window !== 'undefined' && 'FaceDetector' in window) {
@@ -455,7 +457,6 @@ export default function FaceCapturePage() {
           if (faces && faces.length > 0) {
             const f = faces[0];
             const box = f.boundingBox;
-            faceDetectorRelW = box.width / side;
 
             if (f.landmarks && f.landmarks.length > 0) {
               const eyes = f.landmarks.filter((l: any) => l.type === 'eye');
@@ -680,8 +681,28 @@ export default function FaceCapturePage() {
     };
   }, [phase, status, isAligned, doCapture]);
 
-  function save() {
-    if (name.trim()) setUserNameForFace(name.trim());
+  async function save() {
+    const trimmedName = name.trim() || 'You';
+    setUserNameForFace(trimmedName);
+    if (capturedFrames.front) {
+      setUserFacePhoto(capturedFrames.front);
+      setUserFaceAngles(capturedFrames as Record<string, string>);
+    }
+    try {
+      const { saveUserFaceProfile } = await import('@/lib/face-storage');
+      await saveUserFaceProfile({
+        name: trimmedName,
+        photoDataUrl: capturedFrames.front ?? '',
+        capturedAt: new Date().toISOString(),
+        views: {
+          front: capturedFrames.front ?? '',
+          left: capturedFrames.left,
+          right: capturedFrames.right,
+        },
+      });
+    } catch (e) {
+      console.warn('Could not save face to face-storage:', e);
+    }
     complete('face-capture');
     finish();
     router.push('/home');

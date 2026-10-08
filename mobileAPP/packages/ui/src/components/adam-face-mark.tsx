@@ -15,7 +15,7 @@ export type FaceSize = 'sm' | 'md' | 'lg' | 'xl';
 
 /** Eye width / height / gap per size, in px, kept on the 8px grid. */
 const SIZES: Record<FaceSize, { w: number; h: number; gap: number }> = {
-  sm: { w: 24, h: 8, gap: 8 },
+  sm: { w: 18, h: 9, gap: 7 },
   md: { w: 32, h: 10, gap: 12 },
   lg: { w: 48, h: 16, gap: 16 },
   xl: { w: 72, h: 22, gap: 24 },
@@ -128,7 +128,8 @@ export function AdamFaceMark({
           <span
             key={eye}
             className={cn(
-              'block rounded-full bg-fg transition-all duration-base ease-standard will-change-transform',
+              'block rounded-full bg-fg will-change-transform',
+              !animated && 'transition-all duration-base ease-standard',
               bloom && !closed && 'bloom',
               animated && expression === 'idle' && 'animate-adam-blink',
               expression === 'thinking' && 'animate-breathe',

@@ -1,205 +1,123 @@
 'use client';
-
-import type { DeviceStatus, FaceExpression as DeviceExpression } from '@adam/types';
+import { AdamFaceMark, buttonVariants } from '@adam/ui';
 import {
-  AdamFaceMark,
-  Card,
-  Screen,
-  StatusDot,
-  type DeviceStatusKind,
-  type FaceExpression,
-} from '@adam/ui';
-import { useQuery } from '@tanstack/react-query';
-import { Brain, Images, LampCeiling, Mic, MicOff, Moon, Settings, Zap } from 'lucide-react';
+  ArrowUpRight,
+  Bell,
+  Bluetooth,
+  Brain,
+  Images,
+  LampCeiling,
+  Plus,
+  UserRound,
+} from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
-
-import { AppBar } from '@/components/app-bar';
-import { fetchBalance, fetchDevice, queryKeys } from '@/lib/mock/api';
-import { useAppStore } from '@/stores/app-store';
-import { useSetupStore } from '@/stores/setup-store';
-
-/**
- * `dashboard` — the screen the app opens to after setup.
- *
- * The Stitch screenshot for this route is one of the three 28-byte
- * `<FIFE Image failed to fetch>` stubs, so the layout comes from `code.html`:
- * hero card, status line, a row of instant controls, then a 2×2 grid of the
- * secondary destinations.
- */
-
-/**
- * The unit reports seven expressions; the face mark draws five. `speaking` maps to
- * `happy` (mouth-analogue open eyes) and `annoyed` falls back to `idle` rather
- * than inventing a sixth drawing.
- */
-const EXPRESSION: Record<DeviceExpression, FaceExpression> = {
-  idle: 'idle',
-  happy: 'happy',
-  listening: 'listening',
-  thinking: 'thinking',
-  speaking: 'happy',
-  sleeping: 'asleep',
-  annoyed: 'idle',
-};
-
-const STATUS: Record<DeviceStatus, DeviceStatusKind> = {
-  online: 'online',
-  offline: 'offline',
-  updating: 'updating',
-  sleeping: 'offline',
-};
-
-const DESTINATIONS = [
-  { href: '/gallery', label: 'Moments', hint: 'What he saw', Icon: Images },
-  { href: '/smart-home', label: 'Smart Home', hint: 'Lights & scenes', Icon: LampCeiling },
-  { href: '/memory', label: 'Memory', hint: 'People & facts', Icon: Brain },
-  { href: '/settings', label: 'Settings', hint: 'Device & account', Icon: Settings },
-] as const;
-
+import { Page, Panel, Notice } from '@/components/companion-ui';
+import { useLocalData } from '@/lib/use-local-data';
+import { useMemoryIntent } from '@/stores/memory-intent';
+import { useDemoDevice } from '@/lib/demo-device';
 export default function HomePage() {
-  const { data: device } = useQuery({ queryKey: queryKeys.device, queryFn: fetchDevice });
-  const { data: balance } = useQuery({ queryKey: queryKeys.balance, queryFn: fetchBalance });
-
-  const muted = useAppStore((state) => state.muted);
-  const toggleMuted = useAppStore((state) => state.toggleMuted);
-  const [asleep, setAsleep] = useState(false);
-
-  /**
-   * The brain mode chosen during setup wins over the one the mock device reports:
-   * the unit is the source of truth in production, but in a mock/demo build the
-   * fixture is fixed, and showing "Own key" to someone who just bought credits
-   * makes the walkthrough look broken.
-   */
-  const chosenMode = useSetupStore((state) => state.aiBrainMode);
-  const brainMode = chosenMode ?? device?.aiBrainMode ?? null;
-
-  const status: DeviceStatusKind = asleep ? 'offline' : STATUS[device?.status ?? 'offline'];
-  const expression: FaceExpression = asleep
-    ? 'asleep'
-    : EXPRESSION[device?.expression ?? 'idle'];
-
+  const { data, error } = useLocalData();
+  const requestMemory = useMemoryIntent((state) => state.request);
+  const { device } = useDemoDevice();
   return (
-    <>
-      <AppBar
-        title={device?.name ?? 'ADAM'}
-        action={<StatusDot status={status} withLabel />}
-      />
-
-      <Screen chrome="both" texture>
-        <div className="flex flex-col gap-stack-lg">
-          <Card padding="lg" texture className="flex flex-col items-center gap-stack-md">
-            <AdamFaceMark expression={expression} size="xl" className="animate-float" />
-            <div className="flex flex-col items-center gap-unit text-center">
-              <p className="text-title-md text-fg">
-                {asleep
-                  ? 'Sleeping.'
-                  : muted
-                    ? 'Mic muted.'
-                    : status === 'online'
-                      ? 'Listening for “Hey ADAM”.'
-                      : 'Can’t reach him right now.'}
-              </p>
-              <p className="text-label-md text-fg-muted">
-                {device?.wifiSsid ? `On ${device.wifiSsid}` : 'Not connected to Wi-Fi'}
-                {device ? ` · v${device.firmwareVersion}` : ''}
+    <Page
+      title="ADAM"
+      action={
+        <div className="flex items-center gap-2">
+          <Link
+            href="/notifications"
+            aria-label="Notifications"
+            className="border-border flex h-11 w-11 items-center justify-center rounded-full border"
+          >
+            <Bell size={19} />
+          </Link>
+          <Link
+            href="/settings/account"
+            aria-label="Your profile"
+            className="border-border flex h-11 w-11 items-center justify-center rounded-full border"
+          >
+            <UserRound size={19} />
+          </Link>
+        </div>
+      }
+    >
+      <div>
+        <p className="eyebrow mb-3">YOUR EVERYDAY COMPANION</p>
+        <h2 className="page-title break-words">
+          {data.name ? `Hello, ${data.name.split(' ')[0]}.` : 'Make yourself at home.'}
+        </h2>
+      </div>
+      {error && <Notice error>{error}</Notice>}
+      <section className="hero-halo -mx-3 flex flex-col items-center px-3 pb-6 text-center">
+        <div className="flex h-36 items-center justify-center">
+          <AdamFaceMark expression={device.connected ? device.expression : 'idle'} size="xl" />
+        </div>
+        <span className="border-border text-fg-muted rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[.14em]">
+          {device.connected ? 'Demo companion connected' : 'Ready when you are'}
+        </span>
+        <p className="text-fg-muted mt-4 max-w-xs break-words text-sm leading-6">
+          Your memories and moments live here.
+          <br />
+          {device.connected
+            ? `${device.name} is here to explore with you.`
+            : 'Meet your companion in the ADAM demo.'}
+        </p>
+        <Link
+          href={device.connected ? '/device' : '/discover'}
+          className="mt-4 flex min-h-11 items-center gap-2 text-sm"
+        >
+          <Bluetooth size={16} />
+          {device.connected ? 'Open your ADAM' : 'Meet your ADAM'}
+          <ArrowUpRight size={15} />
+        </Link>
+      </section>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          {
+            href: '/memory',
+            Icon: Brain,
+            title: 'Memory',
+            text: data.facts.length
+              ? `${data.facts.length} saved ${data.facts.length === 1 ? 'memory' : 'memories'}`
+              : 'The things that matter',
+          },
+          { href: '/gallery', Icon: Images, title: 'Moments', text: 'Your personal gallery' },
+        ].map(({ href, Icon, title, text }) => (
+          <Link key={href} href={href} className="panel">
+            <div className="mb-7 flex items-center justify-between">
+              <Icon size={24} strokeWidth={1.3} />
+              <ArrowUpRight size={16} className="text-fg-muted" />
+            </div>
+            <h3 className="text-base font-medium">{title}</h3>
+            <p className="text-fg-muted mt-2 text-xs">{text}</p>
+          </Link>
+        ))}
+      </div>
+      <Link href="/smart-home">
+        <Panel>
+          <div className="flex items-center gap-4">
+            <LampCeiling size={26} strokeWidth={1.3} />
+            <div className="flex-1">
+              <h3 className="text-sm font-medium">Your connected space</h3>
+              <p className="text-fg-muted mt-1 text-xs">
+                Connect Home Assistant to control your home.
               </p>
             </div>
-          </Card>
-
-          <div className="grid grid-cols-3 gap-stack-sm">
-            <ControlTile
-              label={muted ? 'Unmute' : 'Mute mic'}
-              Icon={muted ? MicOff : Mic}
-              active={muted}
-              onClick={() => toggleMuted()}
-            />
-            <ControlTile
-              label={asleep ? 'Wake' : 'Sleep'}
-              Icon={Moon}
-              active={asleep}
-              onClick={() => setAsleep((value) => !value)}
-            />
-            <ControlTile
-              label="Credits"
-              Icon={Zap}
-              value={
-                brainMode === 'managed'
-                  ? `${Math.round(balance?.remainingMinutes ?? 0)}m`
-                  : brainMode === 'byok'
-                    ? 'Own key'
-                    : 'Lite'
-              }
-            />
+            <ArrowUpRight size={17} />
           </div>
-
-          <div className="grid grid-cols-2 gap-stack-sm">
-            {DESTINATIONS.map(({ href, label, hint, Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className="flex flex-col gap-stack-sm rounded-card border border-border bg-surface-raised p-stack-md transition-transform duration-fast ease-standard active:scale-[0.98]"
-              >
-                <Icon className="h-6 w-6 text-fg" strokeWidth={1.5} aria-hidden />
-                <span className="flex flex-col">
-                  <span className="text-body-md text-fg">{label}</span>
-                  <span className="text-label-md text-fg-muted">{hint}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </Screen>
-    </>
-  );
-}
-
-/**
- * A single instant control. Rendered as a button only when it does something —
- * the credits tile is a readout, so it must not look pressable.
- */
-function ControlTile({
-  label,
-  Icon,
-  active = false,
-  value,
-  onClick,
-}: {
-  label: string;
-  Icon: typeof Mic;
-  active?: boolean;
-  value?: string;
-  onClick?: () => void;
-}) {
-  const content = (
-    <>
-      <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
-      <span className="text-label-md">{value ?? label}</span>
-    </>
-  );
-
-  const shared =
-    'flex h-24 flex-col items-center justify-center gap-stack-sm rounded-card border p-stack-sm text-center';
-
-  if (!onClick) {
-    return (
-      <div className={`${shared} border-border bg-surface text-fg-muted`}>
-        {content}
-        <span className="sr-only">{label}</span>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`${shared} transition-colors duration-fast ease-standard active:scale-[0.98] ${
-        active ? 'border-fg bg-fg text-fg-inverse' : 'border-border bg-surface-raised text-fg'
-      }`}
-    >
-      {content}
-    </button>
+        </Panel>
+      </Link>
+      <Link
+        href="/memory"
+        onClick={requestMemory}
+        className={buttonVariants({ block: true, variant: 'outline' })}
+      >
+        <Plus size={17} />
+        Save a memory
+      </Link>
+      <p className="text-fg-muted pb-2 text-center text-[10px] tracking-[.15em]">
+        DESIGNED TO FEEL HUMAN
+      </p>
+    </Page>
   );
 }

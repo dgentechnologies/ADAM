@@ -1,5 +1,7 @@
 # ADAM Companion App — Comprehensive Status & AI Agent Roadmap
 
+> **Historical roadmap:** this August 2026 snapshot is superseded by [ANDROID_RELEASE.md](ANDROID_RELEASE.md) for the October 2026 mobile implementation. Mock states and fake success paths are no longer the product behavior. BLE, provisioning and robot operations remain unavailable pending hardware.
+
 > **Target Audience:** AI Coding Agents & System Engineers  
 > **Source Documents Synthesized:**  
 > - `docs/ADAM_App_Technical_Build_Spec.md` (Monorepo, Static Export & Capacitor Architecture)  

@@ -16,7 +16,6 @@ export const SETUP_ORDER: readonly SetupStep[] = [
   'wifi-select',
   'wifi-password',
   'connecting',
-  'name-device',
   'founder-reveal',
   'ai-brain',
   'byok',
@@ -46,7 +45,7 @@ export function nextStep(
   context: { isFounderEdition: boolean; aiBrainMode: string | null },
 ): SetupStep | 'done' {
   switch (step) {
-    case 'name-device':
+    case 'connecting':
       return context.isFounderEdition ? 'founder-reveal' : 'ai-brain';
     case 'ai-brain':
       if (context.aiBrainMode === 'byok') return 'byok';

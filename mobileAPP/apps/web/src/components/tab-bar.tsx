@@ -30,9 +30,9 @@ export function TabBar() {
   return (
     <nav
       aria-label="Primary"
-      className="chrome-blur fixed inset-x-0 bottom-0 z-50 pb-safe shadow-[0_-1px_8px_rgba(0,0,0,0.4)]"
+      className="chrome-blur pb-safe fixed inset-x-0 bottom-0 z-50 shadow-[0_-1px_8px_rgba(0,0,0,0.4)]"
     >
-      <ul className="flex h-tabbar-h items-center justify-between px-stack-sm">
+      <ul className="h-tabbar-h px-stack-sm flex items-center justify-between">
         {TABS.map((tab) => {
           const { href, label, Icon } = tab;
           const fullLabel = 'fullLabel' in tab ? tab.fullLabel : label;
@@ -46,12 +46,24 @@ export function TabBar() {
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 py-2',
-                  'transition-opacity duration-base ease-standard',
-                  active ? 'text-fg opacity-100' : 'text-fg-muted opacity-60',
+                  'duration-base ease-standard transition-opacity',
+                  active ? 'text-fg opacity-100' : 'text-fg-muted opacity-100',
                 )}
               >
-                <Icon className="h-6 w-6" strokeWidth={1.5} aria-hidden />
-                <span className="w-full truncate text-center text-label-xs uppercase">{label}</span>
+                <Icon
+                  className={cn('h-5 w-5', active ? 'text-fg' : 'text-fg-muted')}
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+                <span
+                  className={cn(
+                    'w-full truncate text-center text-[10px] font-medium',
+                    active ? 'text-fg' : 'text-fg-muted',
+                  )}
+                >
+                  {label}
+                </span>
+                {active && <span className="bg-fg mt-0.5 h-0.5 w-3 rounded-full" />}
               </Link>
             </li>
           );

@@ -10,7 +10,14 @@ out/
 *.tsbuildinfo
 
 # Capacitor / native
-apps/mobile-shell/android/
+apps/mobile-shell/android/.gradle/
+apps/mobile-shell/android/.idea/
+apps/mobile-shell/android/build/
+apps/mobile-shell/android/app/build/
+apps/mobile-shell/android/local.properties
+apps/mobile-shell/android/capacitor-cordova-android-plugins/
+apps/mobile-shell/android/app/src/main/assets/
+apps/mobile-shell/android/app/google-services.json
 apps/mobile-shell/ios/
 apps/mobile-shell/www/
 *.keystore
@@ -27,6 +34,9 @@ apps/mobile-shell/www/
 .idea/
 .DS_Store
 Thumbs.db
+desktop.ini
+Desktop.ini
+ehthumbs.db
 
 # Logs
 *.log
@@ -36,3 +46,8 @@ pnpm-debug.log*
 # Prisma local db
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
+
+# Local safety snapshots
+.local-backups/
+output/
+.playwright-cli/

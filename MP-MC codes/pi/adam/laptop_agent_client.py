@@ -12,14 +12,19 @@ and is invalidated on a connection failure so a laptop that changed networks
 gets re-discovered automatically.
 
 The available actions are fetched from the agent's /actions manifest (so the
-laptop decides what it can do); a hard-coded fallback keeps the tool usable if
-the manifest can't be fetched. All config constants come from config.py.
+laptop decides what it can do). As of v41 both the fallback manifest and the
+value-type rules come from laptop_actions.py — the one file that is deployed
+byte-identically to the Pi and the laptop, so the two sides cannot disagree
+about what an action is called or what kind of value it takes. All config
+constants come from config.py.
 """
 
 import time
+import threading
 
 import requests
 
+import laptop_actions
 from config import (
     LAPTOP_AGENT_PORT,
     LAPTOP_AGENT_TOKEN,
@@ -32,6 +37,40 @@ from config import (
 )
 
 _laptop_agent_ip_cache: dict = {"ip": LAPTOP_AGENT_STATIC_IP or None, "ts": 0.0}
+_pairing_lock = threading.RLock()
+_paired_endpoint = None
+_pairing_revoked = False
+
+
+def configure_laptop_pairing(record: dict) -> None:
+    """Activate an already-validated, durably saved pairing atomically."""
+    global _paired_endpoint, _pairing_revoked
+    with _pairing_lock:
+        _paired_endpoint = ((record["host"], record["port"], record["token"])
+                            if record.get("enabled") else None)
+        _pairing_revoked = not bool(record.get("enabled"))
+        _laptop_agent_ip_cache.update(ip=None, ts=0.0)
+        _laptop_actions_cache.update(actions=None, ts=0.0)
+
+
+def get_laptop_endpoint():
+    """Snapshot host, port and key together; never mix two concurrent pairings."""
+    with _pairing_lock:
+        if _paired_endpoint is not None:
+            return _paired_endpoint
+        if _pairing_revoked:
+            return None
+    ip = _discover_laptop_agent_ip()
+    with _pairing_lock:
+        if _paired_endpoint is not None:
+            return _paired_endpoint
+        if _pairing_revoked:
+            return None
+        return (ip, LAPTOP_AGENT_PORT, LAPTOP_AGENT_TOKEN) if ip else None
+
+
+def _authority(host):
+    return f"[{host}]" if ":" in host else host
 
 ZEROCONF_AVAILABLE = False
 try:
@@ -53,6 +92,11 @@ def _discover_laptop_agent_ip(timeout: float = LAPTOP_DISCOVERY_TIMEOUT_S) -> st
     """Find the laptop agent's current IP via mDNS. Cached briefly to avoid
     repeated network discovery on every tool call. Falls back to a static
     LAPTOP_AGENT_IP if mDNS is unavailable or fails."""
+    with _pairing_lock:
+        if _paired_endpoint is not None:
+            return _paired_endpoint[0]
+        if _pairing_revoked:
+            return None
     now = time.time()
     if (_laptop_agent_ip_cache["ip"]
             and now - _laptop_agent_ip_cache["ts"] < LAPTOP_DISCOVERY_TTL_S):
@@ -102,24 +146,36 @@ def _discover_laptop_agent_ip(timeout: float = LAPTOP_DISCOVERY_TIMEOUT_S) -> st
 
 
 def _laptop_agent_url() -> str | None:
-    ip = _discover_laptop_agent_ip()
-    if not ip:
+    endpoint = get_laptop_endpoint()
+    if not endpoint:
         return None
-    return f"http://{ip}:{LAPTOP_AGENT_PORT}/control"
+    return f"http://{_authority(endpoint[0])}:{endpoint[1]}/control"
 
 
-_LAPTOP_ACTIONS_FALLBACK = {
-    "volume_up":       {"description": "Increase system volume by 10%.", "needs_value": False, "value_hint": ""},
-    "volume_down":     {"description": "Decrease system volume by 10%.", "needs_value": False, "value_hint": ""},
-    "volume_set":      {"description": "Set system volume to an exact percentage.", "needs_value": True, "value_hint": "0-100"},
-    "volume_mute":     {"description": "Mute system audio.", "needs_value": False, "value_hint": ""},
-    "volume_unmute":   {"description": "Unmute system audio.", "needs_value": False, "value_hint": ""},
-    "brightness_up":   {"description": "Increase screen brightness by 10%.", "needs_value": False, "value_hint": ""},
-    "brightness_down": {"description": "Decrease screen brightness by 10%.", "needs_value": False, "value_hint": ""},
-    "brightness_set":  {"description": "Set screen brightness to an exact percentage.", "needs_value": True, "value_hint": "0-100"},
-}
+_LAPTOP_ACTIONS_FALLBACK = laptop_actions.fallback_manifest()
 
 _laptop_actions_cache: dict = {"actions": None, "ts": 0.0}
+
+
+def _annotate(actions: dict) -> dict:
+    """Give every entry of a live manifest a usable value_type.
+
+    An agent running pre-v41 code answers /actions with only
+    (description, needs_value, value_hint) — no type. Without this, ADAM would
+    be back to guessing, and the guess that used to be made (int) destroyed
+    every string argument. infer_value_type() reconstructs the type from the
+    canonical table first and the hint second, so a stale laptop still works.
+    """
+    out = {}
+    for name, spec in actions.items():
+        if not isinstance(spec, dict):
+            continue
+        spec = dict(spec)
+        if spec.get("value_type") not in ("none", "int", "str", "enum"):
+            spec["value_type"] = laptop_actions.infer_value_type(
+                spec.get("needs_value", False), spec.get("value_hint", ""), name)
+        out[name] = spec
+    return out
 
 
 def refresh_laptop_actions(force: bool = False) -> dict:
@@ -128,21 +184,33 @@ def refresh_laptop_actions(force: bool = False) -> dict:
             and now - _laptop_actions_cache["ts"] < LAPTOP_ACTIONS_TTL_S):
         return _laptop_actions_cache["actions"]
 
-    ip = _discover_laptop_agent_ip()
-    if ip is None:
+    endpoint = get_laptop_endpoint()
+    if endpoint is None:
         return _laptop_actions_cache["actions"] or _LAPTOP_ACTIONS_FALLBACK
+    ip, port, _ = endpoint
 
     try:
-        resp = requests.get(f"http://{ip}:{LAPTOP_AGENT_PORT}/actions",
-                             timeout=LAPTOP_AGENT_TIMEOUT_S)
+        resp = requests.get(f"http://{_authority(ip)}:{port}/actions",
+                             timeout=LAPTOP_AGENT_TIMEOUT_S, allow_redirects=False)
         resp.raise_for_status()
         data = resp.json()
         actions = data.get("actions", {})
         if actions:
+            actions = _annotate(actions)
             _laptop_actions_cache["actions"] = actions
             _laptop_actions_cache["ts"] = now
             print(f"  🔧 Laptop actions ({data.get('platform','?')}): "
-                  f"{', '.join(actions.keys())}")
+                  f"{len(actions)} available")
+
+            # Tell the operator when the two sides have drifted. A silent
+            # mismatch here is what made ten capabilities invisible in v40.
+            rep = laptop_actions.parity_report(actions)
+            if rep["missing"]:
+                print(f"  ⚠️  Laptop agent is missing expected actions: "
+                      f"{', '.join(rep['missing'])} — is it running older code?")
+            if rep["untyped"]:
+                print(f"  ℹ️  Laptop agent sent an untyped manifest "
+                      f"({len(rep['untyped'])} actions); types inferred locally.")
             return actions
     except Exception as e:
         print(f"  ⚠️  Could not fetch laptop /actions manifest: {e}")
@@ -154,9 +222,16 @@ def get_laptop_actions() -> dict:
     return refresh_laptop_actions(force=False)
 
 
-def laptop_control_sync(action: str, value: int | None = None) -> dict:
-    url = _laptop_agent_url()
-    if url is None:
+def laptop_control_sync(action: str, value=None) -> dict:
+    """Run one action on the laptop. `value` may be an int or a str — its type
+    is decided by the manifest, not by this function, and has already been
+    coerced by the caller (tool_handler) via laptop_actions.coerce()."""
+    # The live agent only knows its own action names, so an alias ADAM may have
+    # been handed (clipboard_get) is translated before it goes on the wire.
+    action = laptop_actions.resolve(action) or action
+
+    endpoint = get_laptop_endpoint()
+    if endpoint is None:
         return {"status": "error",
                 "reason": "Laptop agent not found on network. Make sure "
                           "laptop_agent.py is running on the laptop, both "
@@ -164,12 +239,17 @@ def laptop_control_sync(action: str, value: int | None = None) -> dict:
                           "allowed on your router or LAPTOP_AGENT_IP is set "
                           "in .env as a fallback."}
 
-    payload = {"action": action, "token": LAPTOP_AGENT_TOKEN}
+    ip, port, token = endpoint
+    url = f"http://{_authority(ip)}:{port}/control"
+    payload = {"action": action, "token": token}
     if value is not None:
         payload["value"] = value
 
     try:
-        resp = requests.post(url, json=payload, timeout=LAPTOP_AGENT_TIMEOUT_S)
+        with requests.Session() as http:
+            http.trust_env = False
+            resp = http.post(url, json=payload, timeout=LAPTOP_AGENT_TIMEOUT_S,
+                             allow_redirects=False)
         try:
             data = resp.json()
         except Exception:

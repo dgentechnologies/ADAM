@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDeviceOwner(deviceId) {
+      let device = get(/databases/$(database)/documents/devices/$(deviceId)).data;
+      return isAuthenticated() && (device.ownerUid == request.auth.uid || device.ownerId == request.auth.uid);
+    }
+
+    /**
+     * users/{uid}
+     * - email: string
+     * - displayName: string
+     * - photoUrl: string | null (display only — avatar in Settings)
+     * - createdAt: timestamp
+     * - linkedDeviceIds: string[]
+     */
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    /**
+     * devices/{deviceId}
+     * - deviceId: string
+     * - ownerUid: string
+     * - name: string
+     * - hardwareSerial: string
+     * - bleAddress: string | null
+     * - wifiSsid: string | null
+     * - tailscaleIp: string | null
+     * - osVersion: string
+     * - lastSeen: timestamp
+     * - createdAt: timestamp
+     * - status: "online" | "offline" | "setup"
+     */
+    match /devices/{deviceId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.ownerUid == request.auth.uid || resource.data.ownerId == request.auth.uid);
+      allow create: if isAuthenticated() && (request.resource.data.ownerUid == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
+      allow update, delete: if isAuthenticated() && (resource.data.ownerUid == request.auth.uid || resource.data.ownerId == request.auth.uid);
+
+      /**
+       * Subcollections under devices/{deviceId}
+       */
+      match /memoryFacts/{factId} {
+        allow read, write: if isDeviceOwner(deviceId);
+      }
+
+      match /memoryPeople/{personId} {
+        allow read, write: if isDeviceOwner(deviceId);
+      }
+
+      match /laptopPairings/{pairingId} {
+        allow read, write: if isDeviceOwner(deviceId);
+      }
+    }
+
+    /**
+     * creditBalances/{deviceId}
+     * - deviceId: string
+     * - balance: number
+     * - currency: "credits"
+     * - lastUpdated: timestamp
+     * - autoRecharge: boolean
+     * - rechargeThreshold: number | null
+     *
+     * HARD CONSTRAINT: WRITE-PROTECTED.
+     * Authenticated users can read their own device's credit balance (where device ownerUid == request.auth.uid),
+     * but CANNOT write to it (allow write: if false; — backend service accounts only).
+     */
+    match /creditBalances/{deviceId} {
+      allow read: if isDeviceOwner(deviceId);
+      allow write: if false;
+    }
+  }
+}

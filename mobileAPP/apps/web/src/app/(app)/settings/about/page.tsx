@@ -1,65 +1,36 @@
 'use client';
-
-import { Card, NotYetDesigned, Screen, Wordmark } from '@adam/ui';
-import { useQuery } from '@tanstack/react-query';
-
-import { AppBar } from '@/components/app-bar';
-import { fetchDevice, queryKeys } from '@/lib/mock/api';
-
-/**
- * `settings/about`. Undesigned by Stitch; the identity block and the device facts
- * are real because both are already available, and the panel states what is still
- * missing (licences, legal, support).
- */
-export default function AboutSettingsPage() {
-  const { data: device } = useQuery({ queryKey: queryKeys.device, queryFn: fetchDevice });
-
-  const facts: ReadonlyArray<[string, string]> = [
-    ['Device', device?.name ?? 'ADAM'],
-    ['Short ID', device?.shortId ?? '—'],
-    ['Serial', device?.serial ?? '—'],
-    ['Firmware', device ? `v${device.firmwareVersion}` : '—'],
-    ['Batch', device?.hardwareBatch ?? '—'],
-    [
-      'Edition',
-      device?.isFounderEdition
-        ? `Founder № ${String(device.founderNumber ?? 1).padStart(3, '0')}`
-        : 'Standard',
-    ],
-  ];
-
+import { AdamFaceMark } from '@adam/ui';
+import { Page, Panel, Row } from '@/components/companion-ui';
+import { FileText, Shield } from 'lucide-react';
+export default function AboutPage() {
   return (
-    <>
-      <AppBar title="About" back="/settings" />
-      <Screen chrome="both">
-        <div className="flex flex-col gap-stack-lg">
-          <div className="flex justify-center pt-stack-md">
-            <Wordmark byline />
-          </div>
-
-          <Card surface="recessed" padding="md">
-            <dl className="flex flex-col gap-stack-sm">
-              {facts.map(([label, value]) => (
-                <div key={label} className="flex items-baseline justify-between gap-gutter">
-                  <dt className="text-label-md text-fg-muted">{label}</dt>
-                  <dd className="text-body-md text-fg">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </Card>
-
-          <NotYetDesigned
-            title="Legal & support"
-            purpose="Undesigned in the Stitch export."
-            bullets={[
-              'Open-source licences',
-              'Privacy policy and terms',
-              'Support contact and diagnostics bundle',
-              'Regulatory / compliance marks',
-            ]}
-          />
+    <Page title="About ADAM" back="/settings">
+      <div className="flex flex-col items-center gap-6 py-8">
+        <AdamFaceMark size="lg" expression="happy" />
+        <div className="text-center">
+          <h2 className="text-2xl tracking-widest">ADAM</h2>
+          <p className="text-fg-muted mt-3 text-sm">Autonomous Desktop AI Module</p>
+          <p className="text-fg-muted mt-2 text-xs">Companion 0.2.1 · Made in India</p>
         </div>
-      </Screen>
-    </>
+      </div>
+      <Panel>
+        <p className="text-fg-muted text-sm leading-7">
+          A more human way to connect with your everyday world. Designed and built by DGEN
+          Technologies Pvt. Ltd., Kolkata, India.
+        </p>
+      </Panel>
+      <Panel className="flush">
+        <Row href="/privacy" icon={Shield} title="Privacy notice" />
+        <Row href="/terms" icon={FileText} title="Terms of use" />
+      </Panel>
+      <a
+        href="https://dgentechnologies.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="py-4 text-center text-sm underline underline-offset-4"
+      >
+        dgentechnologies.com
+      </a>
+    </Page>
   );
 }

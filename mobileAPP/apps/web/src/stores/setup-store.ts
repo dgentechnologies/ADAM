@@ -29,10 +29,13 @@ interface SetupActions {
   setSignedIn: (signedIn: boolean) => void;
   selectDevice: (serial: string, isFounderEdition: boolean, founderNumber: number | null) => void;
   selectSsid: (ssid: string) => void;
+  setWifiPassword: (password: string) => void;
   setDeviceName: (name: string) => void;
   setAiBrainMode: (mode: AiBrainMode) => void;
   setCameraPermission: (granted: boolean) => void;
   setUserNameForFace: (name: string) => void;
+  setUserFacePhoto: (photo: string) => void;
+  setUserFaceAngles: (angles: Record<string, string>) => void;
   finish: () => void;
   reset: () => void;
 }
@@ -59,10 +62,13 @@ export const useSetupStore = create<SetupStore>()(
         set({ selectedSerial: serial, isFounderEdition, founderNumber }),
 
       selectSsid: (ssid) => set({ selectedSsid: ssid }),
+      setWifiPassword: (wifiPassword) => set({ wifiPassword }),
       setDeviceName: (deviceName) => set({ deviceName }),
       setAiBrainMode: (aiBrainMode) => set({ aiBrainMode }),
       setCameraPermission: (cameraPermissionGranted) => set({ cameraPermissionGranted }),
       setUserNameForFace: (userNameForFace) => set({ userNameForFace }),
+      setUserFacePhoto: (userFacePhoto) => set({ userFacePhoto }),
+      setUserFaceAngles: (userFaceAngles) => set({ userFaceAngles }),
 
       finish: () => set({ completedAt: new Date().toISOString() }),
 

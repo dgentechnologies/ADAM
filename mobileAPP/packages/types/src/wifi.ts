@@ -20,8 +20,19 @@ export const WifiNetwork = z.object({
   band: WifiBand,
   /** True when the SSID is 5GHz-only and therefore unusable by ADAM. */
   unsupported: z.boolean().default(false),
+  signalPercent: z.number().int().min(0).max(100).optional(),
+  channel: z.number().int().positive().optional(),
+  bssid: z.string().optional(),
 });
 export type WifiNetwork = z.infer<typeof WifiNetwork>;
+
+export const WifiScanResult = z.object({
+  networks: z.array(WifiNetwork),
+  count: z.number().int().nonnegative(),
+  source: z.enum(['system', 'fallback', 'mock']),
+  scannedAt: z.string(),
+});
+export type WifiScanResult = z.infer<typeof WifiScanResult>;
 
 export const WifiCredentials = z.object({
   ssid: z.string().min(1).max(32),

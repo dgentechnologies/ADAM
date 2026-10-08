@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   applicationName: 'ADAM',
   description: 'Companion app for ADAM — an AI desk companion by DGEN Technologies.',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icons/adam-192.png',
+    apple: '/icons/adam-192.png',
+  },
   appleWebApp: {
     capable: true,
     title: 'ADAM',
@@ -24,8 +28,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   /** Lets content sit under the notch; safe-area utilities pad it back. */
   viewportFit: 'cover',
   themeColor: '#000000',
@@ -40,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
      * client-side theme swap once that toggle lands.
      */
     <html lang="en" data-theme="dark" suppressHydrationWarning>
-      <body className={`${fontVariables} font-sans antialiased`}>
+      <body className={`${fontVariables} font-sans antialiased`} suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

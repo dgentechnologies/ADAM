@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IsoDateTime, Uuid } from './common.js';
+import { IsoDateTime, Uuid } from './common';
 
 /** Why the unit captured a frame (spec §3). */
 export const CaptureReason = z.enum(['requested', 'face-recognised', 'moment', 'scheduled']);

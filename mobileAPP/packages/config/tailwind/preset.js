@@ -31,8 +31,6 @@ const preset = {
       ...semantic,
     },
     fontFamily,
-    fontSize,
-    borderRadius,
     /**
      * Only the theme-independent shadows live here. `shadow-soft` and `bloom`
      * are var-driven utilities in the plugin so they flip with light mode;
@@ -43,6 +41,10 @@ const preset = {
       'bloom-lg': boxShadow['bloom-lg'],
     },
     extend: {
+      // Product screens use standard text-sm/text-xs and rounded-xl utilities
+      // alongside the named ADAM tokens. Preserve both scales.
+      fontSize,
+      borderRadius,
       spacing,
       borderWidth: {
         hairline: '1px',
@@ -101,9 +103,9 @@ const preset = {
           '93%, 100%': { transform: 'translate3d(0, 0, 0) rotate(0deg)' },
         },
         'adam-blink': {
-          '0%, 41%, 47%, 86%, 92%, 100%': { transform: 'scaleY(1) scaleX(1)', opacity: '1' },
-          '43%, 45%': { transform: 'scaleY(0) scaleX(0.9)', opacity: '0' },
-          '88%, 90%': { transform: 'scaleY(0) scaleX(0.9)', opacity: '0' },
+          '0%, 42%, 48%, 54%, 100%': { transform: 'scaleY(1)' },
+          '45%': { transform: 'scaleY(0.08)' },
+          '51%': { transform: 'scaleY(0.08)' },
         },
         'adam-float': {
           '0%, 100%': { transform: 'translateY(0px)' },
@@ -125,7 +127,7 @@ const preset = {
         breathe: `breathe 2600ms ${motion.ease.standard} infinite`,
         blink: 'blink 5200ms steps(1, end) infinite',
         'adam-glance': 'adam-glance 6500ms cubic-bezier(0.35, 0.05, 0.45, 0.95) infinite',
-        'adam-blink': 'adam-blink 3600ms ease-in-out infinite',
+        'adam-blink': 'adam-blink 3200ms ease-in-out infinite',
         'adam-float': 'adam-float 4200ms cubic-bezier(0.4, 0, 0.2, 1) infinite',
         'sweep-rotate': `sweep-rotate 3400ms linear infinite`,
         'caret-blink': 'caret-blink 1100ms steps(1, end) infinite',

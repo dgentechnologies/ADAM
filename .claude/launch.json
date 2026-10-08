@@ -14,6 +14,12 @@
       "runtimeArgs": ["-y", "serve", "mobileAPP/apps/web/out", "-l", "4321"],
       "port": 4321,
       "autoPort": true
+    },
+    {
+      "name": "adam-pcapp",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-c", "import sys; sys.path.insert(0,'pcAPP'); from backend import run_flask_server; run_flask_server(8700)"],
+      "port": 8700
     }
   ]
 }

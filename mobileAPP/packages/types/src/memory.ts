@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IsoDateTime, Uuid } from './common.js';
+import { IsoDateTime, Uuid } from './common';
 
 /**
  * Mirrors what the unit keeps in adam_memory.json. The Memory tab exists so a

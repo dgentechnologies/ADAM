@@ -1,0 +1,13 @@
+Flask==3.0.0
+waitress==3.0.2
+requests==2.31.0
+pywebview==6.2.1
+pystray==0.19.5
+Pillow==10.2.0
+zeroconf==0.150.0
+websockets==15.0.1
+psutil==5.9.6
+pycaw==20230407
+comtypes==1.4.16
+screen-brightness-control==0.22.1
+pyperclip==1.9.0

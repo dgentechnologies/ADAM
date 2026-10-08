@@ -32,6 +32,7 @@ export function CanvasRevealEffect({
     if (!gl) return;
 
     const vsSource = `#version 300 es
+      precision mediump float;
       in vec2 position;
       out vec2 fragCoord;
       uniform vec2 u_resolution;
@@ -127,7 +128,10 @@ export function CanvasRevealEffect({
     gl.attachShader(program, fs);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      console.error('Program link error:', gl.getProgramInfoLog(program));
+      console.warn('Program link error:', gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
+      gl.deleteShader(vs);
+      gl.deleteShader(fs);
       return;
     }
 
@@ -160,10 +164,10 @@ export function CanvasRevealEffect({
 
     const colorsFlattened = new Float32Array(18);
     for (let i = 0; i < 6; i++) {
-      const c = colors[i % colors.length] || [255, 255, 255];
-      colorsFlattened[i * 3 + 0] = c[0] / 255;
-      colorsFlattened[i * 3 + 1] = c[1] / 255;
-      colorsFlattened[i * 3 + 2] = c[2] / 255;
+      const c = (colors.length > 0 ? colors[i % colors.length] : undefined) ?? [255, 255, 255];
+      colorsFlattened[i * 3 + 0] = (c[0] ?? 255) / 255;
+      colorsFlattened[i * 3 + 1] = (c[1] ?? 255) / 255;
+      colorsFlattened[i * 3 + 2] = (c[2] ?? 255) / 255;
     }
     gl.uniform3fv(uColorsLoc, colorsFlattened);
 

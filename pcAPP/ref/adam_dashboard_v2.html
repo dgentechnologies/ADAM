@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADAM — Control</title>
+<style>
+:root{--bg:#06070a;--rail:#0a0b0f;--line:#1c1e25;--text:#f1f2f4;--dim:#7d818c;--acc:#e8e9ec;--ok:#2ee58a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#06070a}}
+:root[data-theme="dark"]{--bg:#06070a}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",system-ui,sans-serif;display:grid;grid-template-columns:72px 1fr}
+.rail{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 0}
+.rail b{font-weight:300;font-size:13px;letter-spacing:.2em;margin-bottom:22px;writing-mode:vertical-rl;transform:rotate(180deg)}
+.rail a{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;color:var(--dim)}
+.rail a.on{background:#16181e;color:var(--text);box-shadow:inset 2px 0 0 #fff}
+.rail svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.rail .sp{flex:1}
+main{display:grid;grid-template-rows:auto 1fr auto;height:100dvh;min-width:0;background:radial-gradient(ellipse 55% 60% at 50% 48%,#15171d 0,transparent 70%)}
+header{display:flex;justify-content:space-between;align-items:flex-start;padding:26px 36px 0;gap:20px}
+header small{font-size:11px;letter-spacing:.24em;color:var(--dim)}
+header h1{font-size:30px;font-weight:600;margin-top:6px;letter-spacing:-.01em}
+.chips{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.chip{border:1px solid var(--line);background:#0b0c10;border-radius:12px;padding:9px 15px;min-width:92px}
+.chip small{display:block;font-size:9px;letter-spacing:.22em;color:var(--dim)}
+.chip span{font-size:14px;margin-top:3px;display:flex;align-items:center;gap:7px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.stage{position:relative;min-height:0;display:grid;place-items:center}
+svg.s{width:100%;height:100%;max-height:100%}
+.lb{font-size:11px;letter-spacing:.2em;fill:#c9ccd3}
+.ls{font-size:11.5px;fill:var(--dim)}
+.ln{fill:none;stroke:#4a4d57;stroke-width:1;transition:.25s}
+.hot{cursor:pointer}
+.hot:hover .ln,.hot.on .ln{stroke:#fff}
+.hot:hover .core,.hot.on .core{fill:#fff;filter:drop-shadow(0 0 8px #fff)}
+.ring{fill:none;stroke:#fff;stroke-width:1;transform-box:fill-box;transform-origin:center;animation:p 2.6s infinite ease-out;opacity:0}
+@keyframes p{0%{transform:scale(.4);opacity:.7}100%{transform:scale(1.9);opacity:0}}
+.eyes rect{transition:.3s;transform-box:fill-box;transform-origin:center}
+.idle .eyes rect{transform:scaleY(.18)}
+.bot{transition:transform .2s ease-out}
+footer{display:flex;justify-content:space-between;align-items:center;padding:0 36px 24px;gap:20px}
+.modes{display:flex;gap:10px}
+.modes button{background:#0b0c10;color:var(--dim);border:1px solid var(--line);border-radius:30px;padding:13px 24px;font-size:14px;cursor:pointer;font-family:inherit;transition:.2s}
+.modes button.on{color:var(--text);border-color:#8d909a;background:#16181e;box-shadow:0 0 0 3px rgba(255,255,255,.06)}
+.r{font-size:12px;color:var(--dim);line-height:1.7}
+.r b{color:var(--text);font-weight:500}
+.clock{text-align:right}.clock b{display:block;font-size:22px;font-weight:500;color:var(--text)}
+@media (max-width:760px){body{grid-template-columns:1fr}.rail,.r{display:none}header h1{font-size:22px}footer{flex-direction:column;padding-bottom:14px}.modes button{padding:11px 16px}}
+</style>
+</head>
+<body>
+<div class="rail">
+  <b>ADAM</b>
+  <a class="on" href="#"><svg viewBox="0 0 24 24"><path d="M3 11 12 3l9 8v10h-6v-6H9v6H3z"/></svg></a>
+  <a href="#"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H9l-5 4z"/></svg></a>
+  <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M12 16v4M8 20h8"/></svg></a>
+  <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></a>
+  <div class="sp"></div>
+  <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></a>
+</div>
+<main id="app">
+  <header>
+    <div><small>CONNECTED UNIT</small><h1>ADAM · DGEN-ADAM-0001</h1></div>
+    <div class="chips">
+      <div class="chip"><small>BRAIN</small><span><i class="dot"></i>Gemini Live</span></div>
+      <div class="chip"><small>LINK</small><span>UART 921.6k</span></div>
+      <div class="chip"><small>CAMERA</small><span>Duty-cycled</span></div>
+      <div class="chip"><small>MODE</small><span id="mchip">Active</span></div>
+    </div>
+  </header>
+
+  <div class="stage">
+  <svg class="s" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <radialGradient id="hd" cx=".38" cy=".18" r=".95"><stop offset="0" stop-color="#6d7078"/><stop offset=".35" stop-color="#2f3136"/><stop offset="1" stop-color="#101114"/></radialGradient>
+      <radialGradient id="bd" cx=".4" cy=".12" r="1"><stop offset="0" stop-color="#43454b"/><stop offset=".5" stop-color="#1c1d21"/><stop offset="1" stop-color="#0b0b0d"/></radialGradient>
+      <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a8d95"/><stop offset=".5" stop-color="#2a2b2f"/><stop offset="1" stop-color="#55575d"/></linearGradient>
+      <radialGradient id="fl" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+      <radialGradient id="scr" cx=".5" cy=".4" r=".7"><stop offset="0" stop-color="#0e0f12"/><stop offset="1" stop-color="#000"/></radialGradient>
+      <filter id="gl"><feGaussianBlur stdDeviation="4"/></filter>
+    </defs>
+    <ellipse cx="500" cy="555" rx="300" ry="38" fill="url(#fl)"/>
+    <ellipse cx="500" cy="545" rx="170" ry="14" fill="#000" opacity=".6" filter="url(#gl)"/>
+
+    <g class="bot" id="bot">
+      <!-- body -->
+      <path d="M392 352 C392 330 608 330 608 352 C640 420 650 480 640 520 C630 548 370 548 360 520 C350 480 360 420 392 352Z" fill="url(#bd)"/>
+      <path d="M365 518 C380 545 620 545 635 518" fill="none" stroke="#3b3d43" stroke-width="2"/>
+      <path d="M400 350 C440 336 560 336 600 350" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
+      <text x="500" y="450" text-anchor="middle" fill="#e9eaee" font-size="30" font-weight="300" letter-spacing="3">ADAM</text>
+      <!-- neck -->
+      <rect x="462" y="318" width="76" height="30" rx="6" fill="#16171a"/>
+      <!-- head -->
+      <ellipse cx="500" cy="228" rx="170" ry="116" fill="url(#hd)"/>
+      <ellipse cx="500" cy="228" rx="170" ry="116" fill="none" stroke="url(#rim)" stroke-width="1.5" opacity=".7"/>
+      <ellipse cx="500" cy="244" rx="128" ry="82" fill="#000" stroke="#3a3b40" stroke-width="5"/>
+      <ellipse cx="500" cy="244" rx="123" ry="77" fill="url(#scr)"/>
+      <ellipse cx="480" cy="205" rx="70" ry="18" fill="#fff" opacity=".05"/>
+      <g class="eyes" fill="#fff">
+        <rect x="438" y="240" width="46" height="8" rx="3" style="filter:drop-shadow(0 0 7px #fff)"/>
+        <rect x="516" y="240" width="46" height="8" rx="3" style="filter:drop-shadow(0 0 7px #fff)"/>
+      </g>
+      <circle cx="486" cy="135" r="5" fill="#050506" stroke="#3b3c40" stroke-width="1.5"/>
+      <circle cx="514" cy="135" r="5" fill="#050506" stroke="#3b3c40" stroke-width="1.5"/>
+    </g>
+
+    <!-- T1 left cheek -->
+    <g class="hot" data-t="1">
+      <polyline class="ln" points="352,250 300,300 110,300"/>
+      <text class="lb" x="110" y="286">TOUCH 01 · LEFT CHEEK</text>
+      <text class="ls" x="110" y="322">Slap → annoyed reaction</text>
+      <circle class="ring" cx="352" cy="250" r="14"/><circle class="ring" cx="352" cy="250" r="14" style="animation-delay:1.3s"/>
+      <circle cx="352" cy="250" r="14" fill="none" stroke="#fff" stroke-opacity=".5"/><circle class="core" cx="352" cy="250" r="4.5" fill="#cfd1d7"/>
+    </g>
+    <!-- T2 right cheek -->
+    <g class="hot" data-t="2">
+      <polyline class="ln" points="648,250 700,300 890,300"/>
+      <text class="lb" x="890" y="286" text-anchor="end">TOUCH 02 · RIGHT CHEEK</text>
+      <text class="ls" x="890" y="322" text-anchor="end">Slap → annoyed reaction</text>
+      <circle class="ring" cx="648" cy="250" r="14"/><circle class="ring" cx="648" cy="250" r="14" style="animation-delay:1.3s"/>
+      <circle cx="648" cy="250" r="14" fill="none" stroke="#fff" stroke-opacity=".5"/><circle class="core" cx="648" cy="250" r="4.5" fill="#cfd1d7"/>
+    </g>
+    <!-- T3 top -->
+    <g class="hot" data-t="3">
+      <polyline class="ln" points="470,128 430,80 110,80"/>
+      <text class="lb" x="110" y="66">TOUCH 03 · TOP OF HEAD</text>
+      <text class="ls" x="110" y="102">Tap → stop speech · toggle idle</text>
+      <circle class="ring" cx="470" cy="128" r="14"/><circle class="ring" cx="470" cy="128" r="14" style="animation-delay:1.3s"/>
+      <circle cx="470" cy="128" r="14" fill="none" stroke="#fff" stroke-opacity=".5"/><circle class="core" cx="470" cy="128" r="4.5" fill="#cfd1d7"/>
+    </g>
+    <!-- T4 back (hidden side) -->
+    <g class="hot" data-t="4">
+      <polyline class="ln" points="618,150 660,110 890,110"/>
+      <text class="lb" x="890" y="96" text-anchor="end">TOUCH 04 · BACK OF HEAD</text>
+      <text class="ls" x="890" y="132" text-anchor="end">With Touch 03 → petting · rear sensor</text>
+      <circle class="ring" cx="618" cy="150" r="14"/>
+      <circle cx="618" cy="150" r="14" fill="none" stroke="#fff" stroke-opacity=".5" stroke-dasharray="3 3"/><circle class="core" cx="618" cy="150" r="4.5" fill="#8d909a"/>
+    </g>
+  </svg>
+  </div>
+
+  <footer>
+    <div class="r">EMOTION <b id="emo">idle · smug</b><br>MIC RMS <b>~620</b> · HEADROOM <b>+25 dB</b></div>
+    <div class="modes" id="modes">
+      <button class="on" data-m="Active">Active</button>
+      <button data-m="Idle">Idle</button>
+      <button data-m="Lite">Lite</button>
+    </div>
+    <div class="r clock"><span id="d"></span><b id="t"></b></div>
+  </footer>
+</main>
+<script>
+var app=document.getElementById('app');
+document.querySelectorAll('.modes button').forEach(function(b){b.onclick=function(){
+document.querySelectorAll('.modes button').forEach(function(x){x.classList.remove('on')});b.classList.add('on');
+document.getElementById('mchip').textContent=b.dataset.m;
+document.querySelector('.stage').classList.toggle('idle',b.dataset.m==='Idle');
+document.getElementById('emo').textContent=b.dataset.m==='Idle'?'sleep':'idle · smug';}});
+document.querySelectorAll('.hot').forEach(function(h){h.onclick=function(){h.classList.add('on');setTimeout(function(){h.classList.remove('on')},900)}});
+var bot=document.getElementById('bot');
+addEventListener('mousemove',function(e){var x=(e.clientX/innerWidth-.5),y=(e.clientY/innerHeight-.5);bot.style.transform='translate('+x*14+'px,'+y*8+'px)'});
+function tick(){var n=new Date();document.getElementById('d').textContent=n.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase();
+document.getElementById('t').textContent=n.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+tick();setInterval(tick,1000);
+</script>
+</body>
+</html>

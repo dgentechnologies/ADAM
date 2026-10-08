@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IsoDateTime } from './common.js';
+import { IsoDateTime } from './common';
 
 /**
  * Stages surfaced in the Software Update screen while an OTA runs (spec §5).

@@ -1,0 +1,86 @@
+=== SHEET: Variant A ===
+1: PROJECT ADAM — BILL OF MATERIALS (BOM)					Project:	ADAM	Revision:	v1.0
+2: 	TOTAL BOM COST			TOTAL LINE ITEMS			TOTAL COMPONENT VOLUME	
+3: 	6500.35			74			146	
+4: Ref Des	Component	MPN	Package	Qty	Unit Price	Total Price	Source	
+5: SECTION A: ELECTRONICS & SENSORS								
+6: U1	Raspberry Pi Zero 2W	SC0510 / RPI-ZERO-2W	Module, 65×30mm	1.0	2150.0	2150	Robu.in / Supreme Electronics (Chandni Chowk)	
+7: J1A, J1B	2×20 Dual-Row Female SMD Header, 2.54mm pitch, 5.0mm low profile	2X20-FEMALE-THT-2.54	SMD Dual Row 2×20	1.0	35.0	35	Quartz Components / Robu.in	
+8: J_PWR	USB Type-C Receptacle, power-only, 5V@3-5A	TYPE-C-16P-SMD	SMD Hybrid 16-Pin	1.0	18.0	18	Evelta / Robu / Chandni	
+9: R1, R2	5.1kW 1% resistor — USB-C CC1/CC2 pulldown	RC0603FR-075K1L	0603	2.0	1.5	3	Local passives / Robu	
+10: F1	PTC resettable polyfuse, 3.0A hold / 3.5-6.0A trip, 6V min — primary input	SMD1812P300TF	1812.0	1.0	16.0	16	Evelta / Mouser	
+11: Q1	P-Channel MOSFET, 30V 4.2A, Rds(on)<50mW — reverse-polarity protection	AO3401A / DMG3415U	SOT-23-3	1.0	6.0	6	Quartz / Evelta	
+12: D1	TVS diode array, ESD protection USB/VBUS, 5V unidirectional	USBLC6-2SC6	SOT-23-6	1.0	12.0	12	Evelta / Mouser	
+13: C_BULK_IN	2200μF 16V low-ESR radial electrolytic — input power reservoir	UPW1C222MHD	Radial 10×20mm	1.0	24.0	24	Supreme / Classic Electronics	
+14: C1,C2,C3	10μF 16V X5R ceramic decoupling	CL10A106KP8NNNC	0603	3.0	3.5	10.5	Local passives / Robu	
+15: C4,C5,C6	100nF 50V X7R ceramic decoupling	CC0603KRX7R9BB104	0603	3.0	1.5	4.5	Local passives / Robu	
+16: F_SERVO	PTC resettable polyfuse, 0.75A hold / 1.5A trip — servo subsystem isolation	SMD1206P075TF	1206.0	1.0	9.0	9	Evelta / Mouser	
+17: C_SERVO_LOC	1000μF 16V low-ESR radial electrolytic, mounted at J_SERVO pins	UPW1C102MPD	Radial 8×15mm	1.0	14.0	14	Supreme Electronics	
+18: D_SERVO	3A 40V Schottky diode — flyback/back-EMF clamp, cathode to +5V_SERVO, anode to GND	SS34 / B340A	SMA / DO-214AC	1.0	5.0	5	Local passives / Robu	
+19: J_SERVO	3-pin JST-XH/Berg header — GND, +5V_SERVO, PWM (to MG90S pan servo)	B3B-XH-A(LF)(SN)	2.54mm R/A	1.0	8.0	8	Robu / Chandni	
+20: SPK1	50mm dynamic speaker, 4-8Ω 3W	SPK-50MM-8R-3W	50mm Round	1.0	79.0	79	Robu.in / Quartz Components	
+21: U_AMP	3.2W mono Class-D I2S audio amp with internal DAC	MAX98357AETE+T	16-TQFN 3×3mm	1.0	125.0	125	Evelta / Mouser / DigiKey	
+22: R_GAIN	100kW 1% — GAIN_SLOT (Pin 2) tied to GND ® fixed +12dB (floating-pin drift fix)	RC0603FR-07100KL	0603	1.0	1.5	1.5	Local passives	
+23: L_FLT1, L_FLT2	Ferrite bead, 100MHz 600W, 2A — speaker EMI filter	BLM18PG601SN1D	0603	2.0	6.0	12	Mouser / Evelta	
+24: C_FLT1, C_FLT2	220pF 50V C0G ceramic filter cap	CC0603JRNPO9BN221	0603	2.0	2.0	4	Local passives	
+25: C_AMP	10μF 16V X5R ceramic — MAX98357A VDD bulk	CL10A106KP8NNNC	0603	1.0	3.5	3.5	Local passives	
+26: J_SPK	2-pin JST-PH — to 3W 4/8W speaker	S2B-PH-K-S(LF)(SN)	2.0mm R/A	1.0	7.0	7	Robu / Quartz	
+27: J_RADAR	3-pin JST-PH — GND, +5V, OUT (to RCWL-0516 microwave radar)	S3B-PH-K-S(LF)(SN)	2.0mm R/A	1.0	7.0	7	Robu / Quartz	
+28: RADAR_MOD	RCWL-0516 microwave radar motion sensor module	RCWL-0516	Module, 35×17mm	1.0	27.0	27	Robu.in / Quartz Components	
+29: J_NECK	4-pin JST-PH shrouded — 5V, GND, TX, RX (to ESP32-S3 Head board)	S4B-PH-K-S(LF)(SN)	2.0mm R/A	1.0	9.0	9	Robu / Quartz	
+30: CBL_NECK	4-core shielded high-flex twisted cable, 28AWG silicone, braided shield to GND (single-point, body side only)	CBL-4C-SHIELD-28AWG	External harness, 30cm	1.0	35.0	35	Evelta / Chandni wire market	
+31: LED1	Green LED — 5V system power indicator	0603-LED-GREEN	603.0	1.0	2.0	2	Local passives	
+32: R_LED1	1.0kW 1% — LED current limiter	RC0603FR-071KL	603.0	1.0	1.5	1.5	Local passives	
+33: TP1-TP8	SMD test points: GND, 5V, 3V3, BCLK, WS, DIN, DOUT, PWM	RC0805 pad	0805 copper pad	8.0	0.0	0	PCB etched copper	
+34: J_MIC_L	6-pin JST-PH — VDD, GND, SD, WS/LRSEL (to Left INMP441 breakout)	S4B-PH-K-S(LF)(SN)	2.0mm R/A	1.0	10.0	10	Robu / Quartz	
+35: J_MIC_R	6-pin JST-PH — VDD, GND, SD, WS/LRSEL (to Right INMP441 breakout)	S4B-PH-K-S(LF)(SN)	2.0mm R/A	1.0	10.0	10	Robu / Quartz	
+36: MIC_L, MIC_R	INMP441 I2S digital MEMS microphone breakout module (24-bit, omnidirectional, on-board regulator)	INMP441-BREAKOUT	6-pin breakout, external	2.0	90.0	180	Robu.in / Evelta	
+37: R_LRL	10kW 1% — Left module L/R pulldown to GND (selects Left I2S slot)	RC0603FR-0710KL	603.0	1.0	1.5	1.5	Local passives	
+38: R_LRR	10kW 1% — Right module L/R pullup to 3V3 (selects Right I2S slot)	RC0603FR-0710KL	603.0	1.0	1.5	1.5	Local passives	
+39: C_MICVDD1, C_MICVDD2	100nF 50V X7R — local VDD decoupling at each mic connector	CC0603KRX7R9BB104	603.0	2.0	1.5	3	Local passives	
+40: U1	ESP32-S3 dual-core MCU module, 8MB flash, 8MB Octal PSRAM	ESP32-S3-WROOM-1-N8 R8	SMD Module 18×25.5mm	1.0	399.0	399	Robu.in / Evelta / Amar Radio (Chandni)	
+41: U2	3.3V 1.0A LDO regulator (5V ® 3.3V)	AMS1117-3.3 / AP2114H-3.3TRG1	SOT-223	1.0	6.5	6.5	Supreme Electronics / Robu.in	
+42: C_SERVO	220μF 16V low-ESR radial — tilt servo inrush buffer	UPW1C221MPD	Radial 6.3×11mm	1.0	6.0	6	Classic Electronics / Chandni	
+43: C1,C2,C3	10μF 16V X5R ceramic (LDO in/out, camera 3.3V)	CL10A106KP8NNNC	603.0	3.0	3.5	10.5	Local passives / Robu	
+44: C4-C8	100nF 50V X7R ceramic decoupling	CC0603KRX7R9BB104	603.0	5.0	1.5	7.5	Local passives / Robu	
+45: J_CAM	24-pin 0.5mm FPC connector (bottom-contact, ZIF)	FH12-24S-0.5SH(55)	0.5mm SMD R/A	1.0	22.0	22	Evelta / Robu.in	
+46: CAM_MOD	OV2640 2MP camera sensor, 75mm extended flex, wide angle	OV2640-FPC-75MM	24-pin 0.5mm FPC	1.0	260.0	260	Robu.in / Supreme Electronics	
+47: R_CAM1, R_CAM2	2.2kW 1% — camera SCCB/I2C pull-up (SIOD/SIOC)	RC0603FR-072K2L	603.0	2.0	1.5	3	Local passives	
+48: J_TFT	20-pin 0.5mm FPC connector (back-flip lock)	20PIN-05-FPC	0.5mm SMD R/A	1.0	15.0	15	Robu.in / Evelta	
+49: TFT_PANEL	2.4" 320×240 ILI9341 TFT, 20-pin bare flex	ILI9341-2.4-20P-FPC	20-pin FPC panel	1.0	380.0	380	Robu.in / Quartz / Chandni	
+50: R_BL	10W 1% 1/8W — backlight current limiter	RC0805FR-0710RL	805.0	1.0	2.0	2	Local passives	
+51: J_T1-J_T4	4× 3-pin JST-PH (to external TTP223 modules)	S3B-PH-K-S(LF)(SN)	2.0mm R/A	4.0	7.5	30	Evelta / Robu.in / Chandni	
+52: TP_T1-TP_T4	Circular copper touch pads (native capacitive touch alt.)	PAD-TOUCH-ROUND-6MM	PCB top copper pad	4.0	0.0	0	PCB etched copper	
+53: TTP223_MOD	TTP223 capacitive touch breakout module	TTP223-MODULE	Mini PCB, external	4.0	18.0	72	Supreme Electronics / Chandni	
+54: R_PD1-R_PD4	10kW 1% — optional touch input pulldown	RC0603FR-0710KL	603.0	4.0	1.5	6	Local passives	
+55: J_SERVO	3-pin 2.54mm header — tilt servo GND/5V/PWM	1X3-PIN-HEADER-2.54	2.54mm vertical	1.0	2.0	2	Supreme Electronics / Robu.in	
+56: SERVO_MOD	MG90S metal-gear micro servo 9g	MG90S-SERVO	External actuator	2.0	120.0	240	Robu.in / Supreme Electronics	
+57: J_NECK	4-pin JST-PH — to Body board (5V, GND, TX, RX)	S4B-PH-K-S(LF)(SN)	2.0mm R/A	1.0	9.0	9	Robu.in / Evelta	
+58: TP_POGO1-8	8× pogo test pads — 3V3/GND/EN/IO0/TX0/RX0/D-/D+	PAD-POGO-1.5MM	1.5mm copper pad	8.0	0.0	0	PCB bottom etched copper	
+59: R_EN	10kW 1% — EN pin pull-up	RC0603FR-0710KL	603.0	1.0	1.5	1.5	Local passives	
+60: C_EN	1μF 16V X7R — EN power-on delay	CC0603KRX7R7BB105	603.0	1.0	2.5	2.5	Local passives	
+61: R_BOOT	10kW 1% — GPIO0 boot-mode pull-up	RC0603FR-0710KL	603.0	1.0	1.5	1.5	Local passives	
+62: LED1	Green LED — 3.3V power indicator	0603-LED-GREEN	603.0	1.0	2.0	2	Local passives	
+63: R_LED1	1.0kW 1% — LED current limiter	RC0603FR-071KL	603.0	1.0	1.5	1.5	Local passives	
+64: PCB	Custom PCB (2 layer)	CUSTOM-PCB-2L	2-Layer FR4	2.0	150.0	300	Custom Fabrication	
+65: SD1	32GB Micro SD Card, Class 10 UHS-I	SDSQUAR-032G-GN6MA	MicroSD	1.0	680.0	680	Robu.in / Quartz Components	
+66: MISC	Miscellaneous and wires			1.0	58.0	58		
+67: SUBTOTAL	Section A — Electronics Subtotal			105		5352		
+69: SECTION B: MECHANICAL & HARDWARE COMPONENTS								
+70: ENC1	3D Printed ABS Shell	3DP-ABS-SHELL-01	3D Printed ABS	1.0	500.0	500	3D Printing Service	
+71: ACR1	Transparent Acrylic Sheet (2mm thickness)	ACR-CLR-2MM	2mm Cut Sheet	1.0	180.0	180	Local Acrylic Fabricator / Robu.in	
+72: SCR1	M3 × 12mm Phillips Pan Head Machine Screw	SCREW-M3-12-PAN-PH	M3 × 12mm	4.0	2.25	9	Quartz Components / Robu.in	
+73: SCR2	M3 × 12mm CSK Countersunk Phillips Flat Head Screw	SCREW-M3-12-CSK-PH	M3 × 12mm CSK	2.0	2.5	5	Robu.in / Sharvi Electronics	
+74: SCR3	M2 × 10mm Phillips Pan Head Machine Screw	SCREW-M2-10-PAN-PH	M2 × 10mm	15.0	2.25	33.75	Quartz Components / Fastdep.in	
+75: SCR4	M1 × 5mm Phillips Pan Head Micro Screw	SCREW-M1-5-PAN-PH	M1 × 5mm	6.0	1.5	9	Local Hardware / IndiaMART	
+76: BRG1	Deep Groove Ball Bearing (32mm OD × 10mm ID × 9mm)	BB-6200-2RS-32MM	32mm OD Bearing	1.0	25.0	25	Local Bearing Market / Robu.in	
+77: INS1	M3 × 4mm Knurled Brass Heat-Set Threaded Insert	INSERT-BRASS-M3-4MM	M3 × 4mm	6.0	3.6	21.6	Robu.in / Sharvi Electronics	
+78: SUBTOTAL	Section B — Mechanical & Hardware Subtotal			36		783.35		
+80: SECTION C: PACKAGING, ACCESSORIES & DOCUMENTATION								
+81: ADPT1	5V 3A Power Adapter with USB Type-C Plug (EU/India 2-pin)	ADP-0530-USBC	Wall Adapter (Wall Wart)	1.0	220.0	220	Robu.in / Supreme Electronics	
+82: CBL1	USB Type-C to Type-C Cable (1m, 3A / 60W rated, PVC/TPE)	CBL-USBC-1M-3A	1m Cable Harness	1.0	75.0	75	Robu.in / Quartz Components	
+83: DOC1	User Manual & Quick Start Guide (A5, 8 pages, color, saddle-stitch)	MAN-ADAM-V10	A5 Booklet	1.0	18.0	18	Printster.in / Local Print House	
+84: BOX1	Custom Printed Corrugated Packaging Box (E-Flute, 200×150×100mm)	BOX-CORR-200X150	3-Ply Corrugated Box	1.0	32.0	32	Boxify.co.in / TradeIndia / Local Fabricator	
+85: PKG1	Die-cut Protective EPE Foam Insert & Packaging Cushioning	PKG-EPE-INSERT	Custom Die-cut Foam	1.0	20.0	20	DCGPac / Local Packaging Supplier	
+86: SUBTOTAL	Section C — Packaging & Accessories Subtotal			5		365		
+88: TOTAL	Grand Total (Electronics + Mechanical + Packaging)			146		6500.35		

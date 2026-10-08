@@ -226,297 +226,388 @@ def draw_idle(ms):
     mw = int(30 * (1.0 + 0.04*breathe))
     _rect(CX, MY+by, mw, 6, DIM)
 
-def draw_speaking(ms):
-    fb.fill(BG)
-    blink = (ms % 3800) < 100
-    ph    = (ms % 420) / 420.0
-    mw    = 64 if ph < 0.33 else (42 if ph < 0.66 else 22)
-    ey    = 3 if blink else 12
-    _rect(EL, EY, EYE_RX*2+4, ey, WHITE)
-    _rect(ER, EY, EYE_RX*2+4, ey, WHITE)
-    _rect(CX, MY, mw, 10, WHITE)
+# def draw_speaking(ms):
+#     fb.fill(BG)
+#     blink = (ms % 3800) < 100
+#     ph    = (ms % 420) / 420.0
+#     mw    = 64 if ph < 0.33 else (42 if ph < 0.66 else 22)
+#     ey    = 3 if blink else 12
+#     _rect(EL, EY, EYE_RX*2+4, ey, WHITE)
+#     _rect(ER, EY, EYE_RX*2+4, ey, WHITE)
+#     _rect(CX, MY, mw, 10, WHITE)
 
-def draw_happy(ms):
+# def draw_happy(ms):
+#     fb.fill(BG)
+#     blink  = (ms % 4000) < 120
+#     bounce = int(math.sin(ms * 0.00286) * 3)
+#     # sparkles
+#     for off, sx, sy, arm in [(0,50,55,9),(600,268,58,9),(1100,285,130,6)]:
+#         ts = (ms+off) % 2200
+#         if 300 < ts < 1400:
+#             br = (ts-300)/550.0 if ts < 850 else (1400-ts)/550.0
+#             _sparkle(sx, sy, int(arm*br+1), br)
+#     if blink:
+#         fb.fill_rect(EL-EYE_RX-2, EY, EYE_RX*2+4, 5, WHITE)
+#         fb.fill_rect(ER-EYE_RX-2, EY, EYE_RX*2+4, 5, WHITE)
+#     else:
+#         _arc(EL, EY+6, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)   # ^ left
+#         _arc(ER, EY+6, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)   # ^ right
+#     _arc(CX, MY-12+bounce, 34, 17, 0, 180, WHITE, 5)              # smile ∪
+
+# def draw_sad(ms):
+#     fb.fill(BG)
+#     by = int(math.sin(ms * 0.00157) * 5)
+#     _arc(EL, EY-6+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)     # ∪ droopy
+#     _arc(ER, EY-6+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)
+#     _arc(CX, MY+10+by, 32, 14, 180, 360, WHITE, 5)               # ^ frown
+#     # tears
+#     for po, ex in [(0.2, EL), (1.0, ER)]:
+#         tp = math.fmod(ms*0.001+po, 1.5)
+#         if tp < 0.55: continue
+#         d  = (tp-0.55)/0.95
+#         ty = EY+36+by+int(d*44)
+#         av = int(min(1, max(0, 1-(tp-0.55)/0.95)) * 200)
+#         tc = _c(av//4, av//3, av)
+#         _fill_ellipse(ex, ty, 6, 9, tc)
+
+# def draw_angry(ms):
+#     fb.fill(BG)
+#     t = ms % 100
+#     sx = -2 if t<25 else (2 if t<75 else 0)
+#     sy =  1 if t<50 else -1
+#     # slash eyes  \ /
+#     _line(EL-EYE_RX+sx, EY-EYE_RY+sy, EL+EYE_RX+sx, EY+EYE_RY+sy, WHITE, 6)
+#     _line(ER+EYE_RX+sx, EY-EYE_RY+sy, ER-EYE_RX+sx, EY+EYE_RY+sy, WHITE, 6)
+#     # zigzag mouth (scaled up)
+#     mp = [(100,MY),(115,MY-15),(130,MY),(145,MY+15),(160,MY),
+#           (175,MY-15),(190,MY),(205,MY+15),(220,MY)]
+#     _zigzag([(x+sx,y+sy) for x,y in mp], WHITE, 5)
+#     # veins
+#     vp = (ms%600)/600.0
+#     vb = vp*2 if vp<0.5 else (1-vp)*2
+#     vc = _c(int(200*vb+55), int(50*vb), int(50*vb))
+#     _line(EL-22, EY-38, EL-30, EY-52, vc, 2)
+#     _line(EL-28, EY-44, EL-36, EY-40, vc, 2)
+#     _line(ER+22, EY-38, ER+30, EY-52, vc, 2)
+#     _line(ER+28, EY-44, ER+36, EY-40, vc, 2)
+#     # heat shimmer
+#     ht = ms%1200
+#     if ht < 960:
+#         hd = ht/960.0
+#         hb = min(1.0, (1-abs(hd*2-1)) * 2)
+#         hc = _c(int(120*hb), int(60*hb), 0)
+#         hy = EY-6 - int(hd*32)
+#         fb.line(EL, hy, EL, hy-8, hc)
+#         fb.line(ER, hy, ER, hy-8, hc)
+
+# def draw_panic(ms):
+#     fb.fill(BG)
+#     t  = ms % 70
+#     sx = -3 if t<20 else (3 if t<40 else -1)
+#     sy =  1 if t<35 else -1
+#     # stress marks
+#     sf = (ms%550)/550.0
+#     sb = sf*2 if sf<0.5 else (1-sf)*2
+#     sc = _c(int(180*sb), int(210*sb), int(255*sb))
+#     _line(EL-46+sx, EY-22+sy, EL-56+sx, EY+sy, sc, 3)
+#     _line(EL-54+sx, EY-10+sy, EL-62+sx, EY-6+sy, sc, 2)
+#     _line(ER+46+sx, EY-22+sy, ER+56+sx, EY+sy, sc, 3)
+#     _line(ER+54+sx, EY-10+sy, ER+62+sx, EY-6+sy, sc, 2)
+#     # wide oval eyes
+#     _ellipse_outline(EL+sx, EY+sy, EYE_RX+3, EYE_RY+6, WHITE, 5)
+#     _ellipse_outline(ER+sx, EY+sy, EYE_RX+3, EYE_RY+6, WHITE, 5)
+#     # darting pupils
+#     pp = (ms%300)/300.0
+#     px = 0 if pp<0.45 else (5 if pp<0.55 else (-5 if pp<0.65 else 0))
+#     py = 0 if pp<0.45 else (-3 if pp<0.55 else (3 if pp<0.65 else 0))
+#     _fill_ellipse(EL+sx+px, EY+sy+py, 7, 7, WHITE)
+#     _fill_ellipse(ER+sx+px, EY+sy+py, 7, 7, WHITE)
+#     # zigzag mouth
+#     mz = [(108,MY),(122,MY-12),(138,MY),(154,MY+12),(170,MY),
+#           (186,MY-12),(202,MY),(214,MY+8),(220,MY+4)]
+#     _zigzag([(x+sx,y+sy) for x,y in mz], WHITE, 5)
+#     # sweat
+#     for po, ex in [(0.2, EL), (1.3, ER)]:
+#         sw = math.fmod(ms*0.001+po, 2.2)
+#         if sw < 0.35: continue
+#         d  = (sw-0.35)/1.85
+#         swy = EY-36 + int(d*55)
+#         av  = int(min(1.0, max(0.0, 1.0-abs(d-0.5)*2+0.1)) * 200)
+#         tc  = _c(av//4, av//3, av)
+#         _fill_ellipse(ex, swy, 5, 8, tc)
+
+# def draw_surprised(ms):
+#     fb.fill(BG)
+#     phase = math.fmod(ms*0.001, 2.8)
+#     es    = min(1.0, phase/0.18)
+#     erx   = int((EYE_RX+4)*es)
+#     ery   = int((EYE_RY+8)*es)
+#     # shock lines
+#     if 0.25 < phase < 1.9:
+#         lb = min(1.0,(phase-0.25)/0.2) * (((1.9-phase)/0.2) if phase>1.7 else 1.0)
+#         lc = _grey(lb*0.55)
+#         _line(EL-25,EY-28, EL-46,EY-42, lc, 2)
+#         _line(EL-32,EY-12, EL-56,EY-8,  lc, 2)
+#         _line(EL-26,EY+10, EL-50,EY+16, lc, 2)
+#         _line(ER+25,EY-28, ER+46,EY-42, lc, 2)
+#         _line(ER+32,EY-12, ER+56,EY-8,  lc, 2)
+#         _line(ER+26,EY+10, ER+50,EY+16, lc, 2)
+#     if erx > 2 and ery > 2:
+#         _ellipse_outline(EL, EY, erx, ery, WHITE, 5)
+#         _ellipse_outline(ER, EY, erx, ery, WHITE, 5)
+#     # O mouth
+#     if phase > 0.18:
+#         ms2 = min(1.0,(phase-0.18)/0.2)
+#         mrx = max(2, int(10*ms2))
+#         mry = max(2, int(9*ms2))
+#         _ellipse_outline(CX, MY, mrx, mry, WHITE, 4)
+
+# def draw_shy(ms):
+#     fb.fill(BG)
+#     blink = (ms%5000) < 120
+#     bi    = 0.35 + 0.3*(math.sin(ms*0.00251)*0.5+0.5)
+#     by    = int(math.sin(ms*0.00105)*6)
+#     # blush
+#     br = int(bi*200)
+#     bc = _c(br, br//3, br//2)
+#     _fill_ellipse(EL-16, EY+32+by, 26, 13, bc)
+#     _fill_ellipse(ER+16, EY+32+by, 26, 13, bc)
+#     # eyes
+#     if blink:
+#         fb.fill_rect(EL-EYE_RX-2, EY+by, EYE_RX*2+4, 5, WHITE)
+#         fb.fill_rect(ER-EYE_RX-2, EY+by, EYE_RX*2+4, 5, WHITE)
+#     else:
+#         _arc(EL, EY+6+by, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)
+#         _arc(ER, EY+6+by, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)
+#     # tiny smile
+#     _arc(CX, MY-4+by, 14, 11, 0, 180, WHITE, 5)
+#     # floating heart
+#     hf = math.fmod(ms*0.001+1.5, 3.0)
+#     if 0.1 < hf < 2.6:
+#         d  = hf/2.6
+#         hx = 278+int(10*d); hy = 88-int(36*d)
+#         av = int(min(1,max(0, hf/0.4 if hf<0.4 else ((2.6-hf)/0.4 if hf>2.2 else 1.0)))*160)
+#         hc = _c(av, av//6, av//5)
+#         _heart(hx, hy, 9, hc, fill=False, t=2)
+
+# def draw_sleep(ms):
+#     fb.fill(BG)
+#     by = int(math.sin(ms*0.00126)*2)
+#     _arc(EL, EY-4+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)   # closed arcs ∪
+#     _arc(ER, EY-4+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)
+#     # ZZZ: use framebuf.text() — 8×8 font, scale with fill_rect tricks
+#     for i, (zx,zy,sc) in enumerate([(258,74,3),(272,56,2),(282,42,1)]):
+#         zp = math.fmod((ms+i*500)*0.001, 4.0)
+#         if zp < 0.1 or zp > 3.8: continue
+#         za = min(1.0, zp/0.25 if zp<0.25 else ((4.0-zp)/0.5 if zp>3.5 else 1.0))
+#         zy2 = zy - int(zp*10)
+#         zc  = _grey(za*0.9)
+#         # Manual Z glyph scaled: 3 lines = top, diagonal, bottom
+#         sw = 8*sc; sh = 8*sc
+#         _line(zx,     zy2,    zx+sw, zy2,    zc, sc)
+#         _line(zx+sw,  zy2,    zx,    zy2+sh, zc, sc)
+#         _line(zx,     zy2+sh, zx+sw, zy2+sh, zc, sc)
+
+# def draw_thinking(ms):
+#     fb.fill(BG)
+#     so = int(math.sin(ms*0.00393)*8)
+#     # scanning wave eyes
+#     lw = [(EL-EYE_RX+so,EY),(EL-EYE_RX//2+so,EY-EYE_RY//2),
+#           (EL+so,EY),(EL+EYE_RX//2+so,EY+EYE_RY//2),(EL+EYE_RX+so,EY)]
+#     rw = [(ER-EYE_RX-so,EY),(ER-EYE_RX//2-so,EY-EYE_RY//2),
+#           (ER-so,EY),(ER+EYE_RX//2-so,EY+EYE_RY//2),(ER+EYE_RX-so,EY)]
+#     _zigzag(lw, WHITE, 5)
+#     _zigzag(rw, WHITE, 5)
+#     # flat mouth + blinking cursor
+#     mp = math.sin(ms*0.00314)*0.5+0.5
+#     mw = 62+int(mp*10)
+#     _line(CX-mw//2, MY, CX+mw//2, MY, _grey(0.6+mp*0.4), 5)
+#     if (ms//900)%2 == 0:
+#         fb.fill_rect(CX+mw//2+4, MY-7, 4, 14, WHITE)
+
+# def draw_reconnecting(ms):
+#     fb.fill(BG)
+#     angle = (ms%1200)/1200.0*2*math.pi
+#     # pulsing rings behind eyes
+#     rp = (ms%1200)/1200.0
+#     rb = max(0.0, 0.4-rp*0.4)
+#     if rb > 0.04:
+#         rc = _c(int(rb*120), int(rb*200), int(rb*255))
+#         rr = int((EYE_RX+4)*(1.0+rp*1.3))
+#         _arc(EL, EY, rr, rr, 0, 360, rc, 1, 40)
+#         _arc(ER, EY, rr, rr, 0, 360, rc, 1, 40)
+#     # spinning star eyes
+#     for ex, sign in [(EL, 1), (ER, -1)]:
+#         for k in range(4):
+#             a  = angle*sign + k*math.pi/2
+#             al = EYE_RX+2
+#             tw = 5 if k%2==0 else 3
+#             x0 = ex+int(math.cos(a)*al); y0 = EY+int(math.sin(a)*al)
+#             x1 = ex-int(math.cos(a)*al); y1 = EY-int(math.sin(a)*al)
+#             _line(x0,y0,x1,y1, WHITE, tw)
+#         # diagonal arms
+#         for k in range(4):
+#             a  = angle*sign + k*math.pi/2 + math.pi/4
+#             al = int((EYE_RX+2)*0.72)
+#             x0 = ex+int(math.cos(a)*al); y0 = EY+int(math.sin(a)*al)
+#             x1 = ex-int(math.cos(a)*al); y1 = EY-int(math.sin(a)*al)
+#             _line(x0,y0,x1,y1, WHITE, 2)
+#     # flat mouth
+#     mp = math.sin(ms*0.00449)*0.5+0.5
+#     _line(CX-32, MY, CX+32, MY, _grey(0.5+mp*0.5), 5)
+#     # loading dots
+#     dp = (ms//470)%3
+#     for d in range(3):
+#         dc = WHITE if d==dp else DIM
+#         _fill_ellipse(CX-10+d*10, MY+20, 5, 5, dc)
+
+# def draw_love(ms):
+#     fb.fill(BG)
+#     # heartbeat scale
+#     t = math.fmod(ms*0.000909, 1.0)
+#     sc = 1.0
+#     if   t < 0.14: sc = 1.0 + t/0.14*0.25
+#     elif t < 0.28: sc = 1.25 - (t-0.14)/0.14*0.25
+#     elif t < 0.42: sc = 1.0  + (t-0.28)/0.14*0.14
+#     elif t < 0.56: sc = 1.14 - (t-0.42)/0.14*0.14
+#     # pulse rings
+#     rp = math.fmod(ms*0.000909, 1.0)
+#     rb = max(0.0, 0.45-rp*0.45)
+#     if rb > 0.04:
+#         rc = _c(int(rb*255), int(rb*70), int(rb*90))
+#         rr = int((EYE_RX+4)*(1.0+rp*1.6))
+#         _arc(EL, EY, rr, rr, 0, 360, rc, 1, 40)
+#         _arc(ER, EY, rr, rr, 0, 360, rc, 1, 40)
+#     # heart eyes — outline (fill is slow on Pico; outline looks great)
+#     _heart(EL, EY, int(32*sc), WHITE, fill=False, t=4)
+#     _heart(ER, EY, int(32*sc), WHITE, fill=False, t=4)
+#     # smile
+#     sb = int(math.sin(ms*0.00314)*3)
+#     _arc(CX, MY-12+sb, 34, 17, 0, 180, WHITE, 5)
+#     # floating hearts
+#     for po, hx0, hy0 in [(0.5,272,142),(1.2,48,158),(1.8,284,108)]:
+#         p = math.fmod(ms*0.001+po, 2.5)
+#         if p < 0.1 or p > 2.4: continue
+#         d  = p/2.5
+#         hx = hx0+int(12*d); hy = hy0-int(60*d)
+#         a  = p/0.4 if p<0.4 else ((2.5-p)/0.5 if p>2.0 else 1.0)
+#         av = int(max(0,min(1,a))*180)
+#         hs = max(4, int(11*(1.0-d*0.4)))
+#         _heart(hx, hy, hs, _c(av, av//5, av//5), fill=False, t=2)
+
+# def draw_confused(ms):
+    # fb.fill(BG)
+    # to_x = int(math.sin(ms*0.00157)*6)
+    # # spiral eyes — concentric arcs rotating
+    # for ex, cw in [(EL, True), (ER, False)]:
+    #     base = (ms%2400)/2400.0*2*math.pi * (1 if cw else -1)
+    #     for rad in range(6, EYE_RX+2, 5):
+    #         frac = rad/(EYE_RX+2)
+    #         a0 = base + frac*2*math.pi
+    #         a1 = a0 + math.pi*1.6
+    #         _arc(ex+to_x, EY, rad, rad, math.degrees(a0), math.degrees(a1), WHITE, 2, 20)
+    #     _fill_ellipse(ex+to_x, EY, 4, 4, WHITE)
+    # # flat mouth
+    # mp = math.sin(ms*0.00314)*0.5+0.5
+    # mw = int(66*(1.0-0.18*mp))
+    # _line(CX-mw//2+to_x, MY, CX+mw//2+to_x, MY, WHITE, 5)
+    # # bouncing ?
+    # qy = 42 - int(math.sin(ms*0.00251)*12)
+    # # draw ? manually: arc + dot
+    # _arc(248, qy+10, 10, 10, 200, 380, WHITE, 3, 20)   # top curve
+    # _fill_ellipse(248, qy+26, 3, 3, WHITE)              # stem top
+    # _fill_ellipse(248, qy+34, 3, 3, WHITE)              # dot
+
+def draw_camera(ms):
     fb.fill(BG)
-    blink  = (ms % 4000) < 120
-    bounce = int(math.sin(ms * 0.00286) * 3)
-    # sparkles
-    for off, sx, sy, arm in [(0,50,55,9),(600,268,58,9),(1100,285,130,6)]:
-        ts = (ms+off) % 2200
-        if 300 < ts < 1400:
-            br = (ts-300)/550.0 if ts < 850 else (1400-ts)/550.0
-            _sparkle(sx, sy, int(arm*br+1), br)
-    if blink:
-        fb.fill_rect(EL-EYE_RX-2, EY, EYE_RX*2+4, 5, WHITE)
-        fb.fill_rect(ER-EYE_RX-2, EY, EYE_RX*2+4, 5, WHITE)
+
+    # ── Countdown timing: 700ms per digit, then a click/flash beat ──
+    cycle = math.fmod(ms, 2600)
+    if   cycle < 700:  digit, seg_t = "3", cycle
+    elif cycle < 1400: digit, seg_t = "2", cycle - 700
+    elif cycle < 2100: digit, seg_t = "1", cycle - 1400
+    else:              digit, seg_t = None, cycle - 2100   # click/flash phase
+
+    click_phase = (digit is None)
+    click_t = seg_t if click_phase else 0.0   # 0..500ms during click phase
+
+    # ── LEFT EYE: camera icon ────────────────────────────────────────
+    # Body: rounded rectangle. Lens: circle in the middle, with a small
+    # viewfinder bump on top. On click (first ~120ms of click_phase) the
+    # lens "closes" (shrinks) to sell the shutter action.
+    body_w, body_h = 74, 50
+    bx, by = EL, EY + 4
+    _rect(bx, by, body_w, body_h, WHITE)
+
+    # viewfinder bump, top-left of body
+    fb.fill_rect(bx - body_w//2 + 10, by - body_h//2 - 10, 18, 12, WHITE)
+
+    # lens: dark outer ring on the white body, white inner ring, dark pupil
+    lens_open = 1.0
+    if click_phase and click_t < 120:
+        lens_open = max(0.15, 1.0 - click_t / 120.0)   # snaps shut fast
+    lens_r_outer = int(19 * lens_open) + 2
+    _fill_ellipse(bx, by, lens_r_outer + 3, lens_r_outer + 3, BG)
+    _ellipse_outline(bx, by, lens_r_outer, lens_r_outer, WHITE, 3)
+    _fill_ellipse(bx, by, max(2, lens_r_outer - 8), max(2, lens_r_outer - 8), BG)
+    _fill_ellipse(bx, by, max(1, int(6 * lens_open)), max(1, int(6 * lens_open)), WHITE)
+
+    # small shutter button top-right
+    fb.fill_rect(bx + body_w//2 - 14, by - body_h//2 - 8, 10, 8, WHITE)
+
+    # ── Flash ring burst radiating from the lens right on the click ──
+    if click_phase and click_t < 380:
+        fb_t = click_t / 380.0
+        rb = max(0.0, 1.0 - fb_t)
+        if rb > 0.03:
+            fr = int(lens_r_outer + 6 + fb_t * 70)
+            fc = _c(int(255*rb), int(255*rb), int(230*rb))
+            _arc(bx, by, fr, fr, 0, 360, fc, 2, 40)
+
+    # ── Full-screen white flash pop right at the click instant ───────
+    if click_phase and click_t < 90:
+        flash_b = 1.0 - (click_t / 90.0)
+        if flash_b > 0.05:
+            fc = _grey(flash_b)
+            fb.fill_rect(0, 0, W, H, BG)          # keep bg clean under overlay
+            fb.fill_rect(0, 0, W, H, fc)          # bright pop across the whole screen
+            # redraw camera + countdown on top so the flash reads as an
+            # overlay rather than wiping the face entirely
+            _rect(bx, by, body_w, body_h, WHITE)
+            fb.fill_rect(bx - body_w//2 + 10, by - body_h//2 - 10, 18, 12, WHITE)
+            _ellipse_outline(bx, by, lens_r_outer, lens_r_outer, WHITE, 3)
+
+    # ── RIGHT EYE: countdown digit ────────────────────────────────────
+    if digit is not None:
+        # gentle pulse each time a new digit appears
+        pulse = 1.0
+        if seg_t < 150:
+            pulse = 1.0 + (1.0 - seg_t / 150.0) * 0.35
+        # framebuf's built-in text() is 8x8px; scale it up manually by
+        # drawing into a tiny temp buffer and blitting scaled, OR just
+        # draw a big custom digit using arcs/lines for a crisper look.
+        dx, dy = ER, EY
+        col = WHITE
+        sc = pulse
+        big = int(46 * sc)
+        thick = 6
+
+        if digit == "3":
+            _arc(dx-6, dy-big//2, big//2, big//3, 250, 470, col, thick, 24)
+            _arc(dx-6, dy+big//2, big//2, big//3, 250, 470, col, thick, 24)
+        elif digit == "2":
+            _arc(dx-6, dy-big//2, big//2, big//3, 200, 440, col, thick, 24)
+            _line(dx+big//2-6, dy-4, dx-big//2-6, dy+big//2, col, thick)
+            _line(dx-big//2-6, dy+big//2, dx+big//2-6, dy+big//2, col, thick)
+        else:  # "1"
+            _line(dx, dy-big//2, dx, dy+big//2, col, thick+2)
+            _line(dx-10, dy-big//2+10, dx, dy-big//2, col, thick)
     else:
-        _arc(EL, EY+6, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)   # ^ left
-        _arc(ER, EY+6, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)   # ^ right
-    _arc(CX, MY-12+bounce, 34, 17, 0, 180, WHITE, 5)              # smile ∪
+        # click phase — right eye shows a simple "done" blink/flat line
+        _rect(ER, EY, EYE_RX*2+4, 10, WHITE)
 
-def draw_sad(ms):
-    fb.fill(BG)
-    by = int(math.sin(ms * 0.00157) * 5)
-    _arc(EL, EY-6+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)     # ∪ droopy
-    _arc(ER, EY-6+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)
-    _arc(CX, MY+10+by, 32, 14, 180, 360, WHITE, 5)               # ^ frown
-    # tears
-    for po, ex in [(0.2, EL), (1.0, ER)]:
-        tp = math.fmod(ms*0.001+po, 1.5)
-        if tp < 0.55: continue
-        d  = (tp-0.55)/0.95
-        ty = EY+36+by+int(d*44)
-        av = int(min(1, max(0, 1-(tp-0.55)/0.95)) * 200)
-        tc = _c(av//4, av//3, av)
-        _fill_ellipse(ex, ty, 6, 9, tc)
-
-def draw_angry(ms):
-    fb.fill(BG)
-    t = ms % 100
-    sx = -2 if t<25 else (2 if t<75 else 0)
-    sy =  1 if t<50 else -1
-    # slash eyes  \ /
-    _line(EL-EYE_RX+sx, EY-EYE_RY+sy, EL+EYE_RX+sx, EY+EYE_RY+sy, WHITE, 6)
-    _line(ER+EYE_RX+sx, EY-EYE_RY+sy, ER-EYE_RX+sx, EY+EYE_RY+sy, WHITE, 6)
-    # zigzag mouth (scaled up)
-    mp = [(100,MY),(115,MY-15),(130,MY),(145,MY+15),(160,MY),
-          (175,MY-15),(190,MY),(205,MY+15),(220,MY)]
-    _zigzag([(x+sx,y+sy) for x,y in mp], WHITE, 5)
-    # veins
-    vp = (ms%600)/600.0
-    vb = vp*2 if vp<0.5 else (1-vp)*2
-    vc = _c(int(200*vb+55), int(50*vb), int(50*vb))
-    _line(EL-22, EY-38, EL-30, EY-52, vc, 2)
-    _line(EL-28, EY-44, EL-36, EY-40, vc, 2)
-    _line(ER+22, EY-38, ER+30, EY-52, vc, 2)
-    _line(ER+28, EY-44, ER+36, EY-40, vc, 2)
-    # heat shimmer
-    ht = ms%1200
-    if ht < 960:
-        hd = ht/960.0
-        hb = min(1.0, (1-abs(hd*2-1)) * 2)
-        hc = _c(int(120*hb), int(60*hb), 0)
-        hy = EY-6 - int(hd*32)
-        fb.line(EL, hy, EL, hy-8, hc)
-        fb.line(ER, hy, ER, hy-8, hc)
-
-def draw_panic(ms):
-    fb.fill(BG)
-    t  = ms % 70
-    sx = -3 if t<20 else (3 if t<40 else -1)
-    sy =  1 if t<35 else -1
-    # stress marks
-    sf = (ms%550)/550.0
-    sb = sf*2 if sf<0.5 else (1-sf)*2
-    sc = _c(int(180*sb), int(210*sb), int(255*sb))
-    _line(EL-46+sx, EY-22+sy, EL-56+sx, EY+sy, sc, 3)
-    _line(EL-54+sx, EY-10+sy, EL-62+sx, EY-6+sy, sc, 2)
-    _line(ER+46+sx, EY-22+sy, ER+56+sx, EY+sy, sc, 3)
-    _line(ER+54+sx, EY-10+sy, ER+62+sx, EY-6+sy, sc, 2)
-    # wide oval eyes
-    _ellipse_outline(EL+sx, EY+sy, EYE_RX+3, EYE_RY+6, WHITE, 5)
-    _ellipse_outline(ER+sx, EY+sy, EYE_RX+3, EYE_RY+6, WHITE, 5)
-    # darting pupils
-    pp = (ms%300)/300.0
-    px = 0 if pp<0.45 else (5 if pp<0.55 else (-5 if pp<0.65 else 0))
-    py = 0 if pp<0.45 else (-3 if pp<0.55 else (3 if pp<0.65 else 0))
-    _fill_ellipse(EL+sx+px, EY+sy+py, 7, 7, WHITE)
-    _fill_ellipse(ER+sx+px, EY+sy+py, 7, 7, WHITE)
-    # zigzag mouth
-    mz = [(108,MY),(122,MY-12),(138,MY),(154,MY+12),(170,MY),
-          (186,MY-12),(202,MY),(214,MY+8),(220,MY+4)]
-    _zigzag([(x+sx,y+sy) for x,y in mz], WHITE, 5)
-    # sweat
-    for po, ex in [(0.2, EL), (1.3, ER)]:
-        sw = math.fmod(ms*0.001+po, 2.2)
-        if sw < 0.35: continue
-        d  = (sw-0.35)/1.85
-        swy = EY-36 + int(d*55)
-        av  = int(min(1.0, max(0.0, 1.0-abs(d-0.5)*2+0.1)) * 200)
-        tc  = _c(av//4, av//3, av)
-        _fill_ellipse(ex, swy, 5, 8, tc)
-
-def draw_surprised(ms):
-    fb.fill(BG)
-    phase = math.fmod(ms*0.001, 2.8)
-    es    = min(1.0, phase/0.18)
-    erx   = int((EYE_RX+4)*es)
-    ery   = int((EYE_RY+8)*es)
-    # shock lines
-    if 0.25 < phase < 1.9:
-        lb = min(1.0,(phase-0.25)/0.2) * (((1.9-phase)/0.2) if phase>1.7 else 1.0)
-        lc = _grey(lb*0.55)
-        _line(EL-25,EY-28, EL-46,EY-42, lc, 2)
-        _line(EL-32,EY-12, EL-56,EY-8,  lc, 2)
-        _line(EL-26,EY+10, EL-50,EY+16, lc, 2)
-        _line(ER+25,EY-28, ER+46,EY-42, lc, 2)
-        _line(ER+32,EY-12, ER+56,EY-8,  lc, 2)
-        _line(ER+26,EY+10, ER+50,EY+16, lc, 2)
-    if erx > 2 and ery > 2:
-        _ellipse_outline(EL, EY, erx, ery, WHITE, 5)
-        _ellipse_outline(ER, EY, erx, ery, WHITE, 5)
-    # O mouth
-    if phase > 0.18:
-        ms2 = min(1.0,(phase-0.18)/0.2)
-        mrx = max(2, int(10*ms2))
-        mry = max(2, int(9*ms2))
-        _ellipse_outline(CX, MY, mrx, mry, WHITE, 4)
-
-def draw_shy(ms):
-    fb.fill(BG)
-    blink = (ms%5000) < 120
-    bi    = 0.35 + 0.3*(math.sin(ms*0.00251)*0.5+0.5)
-    by    = int(math.sin(ms*0.00105)*6)
-    # blush
-    br = int(bi*200)
-    bc = _c(br, br//3, br//2)
-    _fill_ellipse(EL-16, EY+32+by, 26, 13, bc)
-    _fill_ellipse(ER+16, EY+32+by, 26, 13, bc)
-    # eyes
-    if blink:
-        fb.fill_rect(EL-EYE_RX-2, EY+by, EYE_RX*2+4, 5, WHITE)
-        fb.fill_rect(ER-EYE_RX-2, EY+by, EYE_RX*2+4, 5, WHITE)
-    else:
-        _arc(EL, EY+6+by, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)
-        _arc(ER, EY+6+by, EYE_RX+2, EYE_RY-4, 180, 360, WHITE, 5)
-    # tiny smile
-    _arc(CX, MY-4+by, 14, 11, 0, 180, WHITE, 5)
-    # floating heart
-    hf = math.fmod(ms*0.001+1.5, 3.0)
-    if 0.1 < hf < 2.6:
-        d  = hf/2.6
-        hx = 278+int(10*d); hy = 88-int(36*d)
-        av = int(min(1,max(0, hf/0.4 if hf<0.4 else ((2.6-hf)/0.4 if hf>2.2 else 1.0)))*160)
-        hc = _c(av, av//6, av//5)
-        _heart(hx, hy, 9, hc, fill=False, t=2)
-
-def draw_sleep(ms):
-    fb.fill(BG)
-    by = int(math.sin(ms*0.00126)*2)
-    _arc(EL, EY-4+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)   # closed arcs ∪
-    _arc(ER, EY-4+by, EYE_RX+2, EYE_RY-4, 0, 180, WHITE, 5)
-    # ZZZ: use framebuf.text() — 8×8 font, scale with fill_rect tricks
-    for i, (zx,zy,sc) in enumerate([(258,74,3),(272,56,2),(282,42,1)]):
-        zp = math.fmod((ms+i*500)*0.001, 4.0)
-        if zp < 0.1 or zp > 3.8: continue
-        za = min(1.0, zp/0.25 if zp<0.25 else ((4.0-zp)/0.5 if zp>3.5 else 1.0))
-        zy2 = zy - int(zp*10)
-        zc  = _grey(za*0.9)
-        # Manual Z glyph scaled: 3 lines = top, diagonal, bottom
-        sw = 8*sc; sh = 8*sc
-        _line(zx,     zy2,    zx+sw, zy2,    zc, sc)
-        _line(zx+sw,  zy2,    zx,    zy2+sh, zc, sc)
-        _line(zx,     zy2+sh, zx+sw, zy2+sh, zc, sc)
-
-def draw_thinking(ms):
-    fb.fill(BG)
-    so = int(math.sin(ms*0.00393)*8)
-    # scanning wave eyes
-    lw = [(EL-EYE_RX+so,EY),(EL-EYE_RX//2+so,EY-EYE_RY//2),
-          (EL+so,EY),(EL+EYE_RX//2+so,EY+EYE_RY//2),(EL+EYE_RX+so,EY)]
-    rw = [(ER-EYE_RX-so,EY),(ER-EYE_RX//2-so,EY-EYE_RY//2),
-          (ER-so,EY),(ER+EYE_RX//2-so,EY+EYE_RY//2),(ER+EYE_RX-so,EY)]
-    _zigzag(lw, WHITE, 5)
-    _zigzag(rw, WHITE, 5)
-    # flat mouth + blinking cursor
-    mp = math.sin(ms*0.00314)*0.5+0.5
-    mw = 62+int(mp*10)
-    _line(CX-mw//2, MY, CX+mw//2, MY, _grey(0.6+mp*0.4), 5)
-    if (ms//900)%2 == 0:
-        fb.fill_rect(CX+mw//2+4, MY-7, 4, 14, WHITE)
-
-def draw_reconnecting(ms):
-    fb.fill(BG)
-    angle = (ms%1200)/1200.0*2*math.pi
-    # pulsing rings behind eyes
-    rp = (ms%1200)/1200.0
-    rb = max(0.0, 0.4-rp*0.4)
-    if rb > 0.04:
-        rc = _c(int(rb*120), int(rb*200), int(rb*255))
-        rr = int((EYE_RX+4)*(1.0+rp*1.3))
-        _arc(EL, EY, rr, rr, 0, 360, rc, 1, 40)
-        _arc(ER, EY, rr, rr, 0, 360, rc, 1, 40)
-    # spinning star eyes
-    for ex, sign in [(EL, 1), (ER, -1)]:
-        for k in range(4):
-            a  = angle*sign + k*math.pi/2
-            al = EYE_RX+2
-            tw = 5 if k%2==0 else 3
-            x0 = ex+int(math.cos(a)*al); y0 = EY+int(math.sin(a)*al)
-            x1 = ex-int(math.cos(a)*al); y1 = EY-int(math.sin(a)*al)
-            _line(x0,y0,x1,y1, WHITE, tw)
-        # diagonal arms
-        for k in range(4):
-            a  = angle*sign + k*math.pi/2 + math.pi/4
-            al = int((EYE_RX+2)*0.72)
-            x0 = ex+int(math.cos(a)*al); y0 = EY+int(math.sin(a)*al)
-            x1 = ex-int(math.cos(a)*al); y1 = EY-int(math.sin(a)*al)
-            _line(x0,y0,x1,y1, WHITE, 2)
-    # flat mouth
-    mp = math.sin(ms*0.00449)*0.5+0.5
-    _line(CX-32, MY, CX+32, MY, _grey(0.5+mp*0.5), 5)
-    # loading dots
-    dp = (ms//470)%3
-    for d in range(3):
-        dc = WHITE if d==dp else DIM
-        _fill_ellipse(CX-10+d*10, MY+20, 5, 5, dc)
-
-def draw_love(ms):
-    fb.fill(BG)
-    # heartbeat scale
-    t = math.fmod(ms*0.000909, 1.0)
-    sc = 1.0
-    if   t < 0.14: sc = 1.0 + t/0.14*0.25
-    elif t < 0.28: sc = 1.25 - (t-0.14)/0.14*0.25
-    elif t < 0.42: sc = 1.0  + (t-0.28)/0.14*0.14
-    elif t < 0.56: sc = 1.14 - (t-0.42)/0.14*0.14
-    # pulse rings
-    rp = math.fmod(ms*0.000909, 1.0)
-    rb = max(0.0, 0.45-rp*0.45)
-    if rb > 0.04:
-        rc = _c(int(rb*255), int(rb*70), int(rb*90))
-        rr = int((EYE_RX+4)*(1.0+rp*1.6))
-        _arc(EL, EY, rr, rr, 0, 360, rc, 1, 40)
-        _arc(ER, EY, rr, rr, 0, 360, rc, 1, 40)
-    # heart eyes — outline (fill is slow on Pico; outline looks great)
-    _heart(EL, EY, int(32*sc), WHITE, fill=False, t=4)
-    _heart(ER, EY, int(32*sc), WHITE, fill=False, t=4)
-    # smile
-    sb = int(math.sin(ms*0.00314)*3)
-    _arc(CX, MY-12+sb, 34, 17, 0, 180, WHITE, 5)
-    # floating hearts
-    for po, hx0, hy0 in [(0.5,272,142),(1.2,48,158),(1.8,284,108)]:
-        p = math.fmod(ms*0.001+po, 2.5)
-        if p < 0.1 or p > 2.4: continue
-        d  = p/2.5
-        hx = hx0+int(12*d); hy = hy0-int(60*d)
-        a  = p/0.4 if p<0.4 else ((2.5-p)/0.5 if p>2.0 else 1.0)
-        av = int(max(0,min(1,a))*180)
-        hs = max(4, int(11*(1.0-d*0.4)))
-        _heart(hx, hy, hs, _c(av, av//5, av//5), fill=False, t=2)
-
-def draw_confused(ms):
-    fb.fill(BG)
-    to_x = int(math.sin(ms*0.00157)*6)
-    # spiral eyes — concentric arcs rotating
-    for ex, cw in [(EL, True), (ER, False)]:
-        base = (ms%2400)/2400.0*2*math.pi * (1 if cw else -1)
-        for rad in range(6, EYE_RX+2, 5):
-            frac = rad/(EYE_RX+2)
-            a0 = base + frac*2*math.pi
-            a1 = a0 + math.pi*1.6
-            _arc(ex+to_x, EY, rad, rad, math.degrees(a0), math.degrees(a1), WHITE, 2, 20)
-        _fill_ellipse(ex+to_x, EY, 4, 4, WHITE)
-    # flat mouth
-    mp = math.sin(ms*0.00314)*0.5+0.5
-    mw = int(66*(1.0-0.18*mp))
-    _line(CX-mw//2+to_x, MY, CX+mw//2+to_x, MY, WHITE, 5)
-    # bouncing ?
-    qy = 42 - int(math.sin(ms*0.00251)*12)
-    # draw ? manually: arc + dot
-    _arc(248, qy+10, 10, 10, 200, 380, WHITE, 3, 20)   # top curve
-    _fill_ellipse(248, qy+26, 3, 3, WHITE)              # stem top
-    _fill_ellipse(248, qy+34, 3, 3, WHITE)              # dot
+    # ── Mouth: small anticipatory "say cheese" smile throughout ──────
+    _arc(CX, MY-6, 26, 12, 0, 180, DIM if click_phase else WHITE, 4)
 
 def draw_rizz(ms):
     fb.fill(BG)
@@ -543,19 +634,20 @@ def draw_rizz(ms):
 # ─────────────────────────────────────────────────────────────
 EMOTIONS = {
     "idle":         draw_idle,
-    "speaking":     draw_speaking,
-    "happy":        draw_happy,
-    "sad":          draw_sad,
-    "angry":        draw_angry,
-    "panic":        draw_panic,
-    "surprised":    draw_surprised,
-    "shy":          draw_shy,
-    "sleep":        draw_sleep,
-    "thinking":     draw_thinking,
-    "reconnecting": draw_reconnecting,
-    "love":         draw_love,
-    "confused":     draw_confused,
-    "rizz":         draw_rizz,
+    # "speaking":     draw_speaking,
+    # "happy":        draw_happy,
+    # "sad":          draw_sad,
+    # "angry":        draw_angry,
+    # "panic":        draw_panic,
+    # "surprised":    draw_surprised,
+    # "shy":          draw_shy,
+    # "sleep":        draw_sleep,
+    # "thinking":     draw_thinking,
+    # "reconnecting": draw_reconnecting,
+    # "love":         draw_love,
+    # "confused":     draw_confused,
+    # "rizz":         draw_rizz,
+    "camera":       draw_camera, 
 }
 
 EMOTION_LIST = list(EMOTIONS.keys())

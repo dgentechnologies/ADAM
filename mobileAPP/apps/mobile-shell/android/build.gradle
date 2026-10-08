@@ -1,0 +1,50 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'com.google.gms:google-services:4.4.0'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+apply from: "variables.gradle"
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+subprojects {
+    // Keep dependency build output outside pnpm's installed package directories.
+    // Old Explorer read-only metadata there prevented Gradle resource generation.
+    if (project.name != 'app') {
+        layout.buildDirectory.set(rootProject.layout.buildDirectory.dir("modules/${project.name}"))
+    }
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.tasks.matching { it.name.contains('Resources') }.configureEach { task ->
+                doFirst {
+                    fileTree(dir: project.projectDir).matching {
+                        include '**/desktop.ini'
+                    }.each {
+                        it.delete()
+                    }
+                }
+            }
+        }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DeviceSerial, DeviceShortId, IsoDateTime, Uuid } from './common.js';
+import { DeviceSerial, DeviceShortId, IsoDateTime, Uuid } from './common';
 
 /** How the app reached the unit during discovery (spec §2.3). */
 export const DiscoveryTransport = z.enum(['ble', 'hotspot', 'mdns', 'manual']);

@@ -1,5 +1,5 @@
 """
-session.py — ADAM v40 live-session orchestrator
+session.py — ADAM v41 live-session orchestrator
 ==============================================================================
 Owns run_session(): opens one Gemini Live connection and runs the whole
 real-time robot loop as a set of cooperating asyncio tasks —
@@ -46,6 +46,7 @@ import collections
 import statistics   # median() for the VAD sustain window — impulse-immune by construction
 import queue as sync_queue
 
+import numpy as np
 import requests
 from google.genai import types
 
@@ -66,6 +67,7 @@ from config import (
     MIC_ADAPTIVE,
     DOA_ANGLE_DEADZONE, GEMINI_SEND_RATE, POST_MUTE_S,
     MIC_ECHO_GUARD_S, MIC_ECHO_GUARD_MARGIN,
+    AEC_BARGE_RMS_MULT,
     PLAYBACK_DEVICE, PLAYBACK_FORMAT, PLAYBACK_RATE, PLAYBACK_CHANNELS,
     SPEAKER_GAIN, SPEAKER_IDLE_CLOSE_S, SPEAKER_START_DELAY_US,
     SPEAKER_DRAIN_ALLOWANCE_S,
@@ -81,14 +83,24 @@ from config import (
 from hardware import servo_pan, servo_tilt, tft_set, servo_moving   # tft_set re-exported for main.py
 from esp32_link import esp_link
 from audio_utils import (
-    read_exact, write_all, drain_stderr, rms_pcm16, is_valid_pcm16_chunk,
+    read_exact, write_all, write_pcm, drain_stderr, rms_pcm16, speech_band_rms,
+    is_valid_pcm16_chunk,
     beep_s16_stereo, spk_clip_samples, spk_total_samples,
     s32_stereo_to_s16_mono_16k, s32_stereo_to_s16_stereo_channels,
     estimate_doa_angle, s16_mono_24k_to_s16_stereo_48k,
     AdaptiveGate,
+    RNNOISE_AVAILABLE, denoise_rnn,
+    _noise_expander,
+    _aec_canceller, AEC_AVAILABLE,
+    denoise_16k, denoise_reset,
+    _adaptive_gate, _speaker_tracker, _song_barge,
 )
 from memory_store import append_conversation_turn
 from system_prompt import build_system_prompt
+# v41: every "[SYSTEM: ...]" injection below used to be an inline string
+# literal right at its call site. They now come from prompts.txt via
+# prompt_store so all of ADAM's words live in one editable file.
+import prompt_store
 from tools_schema import build_tools
 from song_playback import _play_song_task
 from tool_handler import (
@@ -99,8 +111,10 @@ from tool_handler import (
     _doa_angle, _doa_last_update_t,
 )
 from ws_server import ws_broadcast
+import touch_controls
 from laptop_agent_client import (
     ZEROCONF_AVAILABLE, _discover_laptop_agent_ip, _laptop_agent_ip_cache,
+    get_laptop_endpoint,
 )
 
 from pathlib import Path
@@ -153,6 +167,31 @@ except Exception as e:
 # ═════════════════════════════════════════════════════════════════════════════
 # SESSION
 # ═════════════════════════════════════════════════════════════════════════════
+
+def _sched():
+    """The scheduler module, or a do-nothing stand-in.
+
+    The touch handlers below ask the scheduler questions on every gesture
+    ("is an alarm ringing?"). Making that a hard import would mean a missing
+    or broken scheduler turns a touch into an exception inside an asyncio
+    task — which fails silently and leaves the touch dead. A stand-in keeps
+    every other gesture working and makes the alarm features simply absent.
+    """
+    try:
+        import scheduler
+        return scheduler
+    except Exception:
+        class _Null:
+            @staticmethod
+            def alarm_ringing(): return False
+            @staticmethod
+            def snooze_current(minutes=5): return None
+            @staticmethod
+            def dismiss_current(): return None
+            @staticmethod
+            def drain_pending_fires(): return []
+        return _Null()
+
 
 async def run_session(client, resume_handle: str | None,
                       stop: asyncio.Event, out_q: asyncio.Queue) -> str | None:
@@ -239,6 +278,11 @@ async def run_session(client, resume_handle: str | None,
             last_nudge_t     = [0.0]
             last_user_text   = [""]
             interrupt_flag   = asyncio.Event()
+            # ── Dynamic Barge-In tracking (Shell Vibration Aware) ────────
+            last_spk_active_t = [0.0]
+            last_spk_rms      = [0.0]
+            barge_hit_count   = [0]
+            barge_mute_until  = [0.0]
             # ── Song playback state ──────────────────────────────────────
             # song_playing: mic-mute gate for the duration of playback
             # (listen()/send() check this the same way they check
@@ -420,10 +464,19 @@ async def run_session(client, resume_handle: str | None,
                                 continue
                             errors = 0
 
+                            # If recently interrupted by barge-in, drop microphone chunks for 180ms
+                            # while ALSA hardware playback buffer finishes draining and speaker goes completely silent.
+                            if time.time() < barge_mute_until[0]:
+                                while not mic_q.empty():
+                                    try: mic_q.get_nowait()
+                                    except asyncio.QueueEmpty: break
+                                continue
+
+                            mono16k = None
+                            aec_applied = False
                             # ── HALF-DUPLEX MUTUAL EXCLUSION ──
                             # When ADAM is speaking or a song is playing, the speaker is ACTIVE.
-                            # The microphone MUST BE COMPLETELY OFF:
-                            # Drain mic_q immediately, drop all capture, send zero audio to Gemini.
+                            # Drain mic_q unless full-duplex AEC is active.
                             if adam_speaking.is_set() or song_playing.is_set():
                                 _zero_rms_run[0] = 0
                                 now_hb = time.time()
@@ -436,21 +489,96 @@ async def run_session(client, resume_handle: str | None,
                                         listening=False,
                                         speaking=True,
                                     )
-                                while not mic_q.empty():
-                                    try: mic_q.get_nowait()
-                                    except asyncio.QueueEmpty: break
-                                if song_playing.is_set() and VOSK_AVAILABLE:
-                                    # Allow offline stop-phrase detection during song
-                                    mono16k_song = await asyncio.to_thread(s32_stereo_to_s16_mono_16k, raw)
-                                    if mono16k_song:
-                                        try: wake_word_q.put_nowait(mono16k_song)
-                                        except asyncio.QueueFull: pass
-                                continue
+                                # Priority 4: Full-duplex AEC path during speech
+                                if _aec_canceller.is_available and not song_playing.is_set():
+                                    mono16k_raw = await asyncio.to_thread(s32_stereo_to_s16_mono_16k, raw)
+                                    if mono16k_raw:
+                                        mono16k_aec = _aec_canceller.process(mono16k_raw)
+                                        # ── FULL-DUPLEX DYNAMIC BARGE-IN ──
+                                        barge_rms = rms_pcm16(mono16k_aec)
+                                        # Dynamic self-tuning barge-in: tracks real-time speaker vibration envelope,
+                                        # automatically dropping during word pauses and rising during loud syllables.
+                                        is_barge, barge_thresh = _speaker_tracker.check_barge_in(
+                                            barge_rms, _adaptive_gate.floor or MIC_LIVE_RMS_THRESHOLD
+                                        )
+
+                                        if is_barge:
+                                            # Step 1: Stop ADAM's queued speech immediately.
+                                            # Drain out_q so speaker() stops getting chunks.
+                                            drained_barge = 0
+                                            while not out_q.empty():
+                                                try:
+                                                    out_q.get_nowait()
+                                                    drained_barge += 1
+                                                except asyncio.QueueEmpty:
+                                                    break
+                                            # Step 2: Signal receive() and speaker() to discard any
+                                            # model audio still arriving or queued.
+                                            interrupt_flag.set()
+                                            if _aec_canceller.is_available:
+                                                _aec_canceller.stop_playback()
+                                            _speaker_tracker.reset()
+                                            # Step 3: Mute mic for 180ms to let ALSA hardware ring buffer drain
+                                            # in silence so ZERO bytes of ADAM's own voice leak into Gemini!
+                                            barge_mute_until[0] = time.time() + 0.18
+                                            if adam_speaking.is_set():
+                                                adam_speaking.clear()
+                                                mic_open_t[0] = time.time()
+                                                _face_is_generic_speaking[0] = False
+                                                tft_set("happy")
+                                                print(
+                                                    f"  🗣️  Dynamic Barge-in (RMS {barge_rms:.0f} > "
+                                                    f"thresh {barge_thresh:.0f}) "
+                                                    f"— ADAM interrupted, {drained_barge} audio chunks dropped"
+                                                )
+                                            # Clear any echo from mic_q
+                                            while not mic_q.empty():
+                                                try: mic_q.get_nowait()
+                                                except asyncio.QueueEmpty: break
+                                            continue
+                                        continue
+                                    continue
+                                else:
+                                    while not mic_q.empty():
+                                        try: mic_q.get_nowait()
+                                        except asyncio.QueueEmpty: break
+                                    if song_playing.is_set():
+                                        # ── BARGE-IN DURING SONG ──
+                                        # _song_barge compares the mic against
+                                        # the SONG'S OWN level (fed by
+                                        # song_playback.py) and watches the
+                                        # ratio. A vocal chorus raises both
+                                        # together so it can't false-trigger;
+                                        # a human voice adds energy the song
+                                        # doesn't contain, so it stands out.
+                                        # A level-only detector was tried
+                                        # first and is provably unfixable —
+                                        # see audio_utils.SongBargeIn.
+                                        mono16k_song = await asyncio.to_thread(
+                                            s32_stereo_to_s16_mono_16k, raw)
+                                        if mono16k_song:
+                                            if _song_barge.feed(mono16k_song):
+                                                print("  🎵 Barge-in during song "
+                                                      "(voice over music) — "
+                                                      "stopping song")
+                                                _song_barge.reset()
+                                                song_stop_requested.set()
+                                                continue
+                                            if VOSK_AVAILABLE:
+                                                try:
+                                                    wake_word_q.put_nowait(mono16k_song)
+                                                except asyncio.QueueFull: pass
+                                    continue
 
                             # Downsample 48kHz stereo S32 to 16kHz mono S16 (band-pass filtered)
-                            mono16k = await asyncio.to_thread(s32_stereo_to_s16_mono_16k, raw)
+                            if mono16k is None:
+                                mono16k = await asyncio.to_thread(s32_stereo_to_s16_mono_16k, raw)
                             if not mono16k:
                                 continue
+
+                            # Priority 4: Apply AEC to cancel any post-speech acoustic reverberations
+                            if _aec_canceller.is_available and not aec_applied and not adam_speaking.is_set():
+                                mono16k = _aec_canceller.process(mono16k)
 
                             if not is_valid_pcm16_chunk(mono16k):
                                 _dropped_bad_chunks[0] += 1
@@ -462,7 +590,17 @@ async def run_session(client, resume_handle: str | None,
                                     _dropped_bad_chunks[0] = 0
                                 continue
 
-                            _rms_now = rms_pcm16(mono16k)
+                            # The GATE's level, band-limited to 300-3400 Hz.
+                            # Not rms_pcm16: this mic's noise is broadband and
+                            # impulsive, so a full-band RMS reports mostly
+                            # energy that carries no speech, and the gate's
+                            # open threshold ended up BELOW the room's own
+                            # noise (open 760 vs noise p20 1202, measured
+                            # 2026-10-01) — latched open, streaming noise.
+                            # Everything level-derived reads this one number,
+                            # so floor/open/hold/strong all move together and
+                            # stay in the same units. See config.MIC_BAND_LO_HZ.
+                            _rms_now = speech_band_rms(mono16k)
 
                             if _rms_now < 0.1:
                                 _zero_rms_run[0] += 1
@@ -493,12 +631,27 @@ async def run_session(client, resume_handle: str | None,
                                         _doa_angle[0] = doa_angle[0]
                                         _doa_last_update_t[0] = doa_last_update_t[0]
 
+                            # Room background noise learning (when speaker is idle)
+                            _adaptive_gate.observe_background(_rms_now, mono16k)
+
                             now = time.time()
                             if now - _last_rms[0] > 6.0:
-                                print(f"  🎤 Mic active (RMS: {_rms_now:.0f})")
+                                # Both rails are printed because the gap
+                                # between them is where quiet speech is now
+                                # decided on shape alone, and a log showing
+                                # only the floor cannot tell you whether a
+                                # missed word was below the rail or rejected
+                                # by the shape vote — which are opposite
+                                # faults with opposite fixes.
+                                print(f"  🎤 Mic active (RMS: {_rms_now:.0f} | "
+                                      f"Room floor: {_adaptive_gate.floor:.0f} | "
+                                      f"cand {_adaptive_gate.cand_th:.0f} / "
+                                      f"open {_adaptive_gate.open_th:.0f})")
                                 _last_rms[0] = now
 
-                            if _rms_now > MIC_LIVE_RMS_THRESHOLD:
+                            # Dynamic speech detection: pitch-, frequency-, and environment-invariant
+                            _is_spk = _adaptive_gate.is_speech(mono16k, _rms_now)
+                            if _is_spk:
                                 attention_active.set()
 
                             # If idle mode, route audio only to local wake-word detector
@@ -510,12 +663,23 @@ async def run_session(client, resume_handle: str | None,
                                         pass
                                 continue
 
-                            # Stream expanded PCM chunk to mic_q for Gemini Live.
-                            # The downward expander in audio_utils already transparently quiets
-                            # room silence by ~22 dB, so no hard client-side gate is needed.
-                            # Gemini's native server VAD detects conversational speech turns.
-                            if not mic_q.full():
-                                mic_q.put_nowait(mono16k)
+                            # ── DSP chain (after gate measurement) ──────────
+                            # Priority 1: WOLA spectral noise suppressor (+7.6 dB SNR)
+                            mono16k = denoise_16k(mono16k)
+
+                            # Priority 3: Downward expander / Speech gate with pre-roll
+                            exp_chunks = _noise_expander.process(mono16k, is_speech=_is_spk)
+                            if not isinstance(exp_chunks, list):
+                                exp_chunks = [exp_chunks]
+
+                            for c_out in exp_chunks:
+                                # Priority 2: RNNoise — deep-learning denoiser.
+                                if RNNOISE_AVAILABLE:
+                                    c_out = await asyncio.to_thread(denoise_rnn, c_out)
+
+                                # Stream PCM chunk to mic_q for Gemini Live.
+                                if not mic_q.full():
+                                    mic_q.put_nowait(c_out)
 
                     except asyncio.CancelledError:
                         raise
@@ -541,7 +705,12 @@ async def run_session(client, resume_handle: str | None,
                         continue
                     except asyncio.CancelledError:
                         break
-                    if adam_speaking.is_set() or song_playing.is_set():
+                    # Songs mute the mic unconditionally — no AEC for song playback.
+                    if song_playing.is_set():
+                        continue
+                    # During ADAM's speech turn: mute mic chunks to prevent self-echo into Gemini.
+                    # Audio flows to Gemini only when ADAM is listening (or after barge-in clears adam_speaking).
+                    if adam_speaking.is_set():
                         continue
                     if idle_mode.is_set():
                         continue
@@ -720,6 +889,26 @@ async def run_session(client, resume_handle: str | None,
                                 if sc is None:
                                     continue
 
+                                if getattr(sc, "interrupted", False):
+                                    drained_int = 0
+                                    while not out_q.empty():
+                                        try:
+                                            out_q.get_nowait()
+                                            drained_int += 1
+                                        except asyncio.QueueEmpty:
+                                            break
+                                    interrupt_flag.set()
+                                    if adam_speaking.is_set():
+                                        adam_speaking.clear()
+                                        mic_open_t[0] = time.time()
+                                        if _face_is_generic_speaking[0]:
+                                            tft_set("happy")
+                                            _face_is_generic_speaking[0] = False
+                                    if _aec_canceller.is_available:
+                                        _aec_canceller.stop_playback()
+                                    _speaker_tracker.reset()
+                                    print(f"  🗣️  Interrupted by user (Gemini server VAD detected barge-in, dropped {drained_int} chunks)")
+
                                 if getattr(sc, "input_transcription", None):
                                     t = getattr(sc.input_transcription, "text", "").strip()
                                     if t:
@@ -766,7 +955,6 @@ async def run_session(client, resume_handle: str | None,
 
                                 if sc.model_turn:
                                     if interrupt_flag.is_set():
-                                        interrupt_flag.clear()
                                         continue
                                     if idle_mode.is_set():
                                         # Still idle (wake phrase wasn't
@@ -780,6 +968,7 @@ async def run_session(client, resume_handle: str | None,
                                         continue
                                     if not adam_speaking.is_set():
                                         adam_speaking.set()
+                                        _noise_expander.reset()
                                         # FIX: previously this unconditionally
                                         # called tft_set("speaking") the
                                         # instant audio started — even if
@@ -801,12 +990,18 @@ async def run_session(client, resume_handle: str | None,
                                         if not _last_emotion_set_this_turn[0]:
                                             tft_set("speaking")
                                             _face_is_generic_speaking[0] = True
-                                        print("  🔊 ADAM speaking → mic OFF")
+                                        if _aec_canceller.is_available:
+                                            _aec_canceller.start_playback()
+                                            print("  🔊 ADAM speaking (Full-Duplex AEC active — barge-in enabled)")
+                                        else:
+                                            print("  🔊 ADAM speaking → mic OFF")
                                     for part in sc.model_turn.parts:
                                         if part.inline_data and part.inline_data.data:
                                             await out_q.put(part.inline_data.data)
 
                                 if sc.turn_complete:
+                                    if interrupt_flag.is_set():
+                                        interrupt_flag.clear()
                                     full = "".join(adam_text).strip()
                                     if full:
                                         print(f"  🤖 ADAM: {full}")
@@ -869,18 +1064,8 @@ async def run_session(client, resume_handle: str | None,
                                     if _is_refusal:
                                         print("  ⚠️  Detected refusal-loop "
                                               "pattern — injecting correction")
-                                        await inject(
-                                            "[SYSTEM: That last reply ('I'm just a "
-                                            "language model...') was WRONG and must "
-                                            "not happen again. You are ADAM, a "
-                                            "physical desk robot — you are not a "
-                                            "generic language model and that "
-                                            "disclaimer response is banned. The "
-                                            "previous user message was ordinary and "
-                                            "did not warrant any refusal. Drop this "
-                                            "pattern completely and respond normally "
-                                            "to whatever the user says next, in "
-                                            "ADAM's usual voice.]")
+                                        await inject(prompt_store.injection(
+                                            "inject_refusal_correction"))
 
                                     cur_user_text[0] = ""
                                     adam_text.clear()
@@ -906,9 +1091,8 @@ async def run_session(client, resume_handle: str | None,
                     if buf and proc.poll() is None:
                         try:
                             await asyncio.to_thread(
-                                write_all, proc.stdin, bytes(buf),
+                                write_pcm, proc.stdin, bytes(buf),
                                 PLAYBACK_CHANNELS * 2)
-                            await asyncio.to_thread(proc.stdin.flush)
                         except Exception:
                             pass
 
@@ -945,14 +1129,15 @@ async def run_session(client, resume_handle: str | None,
                             break
                         await asyncio.sleep(0.025)
 
-                    # Acoustic room reverberation decay: allow 200ms for sound waves to dissipate
+                    # Acoustic room reverberation decay: allow POST_MUTE_S for sound waves to dissipate
                     # from the room before reopening the microphone, preventing acoustic echo.
-                    await asyncio.sleep(0.20)
+                    if POST_MUTE_S > 0:
+                        await asyncio.sleep(POST_MUTE_S)
 
                     # Update drain deadline for outer cleanup logic
                     drain_deadline[0] = time.time() + 0.1
 
-                    # Purge any microphone chunks that arrived while speaker audio was playing
+                    # Purge any leftover microphone chunks so zero echo leaks into Gemini when speech ends.
                     drained = 0
                     while not mic_q.empty():
                         try: mic_q.get_nowait(); drained += 1
@@ -972,6 +1157,14 @@ async def run_session(client, resume_handle: str | None,
                         spk_total_samples[0] = 0
 
                     adam_speaking.clear()
+                    barge_hit_count[0] = 0
+                    last_spk_rms[0] = 0.0
+                    last_spk_active_t[0] = 0.0
+                    if _aec_canceller.is_available:
+                        _aec_canceller.stop_playback()
+                        _aec_canceller.reset()
+                    _speaker_tracker.reset()
+                    _noise_expander.reset()
                     mic_open_t[0] = time.time()   # arms the echo guard
                     if _face_is_generic_speaking[0]:
                         tft_set("happy")
@@ -1023,7 +1216,8 @@ async def run_session(client, resume_handle: str | None,
                                "-r", str(PLAYBACK_RATE),
                                "-c", str(PLAYBACK_CHANNELS),
                                "-t", "raw", "-q",
-                               "--buffer-size=96000"]
+                               "--buffer-size=9600",
+                               "--period-size=2400"]
                         # --start-delay and --period-size are worth 600ms of the
                         # reply latency, measured rather than reasoned:
                         #
@@ -1081,17 +1275,20 @@ async def run_session(client, resume_handle: str | None,
                         print(f"  ✅ aplay: {PLAYBACK_DEVICE} {PLAYBACK_FORMAT} "
                               f"{PLAYBACK_RATE}Hz {PLAYBACK_CHANNELS}ch")
                         if first_open[0]:
-                            write_all(proc.stdin, beep_s16_stereo(),
+                            write_pcm(proc.stdin, beep_s16_stereo(),
                                       PLAYBACK_CHANNELS * 2)
-                            proc.stdin.flush()
                             print("  🔔 Startup beep sent")
                             first_open[0] = False
                         if pending is not None:
                             # The chunk that woke us; converted here so the
                             # inner loop's normal 4096-byte flush ships it.
-                            buf.extend(await asyncio.to_thread(
+                            out_pending = await asyncio.to_thread(
                                 s16_mono_24k_to_s16_stereo_48k, pending,
-                                SPEAKER_GAIN))
+                                SPEAKER_GAIN)
+                            if _aec_canceller.is_available:
+                                _aec_canceller.feed_playback_48k_stereo(out_pending)
+                            _speaker_tracker.feed_speaker(out_pending, 1.0)
+                            buf.extend(out_pending)
                             pending = None
 
                         watchdog_t = time.time()
@@ -1105,14 +1302,33 @@ async def run_session(client, resume_handle: str | None,
                                     print("  ⚠️  Speaker watchdog fired")
                                     await end_of_turn(proc, buf)
                                     buf = bytearray()
-                                elif not adam_speaking.is_set() and proc and proc.poll() is None:
+                                elif (not adam_speaking.is_set()
+                                      and not song_playing.is_set()
+                                      and proc and proc.poll() is None):
                                     # Feed digital silence to keep ALSA PCM active and prevent
                                     # VoiceHAT DAPM power-down from suspending the audio amp into Broken Pipe.
+                                    #
+                                    # MUST be skipped while a song is playing.
+                                    # _play_song_task() writes into this SAME
+                                    # aplay, but through its own task, so out_q
+                                    # stays empty and adam_speaking stays clear
+                                    # for the entire song — this 0.5s timeout
+                                    # therefore fired continuously and punched
+                                    # 3840 bytes = 960 frames = 20 ms of
+                                    # digital silence into the middle of the
+                                    # music, twice a second. That is a 4% duty
+                                    # cycle of dropouts with a waveform
+                                    # discontinuity (a click) at each edge:
+                                    # exactly the "song is distorted through
+                                    # ADAM but beautiful through aplay
+                                    # -D plughw:1,0" report. The keep-alive is
+                                    # also pointless during a song — the song
+                                    # itself is continuous audio, which is all
+                                    # DAPM needs to stay powered up.
                                     try:
                                         await asyncio.to_thread(
-                                            write_all, proc.stdin, b"\x00" * 3840,
+                                            write_pcm, proc.stdin, b"\x00" * 3840,
                                             PLAYBACK_CHANNELS * 2)
-                                        await asyncio.to_thread(proc.stdin.flush)
                                     except Exception:
                                         pass
                                 continue
@@ -1134,12 +1350,29 @@ async def run_session(client, resume_handle: str | None,
                                 # of exiting.
                                 raise
 
+                            if interrupt_flag.is_set():
+                                buf = bytearray()
+                                if chunk is None:
+                                    interrupt_flag.clear()
+                                continue
+
                             if chunk is None:
                                 await end_of_turn(proc, buf)
                                 buf = bytearray()
+                                last_spk_rms[0] = 0.0
+                                last_spk_active_t[0] = 0.0
                             else:
                                 out = await asyncio.to_thread(
                                     s16_mono_24k_to_s16_stereo_48k, chunk, SPEAKER_GAIN)
+                                if _aec_canceller.is_available:
+                                    _aec_canceller.feed_playback_48k_stereo(out)
+                                _speaker_tracker.feed_speaker(out, 1.0)
+
+                                c_rms = rms_pcm16(chunk)
+                                last_spk_rms[0] = c_rms
+                                if c_rms > 400.0:
+                                    last_spk_active_t[0] = time.time()
+
                                 buf.extend(out)
                                 if len(buf) >= 4096:
                                     if proc.poll() is not None:
@@ -1159,9 +1392,8 @@ async def run_session(client, resume_handle: str | None,
                                     # re-syncs a PCM pipe. See write_all() in
                                     # audio_utils.py.
                                     await asyncio.to_thread(
-                                        write_all, proc.stdin, bytes(buf),
+                                        write_pcm, proc.stdin, bytes(buf),
                                         PLAYBACK_CHANNELS * 2)
-                                    await asyncio.to_thread(proc.stdin.flush)
                                     buf.clear()
 
                     except asyncio.CancelledError:
@@ -1433,6 +1665,9 @@ async def run_session(client, resume_handle: str | None,
 
             async def gesture_watch() -> None:
                 print("  ✋ Gesture task started (wired UART)")
+                priority_token = touch_controls.set_priority(
+                    lambda sensor: sensor == "touch3" and
+                    (song_playing.is_set() or idle_mode.is_set()))
                 try:
                     while not stop.is_set():
                         await asyncio.sleep(0.02)
@@ -1440,12 +1675,30 @@ async def run_session(client, resume_handle: str | None,
                             await asyncio.sleep(1.0)
                             continue
                         try:
-                            code = esp_link.gesture_q.get_nowait()
+                            code = (touch_controls.next_legacy()
+                                    if touch_controls.capabilities()["touch_assignments"]
+                                    else esp_link.gesture_q.get_nowait())
                         except sync_queue.Empty:
                             continue
 
                         if code == GESTURE_STOP:
-                            if song_playing.is_set():
+                            if _sched().alarm_ringing():
+                                # A RINGING ALARM OWNS THE TOUCHES. Touch3
+                                # normally means "go idle", but while an alarm
+                                # is sounding it means DISMISS — that is what
+                                # prompts.txt has always told the user ("tap
+                                # Touch3 to dismiss it"), and it is the only
+                                # silent way out of an alarm that would
+                                # otherwise keep ringing. Checked before every
+                                # other branch so a touch can never be
+                                # swallowed by idle/song handling and leave
+                                # the user unable to stop the noise.
+                                label = _sched().dismiss_current()
+                                if song_playing.is_set():
+                                    song_stop_requested.set()
+                                tft_set("happy")
+                                print(f"  ⏹️  Touch3 — alarm dismissed ({label!r})")
+                            elif song_playing.is_set():
                                 # Highest priority: Touch3 during song
                                 # playback stops the song, full stop —
                                 # doesn't also toggle idle mode in the
@@ -1493,31 +1746,33 @@ async def run_session(client, resume_handle: str | None,
                                 # (85°) used during active tracking.
                                 await asyncio.to_thread(servo_pan, 90)
                                 servo_tilt(90)
-                                await inject(
-                                    "[SYSTEM: User pressed STOP (touch pad). Go "
-                                    "fully idle now — do not speak, do not "
-                                    "respond to anything, even the idle-nudge "
-                                    "prompts, until the user explicitly says "
-                                    "your name (e.g. 'Hey ADAM', 'ADAM...') to "
-                                    "wake you up. Acknowledge nothing further "
-                                    "right now — just fall silent.]")
+                                await inject(prompt_store.injection(
+                                    "inject_stop_gesture"))
 
                         elif code == GESTURE_ANGRY:
-                            if idle_mode.is_set():
+                            if _sched().alarm_ringing():
+                                # Touch1/Touch2 while an alarm sounds = snooze
+                                # five minutes, per prompts.txt. Same
+                                # precedence rule as Touch3 above: the alarm
+                                # is the reason the user is touching anything,
+                                # so it is answered first.
+                                nxt = _sched().snooze_current(5)
+                                if nxt:
+                                    tft_set("sleep")
+                                    print(f"  😴 Touch1/2 — alarm snoozed to {nxt}")
+                                else:
+                                    tft_set("happy")
+                                    print("  ⏹️  Touch1/2 — alarm dismissed "
+                                          "(snooze limit reached)")
+                            elif idle_mode.is_set():
                                 # No Google traffic while idle — only
                                 # Touch3/voice-wake exit idle mode.
                                 continue
                             print("  😾 Cheek slap — angry reaction")
                             tft_set("angry")
                             attention_active.set()
-                            await inject(
-                                "[SYSTEM: User slapped your cheek touch pad. React with "
-                                "genuine annoyance, in character. Keep it short — one "
-                                "sharp line. IMPORTANT: this is a SPOKEN reaction only "
-                                "— do NOT call any tool (laptop_control, web_search, "
-                                "etc.) as part of this reaction. Express annoyance with "
-                                "words alone, not actions. The user did not ask you to "
-                                "control anything.]")
+                            await inject(prompt_store.injection(
+                                "inject_cheek_slap"))
 
                         elif code == GESTURE_PETTING:
                             if idle_mode.is_set():
@@ -1525,13 +1780,12 @@ async def run_session(client, resume_handle: str | None,
                             print("  🥰 Petting detected")
                             tft_set("love")
                             attention_active.set()
-                            await inject(
-                                "[SYSTEM: User is petting you (touch3+touch4 together). "
-                                "React warmly and affectionately, in character. Keep it "
-                                "short. IMPORTANT: this is a SPOKEN reaction only — do "
-                                "NOT call any tool as part of this reaction.]")
+                            await inject(prompt_store.injection(
+                                "inject_petting"))
                 except asyncio.CancelledError:
                     pass
+                finally:
+                    touch_controls.clear_priority(priority_token)
                 print("  ✋ Gesture task ended")
 
             async def wake_word_detector() -> None:
@@ -1636,6 +1890,75 @@ async def run_session(client, resume_handle: str | None,
                     pass
                 print("  🔎 Wake-word detector ended")
 
+            async def scheduler_delivery() -> None:
+                """Deliver fired alarms/reminders/timers into the live session.
+
+                Polls rather than being pushed to: firing happens on the
+                scheduler's own ticker in main.py, which is deliberately
+                independent of whether a Gemini session exists (§0.4 — it is
+                not part of the reconnect loop). This task is the bridge.
+
+                Two rules, both about not being intrusive:
+
+                • NEVER INTERRUPT. The injection is not sent while ADAM is
+                  mid-sentence (adam_speaking) or while a song is playing —
+                  the same reasoning idle_watcher uses. An alarm that cuts
+                  into the sentence explaining where the fire exit is has
+                  made things worse, and a second writer into the shared aplay
+                  stdin corrupts the audio. The fire stays queued in
+                  scheduler._pending until the moment is clean.
+
+                • NOTHING IS DELIVERED WHILE IDLE. Idle mode means "do not
+                  send things to Google on your own". The event is held, not
+                  dropped, so it still arrives when the user comes back.
+                """
+                while not stop.is_set():
+                    try:
+                        await asyncio.sleep(1.0)
+                        if stop.is_set():
+                            break
+                        if (adam_speaking.is_set() or song_playing.is_set()
+                                or idle_mode.is_set()):
+                            continue
+
+                        fires = _sched().drain_pending_fires()
+                        if not fires:
+                            continue
+
+                        # One injection per batch: several alarms coming due
+                        # together (a reboot grace window can do this) should
+                        # read as one sentence, not a queue of interruptions.
+                        for f in fires:
+                            kind = f.get("kind", "alarm")
+                            pool = {"alarm": "alarm_fired",
+                                    "reminder": "reminder_fired",
+                                    "timer": "timer_completed"}.get(
+                                        kind, "alarm_fired")
+                            try:
+                                line = prompt_store.pick(pool, label=f.get("label", ""))
+                            except Exception:
+                                line = f.get("label", "")
+                            text = prompt_store.injection(
+                                "inject_alarm_fired",
+                                kind=kind, label=f.get("label", ""), line=line)
+                            if not text:
+                                continue
+                            # A fired alarm is a reason to be attentive, not a
+                            # user turn — so this does NOT set
+                            # last_user_turn_t[0]. Idle nudges must still see
+                            # the room as quiet afterwards.
+                            attention_active.set()
+                            sent = await inject(text)
+                            print(f"  🔔 delivered {kind} "
+                                  f"{f.get('label')!r} (injected={sent})")
+                            # Let the sentence land before the next one.
+                            await asyncio.sleep(2.5)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        print(f"  ⚠️  scheduler_delivery error: {e}")
+                        await asyncio.sleep(2)
+
             async def idle_watcher() -> None:
                 if not ENABLE_IDLE:
                     return
@@ -1689,24 +2012,24 @@ async def run_session(client, resume_handle: str | None,
                             await session.send_realtime_input(
                                 video=types.Blob(data=latest_frame[0],
                                                  mime_type="image/jpeg"))
-                        await inject(
-                            f"[SYSTEM: {elapsed:.0f}s of silence. React or make conversation. "
-                            f"Keep it to 1-2 sentences. Suggestion: {nudge}]")
+                        await inject(prompt_store.injection(
+                            "inject_idle_nudge",
+                            elapsed=f"{elapsed:.0f}", nudge=nudge))
                     except Exception:
                         pass
 
             async def laptop_agent_healthcheck() -> None:
-                if not ZEROCONF_AVAILABLE and not LAPTOP_AGENT_STATIC_IP:
-                    return
                 while not stop.is_set():
                     await asyncio.sleep(LAPTOP_DISCOVERY_TTL_S)
                     if stop.is_set():
                         break
-                    ip = await asyncio.to_thread(_discover_laptop_agent_ip)
-                    if ip:
+                    endpoint = await asyncio.to_thread(get_laptop_endpoint)
+                    if endpoint:
+                        ip, port, _ = endpoint
+                        host = f"[{ip}]" if ":" in ip else ip
                         try:
                             resp = await asyncio.to_thread(
-                                requests.get, f"http://{ip}:{LAPTOP_AGENT_PORT}/ping",
+                                requests.get, f"http://{host}:{port}/ping",
                                 timeout=2.0)
                             if resp.status_code != 200:
                                 _laptop_agent_ip_cache["ip"] = None
@@ -1722,6 +2045,7 @@ async def run_session(client, resume_handle: str | None,
                 asyncio.create_task(gesture_watch(),              name="gesture"),
                 asyncio.create_task(wake_word_detector(),         name="wake_word"),
                 asyncio.create_task(idle_watcher(),               name="idle"),
+                asyncio.create_task(scheduler_delivery(),         name="scheduler"),
                 asyncio.create_task(laptop_agent_healthcheck(),   name="laptop_health"),
             ]
 

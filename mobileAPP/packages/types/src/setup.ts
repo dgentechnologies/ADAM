@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AiBrainMode } from './device.js';
-import { DeviceSerial } from './common.js';
+import { AiBrainMode } from './device';
+import { DeviceSerial } from './common';
 
 /**
  * Setup wizard steps, ordered. The slug matches the route segment under
@@ -16,7 +16,6 @@ export const SetupStep = z.enum([
   'wifi-select',
   'wifi-password',
   'connecting',
-  'name-device',
   'founder-reveal',
   'ai-brain',
   'byok',
@@ -37,21 +36,19 @@ export const SETUP_PROGRESS_STEPS = [
   'sign-in',
   'discover',
   'wifi-select',
-  'name-device',
   'ai-brain',
   'camera-permission',
 ] as const satisfies readonly SetupStep[];
 
 /**
  * The only steps a user cannot skip (spec §1): Account → Pairing → Wi-Fi →
- * Naming → AI Brain choice. Lite Mode must always remain reachable, so nothing
+ * AI Brain choice. Lite Mode must always remain reachable, so nothing
  * downstream of ai-brain is ever required.
  */
 export const SETUP_REQUIRED_STEPS = [
   'sign-in',
   'device-found',
   'connecting',
-  'name-device',
   'ai-brain',
 ] as const satisfies readonly SetupStep[];
 
@@ -68,12 +65,15 @@ export const SetupState = z.object({
   signedIn: z.boolean(),
   selectedSerial: DeviceSerial.nullable(),
   selectedSsid: z.string().nullable(),
+  wifiPassword: z.string().nullable().optional(),
   deviceName: z.string().nullable(),
   aiBrainMode: AiBrainMode.nullable(),
   isFounderEdition: z.boolean(),
   founderNumber: z.number().int().min(1).max(10).nullable(),
   cameraPermissionGranted: z.boolean(),
   userNameForFace: z.string().nullable(),
+  userFacePhoto: z.string().nullable().optional(),
+  userFaceAngles: z.record(z.string(), z.string()).nullable().optional(),
   completedAt: z.string().nullable(),
 });
 export type SetupState = z.infer<typeof SetupState>;
@@ -85,11 +85,14 @@ export const INITIAL_SETUP_STATE: SetupState = {
   signedIn: false,
   selectedSerial: null,
   selectedSsid: null,
-  deviceName: null,
+  wifiPassword: null,
+  deviceName: 'ADAM',
   aiBrainMode: null,
   isFounderEdition: false,
   founderNumber: null,
   cameraPermissionGranted: false,
   userNameForFace: null,
+  userFacePhoto: null,
+  userFaceAngles: null,
   completedAt: null,
 };

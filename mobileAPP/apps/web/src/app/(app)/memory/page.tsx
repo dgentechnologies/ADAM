@@ -1,165 +1,227 @@
 'use client';
-
-import type { MemoryKind } from '@adam/types';
-import {
-  Card,
-  CardGroup,
-  EmptyState,
-  IconButton,
-  ListRow,
-  Screen,
-  ScreenHeader,
-  SegmentedControl,
-} from '@adam/ui';
-import { useQuery } from '@tanstack/react-query';
-import { BrainCircuit, ScanFace, Trash2, User } from 'lucide-react';
-import { useState } from 'react';
-
-import { AppBar } from '@/components/app-bar';
-import { fetchMemory, queryKeys } from '@/lib/mock/api';
-
-/**
- * `memory` — everything ADAM knows, with a delete on every row (spec §2.11).
- *
- * COLOUR: the Stitch markup styled this delete control `hover:text-error` /
- * `hover:bg-error-container/20`. That is the export's one real colour leak and it
- * is dropped rather than remapped — the theme has no `error` token, so it would
- * fail the Tailwind build, and destructive intent is carried by the icon plus the
- * confirm step instead of by hue.
- *
- * Deletion is local-only here; there is no mutation endpoint in this pass.
- */
-const TABS: ReadonlyArray<{ value: MemoryKind; label: string }> = [
-  { value: 'person', label: 'People' },
-  { value: 'fact', label: 'Facts' },
-];
-
+import { Button, IconButton } from '@adam/ui';
+import { Brain, Pencil, Plus, Search, Trash2, UserRound, ScanFace } from 'lucide-react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useMemoryIntent } from '@/stores/memory-intent';
+import { Confirm, Dialog, Empty, Loading, Notice, Page, Panel } from '@/components/companion-ui';
+import { deleteFact, errorMessage, saveFact, type Fact } from '@/lib/local-data';
+import { useLocalData } from '@/lib/use-local-data';
 export default function MemoryPage() {
-  const [tab, setTab] = useState<MemoryKind>('person');
-  const [deleted, setDeleted] = useState<string[]>([]);
-  const [confirming, setConfirming] = useState<string | null>(null);
-
-  const { data: entries = [], isPending } = useQuery({
-    queryKey: queryKeys.memory,
-    queryFn: fetchMemory,
-  });
-
-  const visible = entries.filter((entry) => entry.kind === tab && !deleted.includes(entry.id));
-
+  const { requested, clear } = useMemoryIntent();
+  const { data, loading, error: loadError } = useLocalData();
+  const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<Fact | null | undefined>();
+  const [removing, setRemoving] = useState<Fact | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (requested) {
+      setEditing(null);
+      clear();
+    }
+  }, [requested, clear]);
+  const filtered = data.facts.filter((f) =>
+    `${f.title} ${f.text}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  async function remove() {
+    if (!removing) return;
+    setBusy(true);
+    try {
+      await deleteFact(removing.id);
+      setRemoving(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
-    <>
-      <AppBar title="Memory" />
-
-      <Screen chrome="both">
-        <div className="flex flex-col gap-stack-md">
-          <ScreenHeader
-            size="xs"
-            title={
-              <>
-                What ADAM
-                <br />
-                remembers
-              </>
-            }
-            subtitle="People he has met and things you have told him. Forget anything, any time."
-          />
-
-          <SegmentedControl
-            aria-label="Memory type"
-            options={TABS}
-            value={tab}
-            onChange={(value) => {
-              setTab(value);
-              setConfirming(null);
-            }}
-          />
-
-          {isPending ? (
-            <CardGroup>
-              {Array.from({ length: 3 }, (_, index) => (
-                <div key={index} className="flex items-center gap-gutter px-stack-md py-gutter">
-                  <span className="h-10 w-10 animate-breathe rounded-full bg-surface-pressed" />
-                  <span className="h-4 w-40 animate-breathe rounded-full bg-surface-pressed" />
-                </div>
-              ))}
-            </CardGroup>
-          ) : visible.length === 0 ? (
-            <EmptyState
-              icon={tab === 'person' ? User : BrainCircuit}
-              title={tab === 'person' ? 'No one yet.' : 'Nothing learned yet.'}
-              description={
-                tab === 'person'
-                  ? 'ADAM adds a person once he has met them.'
-                  : 'Tell ADAM something worth remembering and it will appear here.'
-              }
-            />
-          ) : (
-            <div className="flex flex-col gap-stack-sm">
-              {visible.map((entry) => (
-                <Card key={entry.id} padding="none">
-                  <ListRow
-                    className={entry.kind === 'fact' ? 'opacity-70' : undefined}
-                    icon={
-                      <span className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface">
-                        {entry.kind === 'person' ? (
-                          entry.hasFaceProfile ? (
-                            <ScanFace
-                              className="h-5 w-5"
-                              strokeWidth={1.5}
-                              aria-label="Face saved"
-                            />
-                          ) : (
-                            <User className="h-5 w-5" strokeWidth={1.5} aria-hidden />
-                          )
-                        ) : (
-                          <BrainCircuit className="h-5 w-5" strokeWidth={1.5} aria-hidden />
-                        )}
-                      </span>
-                    }
-                    title={entry.content}
-                    trailing={
-                      confirming === entry.id ? (
-                        <span className="flex items-center gap-stack-sm">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDeleted((current) => [...current, entry.id]);
-                              setConfirming(null);
-                            }}
-                            className="rounded-full border border-fg bg-fg px-4 py-1.5 text-label-md text-fg-inverse"
-                          >
-                            Forget
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirming(null)}
-                            className="text-label-md text-fg-muted"
-                          >
-                            Keep
-                          </button>
-                        </span>
-                      ) : (
-                        <IconButton
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Forget ${entry.label}`}
-                          onClick={() => setConfirming(entry.id)}
-                        >
-                          <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-                        </IconButton>
-                      )
-                    }
-                  />
-                </Card>
-              ))}
-            </div>
-          )}
-
-          <p className="text-label-md text-fg-faint">
-            Memories live on the device. Forgetting one removes it from ADAM immediately.
-          </p>
+    <Page
+      title="Memory"
+      action={
+        <IconButton
+          aria-label="Add memory"
+          variant="ghost"
+          size="md"
+          onClick={() => {
+            setError('');
+            setEditing(null);
+          }}
+        >
+          <Plus size={22} />
+        </IconButton>
+      }
+    >
+      <div>
+        <p className="eyebrow mb-3">WORTH REMEMBERING</p>
+        <h2 className="page-title">
+          Little things.
+          <br />
+          Lasting memories.
+        </h2>
+        <p className="text-fg-muted mt-3 text-sm leading-6">
+          People, preferences, and thoughts. Saved on this phone, ready for life with ADAM.
+        </p>
+      </div>
+      <label className="relative">
+        <Search size={18} className="text-fg-muted absolute left-4 top-4" />
+        <input
+          className="field pl-11"
+          aria-label="Search memories"
+          placeholder="Search your memories"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </label>
+      {(error || loadError) && <Notice error>{error || loadError}</Notice>}
+      {loading ? (
+        <Loading />
+      ) : filtered.length === 0 ? (
+        <Empty
+          icon={Brain}
+          title={search ? 'Nothing found' : 'A place for what matters'}
+          action={
+            !search && (
+              <Button onClick={() => setEditing(null)}>
+                <Plus size={17} />
+                Add your first memory
+              </Button>
+            )
+          }
+        >
+          {search
+            ? 'Try a different word or name.'
+            : 'Start with a favourite, an idea, or someone you want to remember.'}
+        </Empty>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((f) => (
+            <Panel key={f.id}>
+              <div className="mb-3 flex items-start gap-3">
+                {f.kind === 'person' ? <UserRound size={19} /> : <Brain size={19} />}
+                <h3 className="min-w-0 flex-1 break-words text-sm font-semibold">{f.title}</h3>
+                <IconButton
+                  size="md"
+                  variant="ghost"
+                  aria-label={`Edit ${f.title}`}
+                  onClick={() => setEditing(f)}
+                >
+                  <Pencil size={16} />
+                </IconButton>
+                <IconButton
+                  size="md"
+                  variant="ghost"
+                  aria-label={`Delete ${f.title}`}
+                  onClick={() => {
+                    setError('');
+                    setRemoving(f);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </IconButton>
+              </div>
+              <p className="text-fg-muted whitespace-pre-wrap break-words text-sm leading-6">
+                {f.text}
+              </p>
+              <p className="text-fg-muted mt-4 text-[10px] uppercase tracking-wider">
+                Saved {new Date(f.createdAt).toLocaleDateString()}
+              </p>
+            </Panel>
+          ))}
         </div>
-      </Screen>
-    </>
+      )}
+      <Link
+        href="/face-capture"
+        className="text-fg-muted flex min-h-12 items-center justify-center gap-2 text-sm"
+      >
+        <ScanFace size={17} />
+        Your face profile
+      </Link>
+      {editing !== undefined && <MemoryForm fact={editing} onClose={() => setEditing(undefined)} />}
+      {removing && (
+        <Confirm
+          title="Delete this memory?"
+          onClose={() => setRemoving(null)}
+          onConfirm={remove}
+          busy={busy}
+        >
+          “{removing.title}” will be removed from this phone. This cannot be undone.
+          {error && <span className="mt-2 block">{error}</span>}
+        </Confirm>
+      )}
+    </Page>
+  );
+}
+function MemoryForm({ fact, onClose }: { fact: Fact | null; onClose: () => void }) {
+  const [title, setTitle] = useState(fact?.title ?? '');
+  const [text, setText] = useState(fact?.text ?? '');
+  const [kind, setKind] = useState<Fact['kind']>(fact?.kind ?? 'fact');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim() || !text.trim() || busy) return;
+    setBusy(true);
+    try {
+      await saveFact({ id: fact?.id, title, text, kind });
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog
+      title={fact ? 'Edit memory' : 'A new memory'}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+    >
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <label className="field-label">
+          Title
+          <input
+            className="field"
+            autoFocus
+            required
+            maxLength={80}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Your favourite coffee"
+          />
+        </label>
+        <label className="field-label">
+          Type
+          <select
+            className="field"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as Fact['kind'])}
+          >
+            <option value="fact">Thought or preference</option>
+            <option value="person">Person</option>
+          </select>
+        </label>
+        <label className="field-label">
+          Details
+          <textarea
+            className="field min-h-28 resize-y"
+            required
+            maxLength={2000}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="The details you’d like to keep."
+          />
+        </label>
+        {error && <Notice error>{error}</Notice>}
+        <Button block type="submit" disabled={busy || !title.trim() || !text.trim()}>
+          {busy ? 'Saving…' : 'Save memory'}
+        </Button>
+        <Button block variant="ghost" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+      </form>
+    </Dialog>
   );
 }

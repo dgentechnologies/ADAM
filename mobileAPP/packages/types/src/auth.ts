@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IsoDateTime, Uuid } from './common.js';
+import { IsoDateTime, Uuid } from './common';
 
 /** POST /auth/google — the app exchanges a Google OAuth id_token for a session. */
 export const GoogleAuthRequest = z.object({

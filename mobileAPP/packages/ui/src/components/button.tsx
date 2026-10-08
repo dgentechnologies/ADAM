@@ -20,7 +20,7 @@ const button = cva(  [
   {
     variants: {
       variant: {
-        primary: 'bg-fg text-fg-inverse text-black bg-white hover:opacity-90',
+        primary: 'bg-fg text-fg-inverse hover:opacity-90',
         outline: 'border border-border-strong text-fg hover:bg-surface-pressed',
         ghost: 'text-fg-muted hover:text-fg',
       },

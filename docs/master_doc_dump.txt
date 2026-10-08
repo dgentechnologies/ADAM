@@ -1,0 +1,1101 @@
+  Λ D Λ M  
+
+AUTONOMOUS DESKTOP AI MODULE
+
+MASTER PRODUCT DOCUMENT
+
+Product identity · brand · architecture · hardware · software · capabilities · roadmap · commercialization
+
+Developed by Dgen Technologies Private Limited
+
+Kolkata, India
+
+CONFIDENTIAL — PRODUCT & PARTNER REFERENCE
+
+v2.0 · Consolidated Edition · 19 September 2026
+
+Working Product Positioning
+
+"A physical AI companion for your desk."
+
+Internal market positioning used in the launch strategy: India's first domestically designed and built AI desk companion robot. This is a positioning claim used by Dgen's strategy materials, not an independently verified market statistic.
+
+Document status: Master reference consolidated from all current product, engineering, GTM and monetisation documentation, including the production BOM files, as of 19 September 2026. Where sources conflicted, the most recent and most detailed engineering material (the Master Product Document v1.7 content and the production BOM files) is treated as authoritative.
+
+A More Human Tomorrow
+
+ADAM — a physical AI companion designed to make everyday technology feel more natural, useful and human.
+
+1. Product Identity
+
+Field
+
+Canonical reference
+
+Product name
+
+ADAM
+
+Expansion
+
+Autonomous Desktop AI Module
+
+Category
+
+Physical AI / desktop AI companion robot
+
+Developer
+
+Dgen Technologies Private Limited, Kolkata, India
+
+Core interaction model
+
+Real-time voice + vision + memory + touch + expressive face + physical movement + tool/computer control
+
+Primary AI platform
+
+Google Gemini Live API in the documented prototype stack
+
+Launch model
+
+Founder Edition → limited batches → India → international expansion
+
+One-line definition
+
+ADAM is a physical desktop AI companion designed to make multimodal AI tangible: it can hear, see, remember, respond, express emotion, react to touch and presence, move its head, interact with connected devices, and operate a computer through an agent layer.
+
+Core narrative
+
+Physical AI companion + edge hardware + Gemini + vision + voice + memory + emotional interaction.
+
+The product is intentionally positioned as more than a voice assistant in a box: the physical body is part of the interface.
+
+2. Brand & Visual Identity
+
+ADAM wordmark
+
+This master document standardizes on a black-and-white presentation: white wordmark reversed out of a solid black field, no color accents.
+
+Visual direction
+
+Minimal, premium, technology-forward presentation with generous white/negative space.
+
+Monochrome palette (black / white / neutral gray) for this document; Dgen's standard brand palette (green + dark neutral) still governs marketing and web assets.
+
+ADAM is visually associated with a compact expressive robot form, a screen-based face and subtle accenting.
+
+Use the Dgen corporate identity for company-level communications; use ADAM as the product identity.
+
+Messaging hierarchy
+
+Layer
+
+Use
+
+Product
+
+ADAM — Autonomous Desktop AI Module
+
+Category
+
+Physical AI desktop companion
+
+Technology
+
+Real-time multimodal AI, vision, voice, memory and physical interaction
+
+Trust / platform
+
+Powered by Google Gemini AI — where applicable to the deployment
+
+Origin
+
+Designed and built by Dgen Technologies in Kolkata, India
+
+Note: the exact production logo artwork should be treated as the authoritative asset when available; this master document uses a clean text treatment so it does not invent a new logo mark.
+
+3. System Architecture
+
+ADAM's architecture has evolved from the working v32 prototype toward a unified custom-PCB production architecture.
+
+Current system view
+
+Body / Main Compute
+
+Head / Real-time I/O
+
+Cloud / Devices
+
+Raspberry Pi Zero 2 W AI orchestration + memory Gemini Live + audio I/O Pan servo + UART
+
+ESP32-S3 production target OV2640 camera ILI9341 TFT Touch + tilt servo
+
+Gemini Live Web / smart-home tools Laptop agent Mobile / desktop UI
+
+Production direction: consolidate head electronics onto a unified ESP32-S3 motherboard.
+
+Current working prototype architecture (v32)
+
+Body: Raspberry Pi Zero 2 W as the main compute/orchestration unit; audio I/O, Gemini Live session, memory, pan servo and body↔head communications.
+
+Head: ESP32-CAM for camera capture, touch/gesture sensing and tilt servo control; Raspberry Pi Pico drives the ILI9341 face display.
+
+Neck link: four wires — 5V, GND, TX and RX — over a wired UART path. Zero Wi-Fi is used for the vision link.
+
+Production hardware direction
+
+Body motherboard BOM 1: Raspberry Pi Zero 2 W integrated with discrete power, audio ADC, amplifier, servo protection and neck interface circuitry.
+
+Head motherboard: ESP32-S3-WROOM-1-N16R8/N8R8 consolidating camera, TFT, touch, tilt servo and programming interfaces onto one PCB.
+
+Advanced body option BOM 2: Raspberry Pi Compute Module 4 Lite carrier architecture for higher-performance computer vision/OpenCV and multi-threaded AI workloads.
+
+Important: the v32 document describes the working assembled architecture, while the production BOM documents describe the next production PCB architecture. They are not identical hardware revisions.
+
+4. Feature Set
+
+#
+
+Feature
+
+Description
+
+1
+
+Real-time Conversation
+
+Low-latency, natural voice conversation designed for continuous back-and-forth interaction.
+
+2
+
+Vibe Coding
+
+ADAM can announce the status of connected coding agents such as Claude Code or Codex — including when input is required, a task is completed, or a task has stopped.
+
+3
+
+Smart Home Control
+
+Control connected smart-home devices through the supported local automation layer, including lights, plugs and other MQTT-enabled devices.
+
+4
+
+Assistive Productivity
+
+Help manage schedules, remember important information, add notes, draft emails and prepare text for the connected laptop or PC.
+
+5
+
+Companion
+
+A persistent physical presence designed for interaction, conversation, reminders and everyday companionship.
+
+6
+
+Computer Assistance
+
+Work alongside the connected laptop or PC through the computer-control and clipboard workflow.
+
+7
+
+Memory & Reminders
+
+Remember user-provided information, recall it later, and assist with schedules, reminders and notes.
+
+8
+
+Mobile Notification Reading
+
+When enabled by the user in the ADAM mobile app, ADAM can read incoming mobile notifications aloud.
+
+9
+
+Vision
+
+Use the camera for visual context and multimodal interaction.
+
+10
+
+Physical Expression
+
+Express interaction through the display, touch sensing and physical pan/tilt movement.
+
+User-controlled features: mobile notification reading is opt-in. Computer, clipboard and coding-agent integrations depend on the connected device and configured permissions. ADAM reports coding-agent state rather than silently taking over the developer's workflow.
+
+5. AI & Software Stack
+
+Runtime split
+
+Component
+
+ADAM implementation
+
+Conversation AI
+
+Gemini Live remains the primary conversational / multimodal AI layer in the documented ADAM runtime.
+
+Function calling
+
+Cactus Needle 3 is the planned on-device tool-calling layer for local action selection and argument filling.
+
+Local execution
+
+ADAM executes the selected function through its own Python/runtime integrations; Needle does not replace the executor.
+
+Structured extraction
+
+Needle 3 can also turn messy inputs such as notifications into typed fields for downstream actions.
+
+Fallback
+
+Needle 2 remains a compatibility option for existing deployments; the master architecture targets Needle 3.
+
+ADAM function-calling domains
+
+Smart home — map natural language to device actions and support multi-call requests such as changing multiple devices.
+
+Assistive actions — schedules, reminders, notes, clipboard preparation and other connected-PC actions.
+
+Vibe coding — announce and route status events from Claude Code / Codex workflows, such as input required, task completed or task stopped.
+
+Mobile notifications — when enabled, structure notification content for reading or downstream handling.
+
+Memory — route save, recall and related memory operations using explicit tool schemas.
+
+Computer control — select narrowly defined actions for the connected laptop/PC rather than generating unrestricted commands.
+
+Needle 3 deployment decision
+
+Needle 3 is the current target because Cactus positions it specifically for mobile, wearables, robots, smart home and microcontroller-class devices. Its ladder allows the same model family to be built from 2 to 20 layers. For ADAM, 4-layer and 8-layer builds should be benchmarked on the Raspberry Pi Zero 2 W before the production depth is frozen.
+
+6. Human–Robot Interaction
+
+ADAM is designed around multimodal interaction rather than a single input channel.
+
+Channel
+
+Description
+
+Hear
+
+Dual microphone capture provides stereo audio input into the main compute/audio pipeline.
+
+See
+
+The head camera captures frames for vision-aware AI interaction.
+
+Feel
+
+Four touch channels provide direct physical interaction points.
+
+Sense presence
+
+Microwave radar provides local presence awareness.
+
+Look expressive
+
+The TFT face renders multiple emotional states and transitions.
+
+Move
+
+Pan and tilt servos allow physical orientation and expression.
+
+Remember
+
+Persistent memory can store user-defined information and person associations.
+
+Act
+
+Tool calls allow ADAM to control connected software, smart-home systems and a laptop agent.
+
+Example interaction loop
+
+Presence detected → ADAM becomes attentive → user speaks → microphone audio enters Gemini Live → camera context may be supplied → AI responds → speaker plays response → emotion changes on the face → movement/touch/automation tools can be invoked.
+
+7. Hardware Architecture
+
+Body subsystem
+
+Subsystem
+
+Current / production reference
+
+Compute
+
+Raspberry Pi Zero 2 W; advanced BOM 2 option uses Raspberry Pi CM4 Lite (2GB/4GB)
+
+Microphones
+
+2× microphones; production BOM 1/2 documents analog condenser inputs → LMV358 → PCM1808 I2S ADC
+
+Audio amplifier
+
+MAX98357A 3.2W mono Class-D I2S amplifier
+
+Speaker
+
+Internal 3W-class acoustic speaker connection
+
+Presence sensor
+
+RCWL-0516 microwave radar
+
+Pan actuator
+
+MG90S metal gear micro servo
+
+Power protection
+
+USB-C input, polyfuse, reverse-polarity MOSFET, TVS, bulk capacitance and dedicated servo isolation
+
+Neck link
+
+4-pin JST-PH, 5V/GND/TX/RX, shielded high-flex cable
+
+Head subsystem
+
+Subsystem
+
+Production motherboard reference
+
+MCU
+
+ESP32-S3-WROOM-1-N16R8 / N8R8; N16R8 is recommended for OTA partitions + LittleFS
+
+Camera
+
+OV2640 2MP module on 24-pin 0.5mm FPC
+
+Display
+
+2.4-inch 320×240 ILI9341 TFT on 20-pin FPC
+
+Touch
+
+4× TTP223 external modules or native capacitive touch pads
+
+Tilt
+
+MG90S metal gear micro servo with local bulk capacitor and flyback protection
+
+Programming
+
+Bottom-side pogo pads for 3V3, GND, EN, IO0, TX0, RX0, USB D−/D+
+
+8. Production PCB Reference
+
+Body Motherboard — BOM 1
+
+Compute core: Raspberry Pi Zero 2 W.
+
+2-layer or 4-layer FR4, 1.6 mm, 1 oz copper.
+
+3.0 A primary input polyfuse and reverse-polarity protection.
+
+2200 µF 16 V low-ESR input reservoir; dedicated 1000 µF servo-local reservoir.
+
+PCM1808 24-bit / 96 kHz stereo I2S ADC with synchronous master-clock topology.
+
+MAX98357A 3.2 W mono Class-D I2S amplifier.
+
+921600-baud shielded UART neck interface to the head motherboard.
+
+Head Motherboard — ESP32-S3
+
+ESP32-S3-WROOM-1-N16R8 / N8R8; 240 MHz dual-core Xtensa LX7.
+
+8 MB Octal PSRAM; 16 MB Flash recommended for production.
+
+OV2640 2 MP camera via 24-pin FPC.
+
+ILI9341 2.4-inch 320×240 display via high-speed DMA SPI.
+
+TFT control deliberately moved to GPIO37/GPIO38; GPIO45/GPIO46/GPIO3 left isolated as documented strapping-risk mitigation.
+
+Camera SCCB uses GPIO39/GPIO40; touch channels use GPIO1/GPIO2/GPIO4/GPIO14.
+
+Production head uses a unified controller rather than the prototype's ESP32-CAM + Pico split.
+
+Advanced Body Motherboard — BOM 2
+
+Raspberry Pi CM4 Lite with 2 GB or 4 GB LPDDR4.
+
+Dual Hirose DF40 100-pin board-to-board connectors.
+
+4-layer FR4 carrier with controlled-impedance routing.
+
+MicroSD storage, external dual-band antenna, nRPIBOOT recovery and GLOBAL_EN reset access.
+
+Designed for higher-performance OpenCV, computer vision and multi-threaded AI workloads.
+
+9. Hardware Cost & Variant Reference
+
+Engineering BOM estimates — not consumer retail pricing.
+
+Variant
+
+Compute
+
+Estimated unit BOM
+
+Role
+
+Body BOM 1 + Head
+
+Pi Zero 2 W + ESP32-S3
+
+≈ ₹2,830 body + ₹1,538 head ≈ ₹4,368 before mechanical/assembly extras
+
+Baseline production direction
+
+Body BOM 2 + Head
+
+CM4 2GB + ESP32-S3
+
+≈ ₹5,417.50 body + ₹1,538 head ≈ ₹6,955.50 before mechanical/assembly extras
+
+Advanced vision / compute
+
+Body BOM 2 4GB + Head
+
+CM4 4GB + ESP32-S3
+
+≈ ₹6,417.50 body + ₹1,538 head ≈ ₹7,955.50 before mechanical/assembly extras
+
+Higher-memory advanced option
+
+Launch pricing reference from GTM strategy
+
+Founder drop: first 10 units, numbered Founder Editions #001–#010.
+
+India target price documented: ₹14,999 Standard to ₹18,999 Pro.
+
+International target price documented: $299 Standard to $349 Pro.
+
+The GTM strategy explicitly frames these as positioning targets, not final prices.
+
+Important: BOM cost is not manufacturing cost-to-sell. Final COGS must also account for mechanical parts, PCB assembly, display/camera sourcing, battery/power system if used, enclosure finishing, packaging, QA, shipping, warranty reserve, software infrastructure and taxes.
+
+10. AI Service & Monetisation Model
+
+Core principle: never brick the robot
+
+The documented monetisation strategy treats AI usage as a service layer on top of hardware. ADAM should remain useful even if a user has no AI credits or configured API key.
+
+Capability
+
+Lite mode
+
+Dependency
+
+Clock / date / alarms
+
+Available
+
+Local system time
+
+Smart-home control
+
+Available
+
+Local MQTT over Wi-Fi
+
+Face detection
+
+Available
+
+Local Haar cascade
+
+Presence detection
+
+Available
+
+RCWL-0516 hardware
+
+Weather
+
+Available
+
+OpenWeatherMap API
+
+Timers / reminders
+
+Available
+
+Local display/runtime
+
+Emotion animations
+
+Available
+
+Local TFT renderer
+
+Full AI conversation
+
+Requires AI access
+
+Gemini Live
+
+Web search
+
+Requires AI access
+
+AI session/tool layer
+
+New memory writes
+
+AI-dependent in documented model
+
+AI session + memory tool
+
+Documented monetisation options
+
+BYOK: user supplies their own API key, minimizing Dgen's AI usage cost.
+
+Prepaid credit packs: users buy AI usage without being forced into a subscription.
+
+Ephemeral token architecture: documented as the production direction for multi-user Gemini Live deployment.
+
+11. Go-To-Market & Launch Positioning
+
+Phase
+
+Objective
+
+Key mechanism
+
+1 — Founder Drop
+
+Convert the first 10 strategic buyers into advocates
+
+Numbered Founder Editions #001–#010
+
+2 — Demand Engine
+
+Build demand for the next batch
+
+Build journey + Founder stories + influencer/community content
+
+3 — Market Expansion
+
+Expand beyond India
+
+India first, then South Asian diaspora and global AI enthusiasts
+
+Primary launch messages
+
+Made in India / domestically designed and built.
+
+Real-time Gemini AI with physical embodiment.
+
+Works with Hindi and Bengali is explicitly proposed as an India-market demonstration message.
+
+Smart-home control: a physical AI companion that can act on connected devices.
+
+Direct support from the team / local product ownership.
+
+Sales channel architecture
+
+Primary early channel: direct sales through dgentechnologies.com.
+
+Secondary: Instagram/DM and direct outreach payment links.
+
+B2B opportunity: startups, co-working spaces and tech gifting.
+
+Marketplace expansion was planned only after product stability and meaningful unit volume.
+
+12. Target Users & Product Differentiation
+
+Segment
+
+Description
+
+AI enthusiasts
+
+Users who want multimodal AI to exist as a physical object rather than only an app.
+
+Developers / makers
+
+A hackable physical-AI platform combining embedded electronics, AI, sensors and actuators.
+
+Desk / productivity users
+
+A companion for reminders, information, voice interaction, computer actions and smart-home routines.
+
+Smart-home users
+
+Users who want conversational control of local connected devices.
+
+Collectors / early adopters
+
+Founder Editions create a limited early ownership experience and community identity.
+
+Documented comparison dimensions
+
+Voice-first assistants typically live in speakers or phones; ADAM adds a physical body, display, movement and touch.
+
+Emotion-focused companion robots may emphasize personality; ADAM's documented stack adds live AI, vision, memory, smart-home and computer-control layers.
+
+The product is being developed as an integrated hardware/software platform rather than a purely cloud service.
+
+13. Product Evolution & Roadmap
+
+Stage
+
+Architecture
+
+Significance
+
+Working v32
+
+Pi Zero 2 W + ESP32-CAM + Pico + ILI9341
+
+Confirmed physical prototype and working software path
+
+Body BOM 1
+
+Pi Zero 2 W on custom motherboard
+
+Cost-optimized production-oriented integration
+
+Head BOM
+
+ESP32-S3 unified head motherboard
+
+Removes legacy ESP32-CAM + Pico split
+
+Body BOM 2
+
+CM4 carrier
+
+Advanced compute/vision option
+
+Engineering priorities visible across the latest documents
+
+Reduce wiring and simplify the mechanical neck interface.
+
+Consolidate head electronics onto a production ESP32-S3 PCB.
+
+Improve power integrity around servos and audio.
+
+Use synchronous I2S clocking for reliable audio.
+
+Protect boot-strapping pins and isolate high-risk GPIOs.
+
+Prepare for OTA firmware and persistent local storage.
+
+Keep an upgrade path to CM4-class compute for higher-end vision workloads.
+
+14. Technical Specification Sheet
+
+Category
+
+Specification
+
+Product
+
+ADAM — Autonomous Desktop AI Module
+
+Form
+
+Desktop physical AI companion robot
+
+Main compute — baseline
+
+Raspberry Pi Zero 2 W, quad Cortex-A53 @ 1 GHz, 512 MB RAM
+
+Main compute — advanced
+
+Raspberry Pi CM4 Lite, 2 GB or 4 GB LPDDR4
+
+Head MCU — production
+
+ESP32-S3-WROOM-1-N16R8 / N8R8, 240 MHz dual-core, 8 MB Octal PSRAM
+
+Camera
+
+OV2640, 2 MP
+
+Display
+
+ILI9341, 2.4-inch, 320×240 TFT
+
+Touch
+
+4 channels; TTP223 or native ESP32-S3 capacitive touch
+
+Presence
+
+RCWL-0516 microwave radar
+
+Actuation
+
+MG90S metal-gear micro servos for pan/tilt
+
+Audio input
+
+2-microphone architecture; PCM1808 24-bit / 96 kHz stereo I2S ADC
+
+Audio output
+
+MAX98357A 3.2 W mono Class-D I2S amplifier
+
+Head/body link
+
+4-wire 5V/GND/UART; documented 921600 baud
+
+Conversation AI
+
+Gemini Live in the documented prototype/strategy stack
+
+Function calling
+
+Cactus Needle 3; 2–20 layer ladder; ADAM validation target: 4L/8L on Pi Zero 2 W
+
+Software
+
+Python + embedded firmware; OpenCV, memory, web search, laptop agent and display renderer
+
+Smart home
+
+MQTT-based local device control
+
+15. Engineering Architecture Notes
+
+Function-calling architecture
+
+Gemini Live is the conversational intelligence layer; Needle 3 is a specialised local model for selecting tools and filling typed arguments.
+
+Needle 3 does not act as ADAM's general chat model. Its job is structured automation: request → tool selection → arguments → JSON call.
+
+The tool set should remain narrow and explicit: one tool per action, user-facing names, clear argument formats and constraints.
+
+For requests that need multiple actions, Needle 3 can emit multiple calls in order; unsupported requests can return an empty call list instead of inventing an action.
+
+Needle 3 responses include a confidence value. ADAM's runtime should use this to distinguish automatic execution from confirmation-required actions.
+
+Triggers can be used for intents that must reach a particular tool, while the final executor remains under ADAM's application control.
+
+Structured extraction can support mobile notification parsing and other inputs where ADAM needs typed fields rather than free-form prose.
+
+The initial ADAM deployment should benchmark Needle 3 at 4L and 8L on the actual Pi Zero 2 W.
+
+Audio architecture
+
+Production body BOMs define the Raspberry Pi/CM4 as I2S master.
+
+PCM1808 ADC and MAX98357A amplifier are treated as synchronized I2S slaves.
+
+The documented master-clock path uses GPCLK0 / GPIO4 at 12.288 MHz for a 48 kHz audio system.
+
+Servo power has a dedicated protected branch to reduce brownout and motor-noise risk.
+
+Head + wiring architecture
+
+ESP32-S3 production design keeps GPIO45, GPIO46 and GPIO3 isolated from functional routing.
+
+Camera SCCB uses GPIO39/GPIO40; TFT SPI uses GPIO35/GPIO36 with DC/CS on GPIO37/GPIO38 and reset on GPIO47.
+
+Touch channels are mapped to GPIO1/GPIO2/GPIO4/GPIO14.
+
+The neck interface is deliberately minimised to four electrical conductors; the moving head keeps camera/display/touch electronics local.
+
+16. Privacy, API & Service Design Considerations
+
+Production deployments should not expose a permanent shared Gemini API key directly to every unit.
+
+The monetisation strategy identifies ephemeral-token architecture as the production direction for multi-user deployments.
+
+The strategy notes a privacy trade-off associated with certain free-tier AI usage and calls for user consent where applicable.
+
+User-facing settings should clearly explain AI connectivity, API-key/BYOK configuration, credit status and what functions work locally.
+
+The product philosophy is to preserve local functionality when cloud AI is unavailable.
+
+This document intentionally does not define final legal/privacy policy text. Those policies should be maintained separately and reviewed before commercial release.
+
+17. Brand, Community & Content System
+
+Pillar
+
+Description
+
+The Build
+
+Technical progress, wiring, PCB, firmware, debugging and prototypes.
+
+ADAM Speaks
+
+Short AI demos showing ADAM answering, remembering, using tools and expressing emotion.
+
+The Team
+
+Founder/team stories and the human side of building ADAM in Kolkata.
+
+Community
+
+Founder Edition announcements, waitlist milestones and community participation.
+
+Education
+
+Explainers on Gemini Live, physical AI, smart-home integration and BYOK.
+
+Community architecture proposed in GTM
+
+ADAM by Dgen Discord community.
+
+WhatsApp community for the Indian waitlist.
+
+Early-access build updates and feature voting.
+
+Monthly community call / product progress session.
+
+The product story should consistently connect three layers: the robot people can touch, the AI people can talk to, and the engineering journey people can follow.
+
+18. Mobile App Architecture
+
+Integrated mobile product architecture, setup, BLE provisioning and operating surfaces.
+
+Product architecture
+
+Monorepo: Turborepo + pnpm workspaces with apps/web, apps/api and apps/mobile-shell, plus shared UI, types and configuration packages.
+
+Web layer: Next.js 15 App Router with static export for the Capacitor shell, allowing the same application surface to support browser preview and native mobile packaging.
+
+Native shell: Capacitor targets Android and iOS; native plugins provide BLE, camera and secure-storage capabilities.
+
+Shared contracts: strict TypeScript/Zod models cover authentication, device telemetry, Wi-Fi provisioning, setup state, memory, gallery, OTA, credits and preferences.
+
+Backend: Fastify REST/WebSocket contract for authentication, device state, memory, gallery, OTA and credit services; routes and persistence layer remain implementation work.
+
+13-stage first-run setup
+
+Splash → Welcome → Sign-in → BLE device discovery → Device found/pairing validation → Wi-Fi selection → Wi-Fi password → Connecting/handshake → Name device → Founder Edition reveal → AI Brain selection → BYOK/Credits/Lite configuration → Camera permission and owner face capture.
+
+The setup flow supports Google Sign-In or Email OTP, scans for ADAM-XXXX BLE advertisements, filters 2.4 GHz Wi-Fi networks, shows connection progress and stores setup state locally.
+
+Founder Edition units #001–#010 receive a dedicated recognition/reveal screen during onboarding.
+
+BLE provisioning and connectivity
+
+ADAM's ESP32-S3 is the Bluetooth LE endpoint used for mobile provisioning and nearby mobile communication.
+
+The Raspberry Pi's Bluetooth is intentionally turned off in the ADAM architecture; BLE responsibilities remain on the ESP32 side.
+
+The mobile app discovers an ADAM-XXXX advertisement, validates the device/serial, then uses BLE to transfer provisioning data and establish the initial setup relationship.
+
+After Wi-Fi provisioning, local-network discovery can use mDNS/Zeroconf to locate adam.local. A future production bridge can maintain a WebSocket for live telemetry.
+
+Connectivity principle: Mobile → BLE → ESP32-S3 for provisioning/nearby control. ADAM's Pi → Wi-Fi/Ethernet-network services for normal cloud/local operation. Pi Bluetooth remains disabled.
+
+19. Mobile App — Main Product Surfaces
+
+Home / live status
+
+Live online/offline status for ADAM, with the intended future real-time telemetry bridge for emotion state, audio activity and system vitals.
+
+Battery/status indicators, current emotion/face state and sleep/wake quick controls.
+
+Memory
+
+Searchable knowledge stream containing stored user facts and memory entries.
+
+User-facing edit/delete controls for stored memories, supporting transparency and correction.
+
+Memory can be managed from the app while ADAM's local AI/runtime uses the resulting memory context during interaction.
+
+Gallery
+
+Photo grid of captured moments with date grouping and detail views.
+
+The production design can keep camera media local by default while making backup an explicit service/setting.
+
+Smart home
+
+Room-based device management for lights, plugs, fans and other MQTT-connected devices.
+
+Scene shortcuts such as Movie Night and Wind Down.
+
+Routine automation editor, including presence-based triggers using ADAM's RCWL-0516 sensor.
+
+Settings & device management
+
+Software updates: OTA check, changelog and staged update progress.
+
+Laptop management: paired companion laptop/developer machine list.
+
+Wi-Fi: current network details and future re-provisioning without a factory reset.
+
+Voice: voice selection, language hint, wake sensitivity and personality controls.
+
+Account: profile, sign-out, Google unlink, data export and device ownership transfer.
+
+AI Brain: switch between BYOK, Dgen Managed Credits and Lite Mode after onboarding.
+
+20. AI Access, Desktop App & Cross-Device Experience
+
+Three AI setup choices
+
+Mode
+
+Description
+
+BYOK
+
+User supplies their own Gemini API key. AI usage is billed directly to the user's chosen provider account.
+
+Dgen Managed Credits
+
+User purchases Dgen-managed AI credits, providing a simpler setup plus Dgen-managed privacy/service features and usage accounting.
+
+Lite Mode
+
+No Dgen-managed AI service required. Needle 3 handles supported local function-calling/automation; full cloud conversation is unavailable.
+
+AI responsibility split
+
+Gemini handles the natural conversation and multimodal conversational intelligence.
+
+Needle 3 handles local function calling: selecting the appropriate tool, filling typed arguments, supporting ordered multi-call requests and exposing confidence for routing.
+
+ADAM's application runtime remains the executor. Needle 3 does not receive unrestricted control of the robot; the runtime decides which permitted tools can actually execute.
+
+Mobile configuration determines which AI access mode is active; the device/runtime applies the corresponding service policy.
+
+Desktop companion app
+
+A background/tray application connects the user's laptop/PC to ADAM and provides the computer-control bridge.
+
+Vibe-coding integration can surface Claude Code or Codex status events to ADAM, including input required, task completed, task stopped and similar states.
+
+The desktop bridge supports assistive workflows such as preparing text and sending it to the connected computer's clipboard, helping draft mail and performing approved computer actions.
+
+Paired laptops are represented in the mobile app.
+
+Cross-device model: Mobile app = setup, account, AI access, memory, gallery and device management. Desktop app = computer/agent bridge and coding status. ADAM = physical interaction, conversation, sensors and local execution. BLE is anchored on the ESP32-S3, while the Pi remains the main AI/runtime computer.
+
+21. User Setup, AI Access Modes & Privacy Architecture
+
+First-time setup
+
+Power on ADAM → mobile app discovers/pairs with ADAM over BLE → user signs in or creates the Dgen account → device is associated with the user's account.
+
+User chooses an AI access mode. The choice can be changed later through the mobile/desktop settings.
+
+User grants only the permissions needed for the selected features, including notification access and computer permissions required by the desktop agent.
+
+Privacy and data boundaries
+
+Presence radar processing is local to ADAM.
+
+BLE provisioning and phone communication are local radio links between the mobile app and the ESP32-S3.
+
+Notification reading is opt-in and controlled by the mobile app.
+
+BYOK keeps Gemini authentication under the user's own Google/Gemini account.
+
+Dgen-managed credits use the Dgen service layer for entitlement/authentication and Gemini session access; the production architecture should use short-lived credentials rather than a permanent Dgen master key in each device.
+
+Lite Mode is designed to operate without Dgen AI calls.
+
+22. Mobile App Implementation Status & Roadmap
+
+Specified / implemented in the current project
+
+Turborepo/pnpm monorepo structure, shared UI/types/config packages and strict TypeScript validation.
+
+All 13 first-run setup screens are defined/implemented in the web client, including BLE discovery UI, Wi-Fi provisioning UI, AI Brain selection, BYOK, credits and camera/face-capture flows.
+
+Home, Gallery, Memory, Settings, Software Update, Laptops and About surfaces are defined.
+
+Mock fixtures exist for BLE discovery, Wi-Fi handoff, memory logs and OTA lifecycle testing.
+
+Next.js static export is configured for the Capacitor shell.
+
+Remaining engineering work
+
+Replace browser BLE mocks with the native Capacitor BLE plugin and connect to the actual ESP32-S3 provisioning service.
+
+Implement native secure storage for API keys, tokens and credentials.
+
+Implement mDNS/local-network discovery and the real ADAM telemetry WebSocket.
+
+Complete the Smart Home, AI Brain settings, Wi-Fi, Voice and Account screens.
+
+Build the Fastify backend, persistence models, credit ledger/Razorpay integration and production client API wiring.
+
+Implement real-time emotion/audio/system telemetry and low-latency media preview.
+
+Add setup error handling for BLE disconnects, wrong Wi-Fi credentials and Bluetooth permissions, plus automated E2E testing.
+
+Mobile App product principle: the app should configure and extend ADAM — not become a requirement for every interaction. Once setup is complete, core physical interaction remains on ADAM itself. Mobile is the control plane for provisioning, preferences, memories, media, AI access, device management and selected notifications. Lite Mode is specifically intended to preserve useful local operation when Dgen's cloud service is unavailable.
+
+23. Source Register & Document Hierarchy
+
+Internal source register
+
+Document
+
+Coverage
+
+ADAM_v32_Hardware_Software_Documentation.pdf
+
+Working prototype architecture, runtime, communications and interaction model.
+
+ADAM_Body_Motherboard_BOM1_PiZero2W.md
+
+Baseline production body PCB architecture, BOM, audio/power/servo design.
+
+ADAM_Head_Motherboard_BOM_ESP32S3.md
+
+Production head PCB architecture, camera/display/touch/servo design.
+
+ADAM_Body_Motherboard_BOM2_Advanced_CM4.md
+
+Advanced CM4 body option for higher-performance workloads.
+
+ADAM_GTM_Launch_Strategy_v1.docx
+
+Positioning, launch model, pricing targets, channels and messaging.
+
+ADAM_Gemini_Billing_Monetisation_Strategy_v1.docx
+
+AI billing, API architecture, BYOK/credits and Lite Mode.
+
+ADAM_Pi_Zero_2W_Setup_Guide.md
+
+Pi/software setup and documented runtime/emotion details.
+
+ADAM Master Product Document (mobile app sections, v1.7)
+
+Mobile app architecture, setup flow, BLE provisioning, AI access modes, roadmap.
+
+External research basis — function calling
+
+Source
+
+Relevance
+
+Cactus Needle 3 release / platform
+
+8–29 MB laddered foundation model for tool calls, structured extraction and embeddings; 2–20 layer deployment.
+
+Cactus supported-devices guide
+
+Linux ARM64 support; same weights can be built at different depths; Cactus advises measuring throughput on the actual device.
+
+Cactus tool-design guide
+
+Tool schema design, one-tool-per-action, argument grounding, triggers and confidence/routing guidance.
+
+Raspberry Pi Zero 2 W official specifications
+
+Quad-core 64-bit Cortex-A53 @ 1 GHz and 512 MB RAM; basis for ADAM's baseline compute constraints.
+
+Versioning rule: Needle 3 is recorded as the current planned function-calling layer, not as a claim that production firmware has already been validated. The final layer depth and measured latency must be frozen only after testing on the target Pi Zero 2 W hardware.
+
+24. ADAM at a Glance
+
+  ADAM — Autonomous Desktop AI Module  
+
+Physical AI, made tangible.

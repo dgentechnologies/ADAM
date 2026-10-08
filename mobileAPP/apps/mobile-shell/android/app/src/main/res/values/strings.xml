@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ADAM</string>
+    <string name="title_activity_main">ADAM</string>
+    <string name="package_name">com.dgentechnologies.adam</string>
+    <string name="custom_url_scheme">com.dgentechnologies.adam</string>
+    <string name="server_client_id">759320300226-spjdvgmqm9ccm622v6l80slbusokvcsp.apps.googleusercontent.com</string>
+</resources>

@@ -15,29 +15,56 @@ export function Screen({
   chrome = 'none',
   center = false,
   texture = false,
+  style,
+  ...rest
 }: {
   children: ReactNode;
   className?: string;
   chrome?: 'none' | 'top' | 'both';
   center?: boolean;
   texture?: boolean;
+  style?: React.CSSProperties;
+  [key: string]: any;
 }) {
+  const chromeStyle: React.CSSProperties =
+    chrome === 'top'
+      ? {
+          paddingTop: 'calc(64px + env(safe-area-inset-top, 0px))',
+          paddingBottom: '48px',
+        }
+      : chrome === 'both'
+        ? {
+            paddingTop: 'calc(64px + env(safe-area-inset-top, 0px))',
+            paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px) + 24px)',
+          }
+        : chrome === 'none'
+          ? {
+              paddingTop: 'env(safe-area-inset-top, 0px)',
+              paddingBottom: '48px',
+            }
+          : {};
+
   return (
     <main
+      data-chrome={chrome}
       className={cn(
         'relative flex min-h-dvh w-full flex-col px-container',
-        chrome === 'none' && 'pb-stack-lg pt-safe',
-        chrome === 'top' && 'pb-stack-lg pt-[calc(theme(spacing.appbar-h)+env(safe-area-inset-top,0px))]',
-        chrome === 'both' &&
-          'pt-[calc(theme(spacing.appbar-h)+env(safe-area-inset-top,0px))] pb-[calc(theme(spacing.tabbar-h)+env(safe-area-inset-bottom,0px)+theme(spacing.stack-md))]',
+        chrome === 'none' && 'screen-chrome-none',
+        chrome === 'top' && 'screen-chrome-top',
+        chrome === 'both' && 'screen-chrome-both',
         center && 'justify-center',
         className,
       )}
+      style={{
+        ...chromeStyle,
+        ...style,
+      }}
+      {...rest}
     >
       {texture ? (
         <div className="digital-skin pointer-events-none fixed inset-0" aria-hidden />
       ) : null}
-      <div className="relative flex w-full flex-1 min-h-0 flex-col justify-between">{children}</div>
+      <div className="relative flex w-full flex-1 min-h-0 flex-col">{children}</div>
     </main>
   );
 }

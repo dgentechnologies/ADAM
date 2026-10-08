@@ -56,11 +56,9 @@ export const MOCK_DEVICE: Device = {
  * the "ADAM only supports 2.4GHz networks" disabled state is exercised.
  */
 export const MOCK_NETWORKS: WifiNetwork[] = [
-  { ssid: 'DGEN_STUDIO_5G', signalBars: 4, security: 'wpa2', band: '5GHz', unsupported: true },
-  { ssid: 'ADAM_GUEST_NET', signalBars: 4, security: 'wpa2', band: '2.4GHz', unsupported: false },
-  { ssid: 'Starlink_42', signalBars: 1, security: 'wpa3', band: 'dual', unsupported: false },
-  { ssid: 'Home_Wifi_2.4', signalBars: 2, security: 'wpa2', band: '2.4GHz', unsupported: false },
-  { ssid: 'Coffee_Shop_Free', signalBars: 3, security: 'open', band: '2.4GHz', unsupported: false },
+  { ssid: 'DASGUPTA', signalBars: 4, security: 'wpa2', band: 'dual', unsupported: false, signalPercent: 90 },
+  { ssid: 'DASGUPTA_5G', signalBars: 4, security: 'wpa2', band: '5GHz', unsupported: true, signalPercent: 95 },
+  { ssid: 'ADAM_SETUP', signalBars: 3, security: 'wpa2', band: '2.4GHz', unsupported: false, signalPercent: 70 },
 ];
 
 /** Prices from `choose_a_credit_pack`, stored in paise per the schema. */

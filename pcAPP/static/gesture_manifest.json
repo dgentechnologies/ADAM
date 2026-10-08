@@ -1,0 +1,13 @@
+{
+  "gestures": [
+    "GESTURE_STOP",
+    "GESTURE_ANGRY",
+    "GESTURE_PETTING",
+    "nod",
+    "shake",
+    "volume_up",
+    "volume_down",
+    "lock_screen",
+    "media_play_pause"
+  ]
+}

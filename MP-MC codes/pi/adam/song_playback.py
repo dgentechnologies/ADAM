@@ -18,12 +18,13 @@ Shared state is passed in by the caller (session.run_session) as live objects:
 import wave
 import random
 import asyncio
+import time
 from pathlib import Path
 
 from config import (SONG_FILE_PATHS, PLAYBACK_CHANNELS, PLAYBACK_RATE,
-                    SONG_CHUNK_FRAMES, SONG_PACE_FRAC)
+                    SONG_CHUNK_FRAMES)
 from hardware import tft_set
-from audio_utils import write_all
+from audio_utils import write_pcm, _song_barge
 
 
 async def _play_song_task(song_playing: asyncio.Event,
@@ -67,6 +68,13 @@ async def _play_song_task(song_playing: asyncio.Event,
     """
     song_playing.set()
     song_stop_requested.clear()
+    # Each song has its OWN level, and the ALSA buffer is cold at track start,
+    # so the barge-in detector must relearn from scratch — otherwise the
+    # previous track's coupling would set the bar for an unrelated song.
+    # reset() clears both the learned coupling and the reference history; the
+    # reference is then refilled by feed_reference() on every chunk written
+    # below, and the mic side runs in session.py.
+    _song_barge.reset()
     wav_file = None
     try:
         song_path = random.choice(SONG_FILE_PATHS)
@@ -102,11 +110,29 @@ async def _play_song_task(song_playing: asyncio.Event,
         # one asyncio task spinning through hundreds of to_thread hops per
         # second, starving the camera/servo/Gemini tasks and the ALSA writer
         # thread — audible as stutter in the song AND lag everywhere else.
-        # Sleeping slightly LESS than one chunk's true duration (0.9×) keeps
-        # aplay's buffer comfortably ahead without ever running the loop at
-        # more than ~11% over realtime; the pipe's own backpressure absorbs
-        # that surplus, so this self-corrects rather than drifting.
-        pace_s = (chunk_frames / float(PLAYBACK_RATE)) * SONG_PACE_FRAC
+        #
+        # The OLD pace_s = chunk_len * SONG_PACE_FRAC with SONG_PACE_FRAC=0.9
+        # was NOT "0.9× of realtime" — it wrote a 33 ms chunk every 30 ms, i.e.
+        # 110% of realtime. That ramped aplay's buffer 541 → 941 ms (measured),
+        # the kernel pipe eventually filled, and a blocking write_all stalled
+        # the whole loop into an arecord overrun. So pacing now self-corrects
+        # to a FIXED deadline: track the total audio written and schedule each
+        # chunk at start + written_frames/rate. The loop settles at exactly
+        # 1.00× realtime and stays there — no unbounded buffer growth, no pipe
+        # full, no feed stall. A small head-start offset (SLEAD_FRAMES) puts
+        # the loop a touch ahead for the first few chunks so the cold ALSA
+        # buffer refills at track start, then it converges to realtime and
+        # holds. If the CPU runs late, the sleep clamps to zero and the chunk
+        # ships immediately, catching the song back up instead of drifting.
+        # lead is DELIBERATELY 1.00 and deliberately not SONG_PACE_FRAC. Any
+        # value below 1.0 writes faster than realtime, which is precisely the
+        # bug described above: it does not play the song faster (aplay clocks
+        # that), it just grows the buffer without bound until the pipe blocks.
+        # SONG_PACE_FRAC is left in config.py only because song_lag_bench.py
+        # still reproduces the old pacing when measuring the lag window.
+        lead = 1.0
+        start_t = time.monotonic()
+        frames_written = -int(0.5 * float(PLAYBACK_RATE))  # ~500 ms head-start
         pending_data = None  # a chunk that failed to write, retried below
         write_fail_streak = 0
         MAX_WRITE_FAIL_STREAK = 50  # ~10s of retries at 0.2s each before giving up
@@ -144,10 +170,22 @@ async def _play_song_task(song_playing: asyncio.Event,
 
             try:
                 if proc.stdin:
+                    # write_pcm(), not write_all()+flush: speaker() writes into
+                    # this SAME pipe from a different task. Without the shared
+                    # lock inside write_pcm() the two can interleave in the
+                    # middle of a partial write and de-align the 4-byte frame
+                    # boundary permanently — see write_all()'s docstring.
                     await asyncio.to_thread(
-                        write_all, proc.stdin, data, PLAYBACK_CHANNELS * 2)
-                    await asyncio.to_thread(proc.stdin.flush)
+                        write_pcm, proc.stdin, data, PLAYBACK_CHANNELS * 2)
+                    # Tell the barge-in detector what the song's own level is
+                    # right now. This is the reference it compares the mic
+                    # against: a vocal chorus raises mic AND reference
+                    # together, so it can't be mistaken for a human speaking.
+                    # Timestamped HERE, at write time — SongBargeIn applies the
+                    # measured write-to-hear delay itself (see its docstring).
+                    _song_barge.feed_reference(data)
                     write_fail_streak = 0
+                    frames_written += chunk_frames
                 else:
                     raise RuntimeError("proc.stdin is None")
             except Exception as e:
@@ -170,13 +208,22 @@ async def _play_song_task(song_playing: asyncio.Event,
                 await asyncio.sleep(0.2)
                 continue
 
-            # Pace to (just under) realtime so this doesn't hog the event loop,
-            # the CPU, or the shared aplay stdin — camera/servo/Gemini tasks all
+            # Pace to a FIXED realtime deadline (self-correcting), so this never
+            # runs the loop above 1.00× realtime and the shared aplay stdin /
+            # the event loop are never saturated — camera/servo/Gemini tasks all
             # get their turn between song chunks. A stop request is checked at
             # the top of every iteration, so this sleep also bounds how long
             # Touch3 or a spoken stop phrase waits to take effect (one chunk,
-            # ~77 ms) — short enough to feel immediate.
-            await asyncio.sleep(pace_s)
+            # ~85 ms) — short enough to feel immediate.
+            #
+            # If the loop runs LATE (slow CPU, a to_thread stall), the sleep
+            # clamps to zero and the next chunk ships immediately, so the song
+            # catches up rather than drifting further behind — the buffer shrinks
+            # to find the correct rate instead of growing without bound.
+            next_t = start_t + (frames_written / float(PLAYBACK_RATE)) * lead
+            sleep_s = next_t - time.monotonic()
+            if sleep_s > 0.0:
+                await asyncio.sleep(sleep_s)
     except Exception as e:
         print(f"  ⚠️  Song playback error: {e}")
     finally:

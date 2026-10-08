@@ -32,7 +32,7 @@ export default function WifiSelectPage() {
 
   const { data: networks = [], isPending } = useQuery({
     queryKey: queryKeys.networks,
-    queryFn: scanNetworks,
+    queryFn: () => scanNetworks(),
   });
 
   function submit() {

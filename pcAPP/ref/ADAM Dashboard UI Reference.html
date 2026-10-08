@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADAM — Dashboard</title>
+<style>
+:root{--bg:#07080a;--panel:#0c0d10;--line:#1d1f24;--text:#f2f3f5;--dim:#8b8f98;--green:#18e060;--glow:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#07080a}}
+:root[data-theme="dark"]{--bg:#07080a}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",system-ui,Arial,sans-serif;display:flex;overflow:hidden}
+aside{width:240px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:34px 16px 20px}
+.logo{padding:0 18px;margin-bottom:46px}
+.logo b{display:block;font-size:34px;font-weight:300;letter-spacing:.08em}
+.logo small{font-size:8.5px;letter-spacing:.2em;color:var(--dim)}
+nav a{display:flex;align-items:center;gap:18px;padding:16px 22px;margin-bottom:6px;border-radius:14px;color:var(--dim);font-size:15px;text-decoration:none}
+nav a.on{background:#17181c;color:var(--text);position:relative}
+nav a.on:before{content:"";position:absolute;left:-16px;top:8px;bottom:8px;width:3px;border-radius:3px;background:#fff}
+nav svg,.card svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+nav a.on svg{fill:currentColor}
+.user{margin-top:auto;border-top:1px solid var(--line);padding:22px 8px 0;display:flex;gap:14px;align-items:center}
+.av{width:52px;height:52px;border-radius:50%;background:#23252a;display:grid;place-items:center}
+.av svg{width:26px;height:26px;fill:#8b8f98}
+.user p{font-size:14px}.user small{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:13px;margin-top:4px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+main{flex:1;position:relative;display:flex;flex-direction:column;overflow:auto;background:radial-gradient(ellipse 50% 40% at 50% 0,#2a2c31 0,transparent 70%),var(--bg)}
+header{display:flex;justify-content:space-between;align-items:flex-start;padding:30px 40px 0}
+header small{letter-spacing:.2em;font-size:12px;color:var(--dim)}
+header h1{font-size:44px;font-weight:700;margin-top:4px}
+.right{display:flex;align-items:center;gap:30px}
+.pill{display:flex;align-items:center;gap:12px;border:1px solid #2a2c31;border-radius:30px;padding:14px 22px;background:#0e0f12;font-size:15px}
+.clock{text-align:right}.clock small{letter-spacing:.14em;font-size:12px}.clock b{display:block;font-size:38px;font-weight:600;margin-top:6px}
+.stage{position:relative;width:900px;height:640px;margin:0 auto;flex:none;transform-origin:top center}
+.stage svg.lines{position:absolute;inset:0;pointer-events:none}
+.lines polyline{fill:none;stroke:#454850;stroke-width:1.3}
+.card{position:absolute;display:flex;align-items:center;gap:18px;height:70px;padding:0 24px;border:1px solid #2c2e34;border-radius:16px;background:rgba(14,15,18,.85);color:var(--text);font-size:15px;cursor:pointer;transition:.2s}
+.card:hover{border-color:#6a6d76;background:#17181c}
+.node{position:absolute;width:38px;height:38px;border-radius:50%;border:1px solid #6b6e76;background:rgba(40,42,48,.6);display:grid;place-items:center;transform:translate(-50%,-50%);box-shadow:0 0 18px rgba(255,255,255,.18)}
+.node:after{content:"";width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 12px #fff}
+/* robot */
+.bot{position:absolute;left:50%;top:0;width:0}
+.head{position:absolute;left:-210px;top:170px;width:420px;height:290px;border-radius:50%;background:radial-gradient(ellipse at 40% 15%,#6a6c70,#2b2c2f 45%,#16171a);box-shadow:inset 0 3px 8px rgba(255,255,255,.25),0 20px 40px rgba(0,0,0,.6)}
+.head:before{content:"";position:absolute;left:36px;right:36px;top:50px;bottom:34px;border-radius:50%;background:#000;box-shadow:0 0 0 7px #3a3b3f,inset 0 0 25px #111}
+.cam{position:absolute;top:30px;width:16px;height:16px;border-radius:50%;background:#050506;border:2px solid #3b3c40}
+.eye{position:absolute;top:158px;width:78px;height:13px;border-radius:3px;background:#fff;box-shadow:0 0 18px #fff,0 0 34px rgba(255,255,255,.7);animation:blink 6s infinite}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+.neck{position:absolute;left:-60px;top:440px;width:120px;height:44px;background:#191a1d;border-radius:0 0 14px 14px}
+.body{position:absolute;left:-225px;top:470px;width:450px;height:340px;border-radius:38% 38% 22% 22%/30% 30% 14% 14%;background:radial-gradient(ellipse at 50% 18%,#3d3e42,#1b1c1f 55%,#0d0d0f);box-shadow:inset 0 3px 10px rgba(255,255,255,.14),0 30px 60px rgba(0,0,0,.7)}
+.body span{position:absolute;left:0;right:0;top:140px;text-align:center;font-size:38px;letter-spacing:.08em;font-weight:300}
+.body i{position:absolute;left:4px;right:4px;bottom:34px;height:12px;border-radius:50%;border-bottom:2px solid #3a3b3f}
+.floor{position:absolute;left:50%;top:790px;width:760px;height:150px;transform:translateX(-50%);background:radial-gradient(ellipse,rgba(255,235,200,.28),transparent 65%)}
+.stage{height:960px}
+@media (max-width:860px){aside{display:none}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="logo"><b>ADAM</b><small>A MORE HUMAN TOMORROW</small></div>
+  <nav>
+    <a class="on" href="#"><svg viewBox="0 0 24 24"><path d="M3 11 12 3l9 8v10h-6v-6H9v6H3z"/></svg>Home</a>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H9l-5 4z"/></svg>Actions</a>
+    <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M12 16v4M8 20h8"/></svg>Devices</a>
+    <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Clock</a>
+    <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Settings</a>
+  </nav>
+  <div class="user"><div class="av"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 4-7 8-7s8 2 8 7z"/></svg></div><div><p>Operator...</p><small><i class="dot" style="width:8px;height:8px"></i>Online</small></div></div>
+</aside>
+<main>
+  <header>
+    <div><small>WELCOME BACK,</small><h1>Dashboard</h1></div>
+    <div class="right">
+      <div class="pill"><i class="dot"></i>Online</div>
+      <div class="clock"><small id="d">SATURDAY, OCTOBER 3, 2026</small><b id="t">08:14:54 PM</b></div>
+    </div>
+  </header>
+  <div class="stage" id="stage">
+    <svg class="lines" viewBox="0 0 900 960">
+      <polyline points="230,105 270,105 335,160"/>
+      <polyline points="670,105 630,105 565,160"/>
+      <polyline points="215,295 255,295 308,262"/>
+      <polyline points="685,295 645,295 592,262"/>
+    </svg>
+    <div class="floor"></div>
+    <div class="bot">
+      <div class="neck"></div><div class="body"><span>ADAM</span><i></i></div>
+      <div class="head"><div class="cam" style="left:175px"></div><div class="cam" style="left:228px"></div></div>
+      <div class="eye" style="left:-122px;top:310px"></div><div class="eye" style="left:44px;top:310px"></div>
+    </div>
+    <div class="node" style="left:335px;top:160px"></div><div class="node" style="left:565px;top:160px"></div>
+    <div class="node" style="left:308px;top:262px"></div><div class="node" style="left:592px;top:262px"></div>
+    <div class="card" style="left:0;top:70px;width:230px"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H9l-5 4z"/></svg>Open Actions</div>
+    <div class="card" style="left:670px;top:70px;width:230px"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M12 16v4M8 20h8"/></svg>View Devices</div>
+    <div class="card" style="left:-8px;top:260px;width:223px;height:74px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Settings</div>
+    <div class="card" style="left:685px;top:260px;width:223px;height:74px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>System Info</div>
+  </div>
+</main>
+<script>
+function tick(){var n=new Date();
+document.getElementById('d').textContent=n.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}).toUpperCase();
+document.getElementById('t').textContent=n.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+tick();setInterval(tick,1000);
+function fit(){var m=document.querySelector('main'),s=document.getElementById('stage');
+var k=Math.min(1,(m.clientWidth-20)/900);s.style.transform='scale('+k+')';s.style.marginBottom=(960*(k-1))+'px';}
+fit();addEventListener('resize',fit);
+</script>
+</body>
+</html>

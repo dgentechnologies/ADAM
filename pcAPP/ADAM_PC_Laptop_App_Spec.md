@@ -1,4 +1,10 @@
 # ADAM Laptop Companion App — Setup & Feature Spec
+> Historical product specification. For shipped version0.01 behavior, setup,
+> and known external requirements, see [README.md](README.md) and
+> [UPDATE_REPORT.md](docs/UPDATE_REPORT.md). Items below such as cross-platform
+> signed installers, six-digit pairing, multiple laptops and automatic updates
+> are proposals, not claims about the current Windows portable release.
+
 **DGEN Technologies Pvt. Ltd.** | v1.0 | For engineering handoff — build reference
 
 ---

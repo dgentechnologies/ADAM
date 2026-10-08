@@ -20,7 +20,7 @@ export function AppBar({
   action,
   className,
 }: {
-  title: string;
+  title: ReactNode;
   /** `true` uses history.back(); a string pushes that route. */
   back?: boolean | string;
   action?: ReactNode;

@@ -15,6 +15,7 @@ const nextConfig = {
   trailingSlash: true,
 
   reactStrictMode: true,
+  experimental: { cpus: 2 },
 
   /** next/image optimisation needs a server; unavailable in a static export. */
   images: {
@@ -24,27 +25,11 @@ const nextConfig = {
   /** Workspace packages ship TS source and are compiled by Next. */
   transpilePackages: ['@adam/ui', '@adam/types'],
 
-  /**
-   * `@adam/types` writes NodeNext-style specifiers (`./device.js`) so the same
-   * source compiles for the Node-side `apps/api`. Webpack resolves those literally
-   * and cannot find the `.ts` files, so map the extension here rather than
-   * stripping `.js` from the shared package and breaking the Node consumer.
-   */
-  webpack: (config) => {
-    config.resolve.extensionAlias = {
-      ...config.resolve.extensionAlias,
-      '.js': ['.ts', '.tsx', '.js'],
-    };
-    return config;
-  },
-
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
-    // Pre-existing TS errors in sign-in/welcome/canvas-reveal-effect are not
-    // from face-capture work; ignore at build time so Next can compile.
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 };
 

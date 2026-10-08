@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pcapp-backend",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-c", "import backend; backend.run_flask_server(8642)"],
+      "port": 8642
+    }
+  ]
+}

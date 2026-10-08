@@ -2,290 +2,287 @@
 @tailwind components;
 @tailwind utilities;
 
-/**
- * App-level base styles.
- */
-/* Dynamic Progressive Matrix Shader Engine owns the dot matrix halo */
-html, body {
-  background-color: #000000 !important;
-  background-image: none !important;
+html {
+  background: var(--adam-background);
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  overflow-x: clip;
+}
+html[data-theme='light'] {
+  color-scheme: light;
+  --adam-fg-muted: #606064;
+  --adam-fg-subtle: #66666a;
+}
+body {
+  background: var(--adam-background);
+  min-width: 280px;
+  overflow-x: clip;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 
-.digital-skin,
-[class*="digital-skin"] {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
+.digital-skin {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px) !important;
+  background-size: 16px 16px !important;
+  pointer-events: none !important;
 }
 
-/* Organic glance with saccadic eye movements and micro-settles (active on /welcome and /camera-permission) */
-@keyframes adam-glance {
-  0%, 14% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  18% {
-    transform: translate3d(-26px, -2px, 0) rotate(-0.6deg);
-  }
-  20%, 34% {
-    transform: translate3d(-24px, -1.5px, 0) rotate(-0.3deg);
-  }
-  37%, 45% {
-    transform: translate3d(-18px, -3.5px, 0) rotate(0deg);
-  }
-  50% {
-    transform: translate3d(1.5px, 0, 0) rotate(0deg);
-  }
-  52%, 60% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  64% {
-    transform: translate3d(26px, 1.5px, 0) rotate(0.6deg);
-  }
-  66%, 78% {
-    transform: translate3d(24px, 1px, 0) rotate(0.3deg);
-  }
-  81%, 88% {
-    transform: translate3d(16px, -2.5px, 0) rotate(0deg);
-  }
-  93%, 100% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-}
-
-/* Frequent, unmistakable organic eyelid blinks */
-@keyframes adam-blink {
-  0%, 41%, 47%, 86%, 92%, 100% {
-    transform: scaleY(1) scaleX(1);
-    opacity: 1;
-  }
-  43%, 45% {
-    transform: scaleY(0) scaleX(0.9);
-    opacity: 0;
-  }
-  88%, 90% {
-    transform: scaleY(0) scaleX(0.9);
-    opacity: 0;
-  }
-}
-
-/* Ambient organic breathing & gentle floating */
-@keyframes adam-organic-float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  35% {
-    transform: translateY(-4px);
-  }
-  70% {
-    transform: translateY(2px);
-  }
-}
-
-.animate-adam-glance {
-  animation: adam-glance 6.5s cubic-bezier(0.35, 0.05, 0.45, 0.95) infinite !important;
-  display: inline-flex !important;
-  will-change: transform;
-}
-
-.animate-adam-blink {
-  animation: adam-blink 3.6s ease-in-out infinite !important;
-  transform-origin: center center !important;
-  transition: none !important;
-  will-change: transform, opacity;
-}
-
-.animate-adam-float {
-  animation: adam-organic-float 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
-}
-
-/* bloom sets box-shadow */
 .bloom {
   box-shadow: 0 0 15px rgba(255, 255, 255, 0.35), 0 0 30px rgba(255, 255, 255, 0.15) !important;
 }
-
-/* === PERFECT VIEWPORT-FIT FOR SIGN-IN (NO SCROLLING & VISIBLE TERMS/CHECKBOX) === */
-body:has(input[type="checkbox"]) {
-  overflow: hidden !important;
-  height: 100dvh !important;
-  max-height: 100dvh !important;
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+:focus-visible {
+  outline: 2px solid var(--adam-fg);
+  outline-offset: 4px;
+}
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 20px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+}
+.panel {
+  border: 1px solid var(--adam-border);
+  border-radius: 24px;
+  padding: 20px;
+  background: var(--adam-surface);
+}
+.panel.flush {
+  padding: 0;
+  overflow: hidden;
+}
+.eyebrow {
+  color: var(--adam-fg-muted);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.page-title {
+  font-size: clamp(26px, 7vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+  font-weight: 500;
+}
+.field {
+  display: block;
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--adam-border-strong);
+  background: var(--adam-surface);
+  color: var(--adam-fg);
+  padding: 14px 16px;
+  min-height: 48px;
+}
+.field::placeholder {
+  color: var(--adam-fg-muted);
+}
+.field.pl-11 {
+  padding-left: 2.75rem;
+}
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--adam-fg-muted);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  min-height: 64px;
+}
+.settings-row + .settings-row {
+  border-top: 1px solid var(--adam-border);
+}
+.settings-row:active {
+  background: var(--adam-surface-pressed);
+}
+.notice,
+.connection-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--adam-border);
+  border-radius: 16px;
+  padding: 14px;
+  color: var(--adam-fg-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.notice svg,
+.connection-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.notice-error {
+  border-color: var(--adam-fg-muted);
+  color: var(--adam-fg);
+}
+.empty-state {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  padding: 36px 12px;
+  gap: 16px;
+  text-align: center;
+}
+.empty-state h2 {
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.empty-state p {
+  max-width: 320px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--adam-fg-muted);
+}
+.icon-orbit {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 24px;
+  background: var(--adam-surface-raised);
+  border: 1px solid var(--adam-border);
+  margin-bottom: 8px;
+}
+.app-dialog {
+  width: min(440px, calc(100% - 32px));
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  border: 1px solid var(--adam-border-strong);
+  padding: 24px;
+  border-radius: 24px;
+  background: var(--adam-surface);
+  color: var(--adam-fg);
+}
+.app-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.app-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+}
+.app-dialog h2 {
+  overflow-wrap: anywhere;
+}
+.screen-chrome-both {
+  padding-top: calc(64px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+}
+.screen-chrome-top {
+  padding-top: calc(64px + env(safe-area-inset-top, 0px));
+  padding-bottom: 32px;
+}
+.setup-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.setup-shell main {
+  min-height: 0;
+  flex: 1;
+}
+.setup-shell .setup-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.setup-shell .setup-body > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.hero-halo {
+  background: radial-gradient(ellipse at center, rgba(128, 128, 128, 0.12), transparent 68%);
+}
+@keyframes adam-glance {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  40%,
+  55% {
+    transform: translateX(2px);
+  }
+}
+@keyframes adam-blink {
+  0%,
+  42%,
+  47%,
+  100% {
+    transform: scaleY(1);
+  }
+  44%,
+  45% {
+    transform: scaleY(0.12);
+  }
+}
+.animate-adam-glance {
+  animation: adam-glance 9s ease-in-out infinite;
+}
+.animate-adam-blink {
+  animation: adam-blink 6s ease-in-out infinite;
+  transform-origin: center;
+}
+@media (min-width: 700px) {
+  .page-stack {
+    gap: 28px;
+  }
+}
+@media (max-height: 700px) {
+  .welcome-content {
+    gap: 20px;
+  }
+  .welcome-hero {
+    min-height: 96px;
+    flex: 0 0 96px;
+    padding: 12px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-body:has(input[type="checkbox"]) > div.relative.flex {
-  height: 100dvh !important;
-  max-height: 100dvh !important;
-  overflow: hidden !important;
+.keyboard-open nav[aria-label='Primary'] {
+  display: none;
 }
-
-body:has(input[type="checkbox"]) main {
-  height: 100% !important;
-  min-height: 0 !important;
-  max-height: 100% !important;
-  flex: 1 1 0% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: space-between !important;
-  padding-top: 0 !important;
-  padding-bottom: max(20px, env(safe-area-inset-bottom, 20px)) !important;
-}
-
-/* === VIEWPORT & CARD SIZING FOR SETUP SCREENS (/device-found, /wifi-select, etc.) === */
-.rounded-card,
-div.rounded-card,
-div[class*="rounded-card"] {
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-}
-
-/* Fix setup shell root container without affecting inner cards */
-body > div.relative.flex.min-h-dvh,
-body > div.relative.flex.h-dvh {
-  height: 100dvh !important;
-  min-height: 100dvh !important;
-  max-height: 100dvh !important;
-  overflow: hidden !important;
-}
-
-/* SetupShell header (back button & step progress) stays compact at top */
-body > div.relative.flex > div.relative.z-10:not(:has(main)),
-body > div.relative.flex > div.px-container.pt-safe {
-  flex: 0 0 auto !important;
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-}
-
-/* Only wrappers between SetupShell root and main fill the remaining height */
-body > div.relative.flex > div.relative.z-10:has(main),
-body > div.relative.flex > div.relative.z-10.flex-1,
-body > div.relative.flex > div.relative.z-10:has(main) > div,
-body > div.relative.flex div:has(> main) {
-  min-height: 0 !important;
-  height: 100% !important;
-  max-height: 100% !important;
-  flex: 1 1 0% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-
-/* Ensure all setup wizard pages fit in viewport without body scroll */
-body > div.relative.flex main {
-  height: 100% !important;
-  min-height: 0 !important;
-  max-height: 100% !important;
-  flex: 1 1 0% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: space-between !important;
-  padding-top: 0 !important;
-  padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
-  overflow: hidden !important;
-}
-
-/* Main inner container fills 100% height without overflowing */
-body > div.relative.flex main > div.relative.flex.w-full.flex-1,
-body > div.relative.flex main > div.flex-1,
-body > div.relative.flex main > form.flex-1 {
-  height: 100% !important;
-  min-height: 0 !important;
-  max-height: 100% !important;
-  flex: 1 1 0% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: space-between !important;
-  overflow: hidden !important;
-}
-
-/* Middle content area between header and footer actions scrolls smoothly on all setup screens */
-body > div.relative.flex main .flex-1.min-h-0,
-body > div.relative.flex main div.flex-col.gap-stack-md.pt-stack-md,
-body > div.relative.flex main div.flex-col.gap-stack-md.pt-stack-lg,
-body > div.relative.flex main div.flex-col.gap-stack-md.pt-2,
-body > div.relative.flex main div.flex-col.gap-stack-md.py-2 {
-  flex: 1 1 0% !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-}
-
-/* Always pin action CTA buttons at bottom above mobile gesture bar */
-body > div.relative.flex main .mt-auto,
-body > div.relative.flex main [class*="ScreenActions"] {
-  flex-shrink: 0 !important;
-  margin-top: auto !important;
-  padding-top: 8px !important;
-  padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
-}
-
-/* Compact sizing for sign-in components so everything sits comfortably above fold */
-body:has(input[type="checkbox"]) .h-16.w-16,
-body:has(input[type="checkbox"]) .h-14.w-14,
-body:has(input[type="checkbox"]) div:has(> [role="img"]) {
-  height: 48px !important;
-  width: 48px !important;
-}
-
-body:has(input[type="checkbox"]) .gap-stack-md {
-  gap: 10px !important;
-}
-
-body:has(input[type="checkbox"]) h1 {
-  font-size: 26px !important;
-  line-height: 1.15 !important;
-  margin-bottom: 0 !important;
-}
-
-body:has(input[type="checkbox"]) button {
-  height: 44px !important;
-  min-height: 44px !important;
-  font-size: 15px !important;
-}
-
-body:has(input[type="checkbox"]) label {
-  margin-top: 6px !important;
-  gap: 10px !important;
-}
-
-body:has(input[type="checkbox"]) label span.text-label-md {
-  font-size: 13px !important;
-  line-height: 1.35 !important;
-  color: rgba(255, 255, 255, 0.75) !important;
-}
-
-body:has(input[type="checkbox"]) .mt-auto {
-  padding-top: 8px !important;
-}
-
-/* === BOLDER, HIGH-VISIBILITY STEP PROGRESS INDICATOR === */
-p.font-display.uppercase,
-.font-display.text-label-xs.uppercase,
-div:has(> [role="progressbar"]) > p {
-  font-size: 13px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.14em !important;
-  color: #FFFFFF !important;
-  opacity: 0.95 !important;
-}
-
-[role="progressbar"] {
-  gap: 6px !important;
-}
-
-[role="progressbar"] > span {
-  height: 3.5px !important;
-  border-radius: 9999px !important;
-}
-
-[role="progressbar"] > span.bg-border-strong {
-  background-color: rgba(255, 255, 255, 0.22) !important;
-}
-
-[role="progressbar"] > span.bg-fg {
-  background-color: #FFFFFF !important;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4) !important;
-}
-
-button[aria-label="Back"] svg {
-  stroke-width: 2.5px !important;
+.keyboard-open .screen-chrome-both {
+  padding-bottom: 24px !important;
 }

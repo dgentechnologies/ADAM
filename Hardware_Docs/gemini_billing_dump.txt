@@ -1,0 +1,1047 @@
+DGEN TECHNOLOGIES PVT. LTD.
+
+Kolkata, India
+
+ADAM AI Platform
+
+Gemini Live API Billing, Production Architecture
+
+& ADAM Monetisation Strategy
+
+Confidential — Internal Strategy Document
+
+Version 1.0   |   May 2026
+
+Based on official Gemini API documentation fetched 28 May 2026
+
+1. Executive Summary
+
+This document answers three critical questions for DGEN Technologies as it prepares to deploy ADAM (Autonomous Desktop AI Module) to real users:
+
+Does Google charge for usage even when the rate limit shows "Unlimited"?
+
+How should DGEN manage API keys in production with many ADAM units live?
+
+How should DGEN monetise the AI usage component — pricing in INR, one-time model, and what happens when a user does not pay?
+
+ℹ  NOTE: This document is based on the official Gemini Developer API pricing and documentation pages fetched on 28 May 2026 from ai.google.dev.
+
+Key Findings
+
+Finding
+
+Answer
+
+Free tier cost to DGEN
+
+₹0 — genuinely FREE on paid-preview model
+
+Is 'Unlimited' truly unlimited?
+
+YES for RPD and RPM — but 65K TPM cap exists per API key
+
+Google charge on free tier?
+
+NO — explicitly 'Free of charge' for input and output
+
+Privacy trade-off on free tier
+
+Data IS used to train Google models — user consent required
+
+Production key architecture
+
+Ephemeral Tokens — Google's own recommended method for multi-user deployment
+
+Best INR pricing model
+
+BYOK (user's own key = ₹0) OR Prepaid Credit Packs — no forced subscription
+
+If user doesn't pay
+
+ADAM enters 'Lite Mode' — smart home, clock, and local features still work
+
+2. The Free Tier Reality — What 'Unlimited' Actually Means
+
+2.1 Official Rate Limits for gemini-3.1-flash-live-preview
+
+The rate limit table you observed in Google AI Studio is accurate. Here is the precise breakdown for the model ADAM v30 uses:
+
+Dimension
+
+Free Tier Limit
+
+What This Means Practically
+
+RPM (Requests per Minute)
+
+Unlimited
+
+No cap on how many Live sessions you can start per minute
+
+TPM (Tokens per Minute)
+
+65,000 tokens/min
+
+The only real constraint — limits concurrent sessions
+
+RPD (Requests per Day)
+
+Unlimited
+
+No daily cap on session starts
+
+Input Price (Free Tier)
+
+Free of charge
+
+Google explicitly states this on the pricing page
+
+Output Price (Free Tier)
+
+Free of charge
+
+Audio output is also free on free tier
+
+Data Privacy
+
+Used by Google for training
+
+Users must be informed and consent
+
+⚠  WARNING: The free tier status applies specifically to gemini-3.1-flash-live-preview because it is a PREVIEW model. Google can begin charging for it at any point after the preview period ends. Always monitor the official pricing page.
+
+2.2 TPM Deep Dive — The Real Bottleneck
+
+65,000 tokens per minute sounds like a lot, but for a Live API voice + vision session, token consumption is significant. Here is what one active ADAM session consumes:
+
+Input Channel
+
+Tokens per Minute
+
+Notes
+
+Microphone audio (user speaking)
+
+~1,920 tok/min
+
+32 tokens/sec × 60 sec (if speaking continuously)
+
+Camera at 1 FPS
+
+~15,480 tok/min
+
+~258 tokens/frame × 60 frames
+
+System prompt injection
+
+~3,000–8,000 tok/min
+
+Context, memory, camera context strings
+
+Audio output from ADAM
+
+~1,500 tok/min
+
+~25 tokens/sec of audio output
+
+Text output tokens
+
+~500 tok/min
+
+Transcription and function call text
+
+Total (heavy session)
+
+~22,000–27,000 tok/min
+
+Worst case (continuous speech + camera on)
+
+Total (normal session)
+
+~10,000–14,000 tok/min
+
+More realistic active conversation
+
+Conclusion: The 65K TPM free tier can support approximately 2–5 simultaneous ADAM units on a single API key. For the early deployment phase with a small number of units, this is adequate. As you scale, you will need multiple keys or the paid tier.
+
+Smart session management is critical: ADAM's RCWL-0516 radar means you can close the Live API session entirely when no one is home. Only open a session when presence is detected. This dramatically reduces token consumption and allows the free tier to stretch much further.
+
+3. Paid Tier Cost Analysis — Full Breakdown in INR
+
+If DGEN ever moves to the paid tier (either by choice or when the free preview ends), these are the exact costs based on official pricing. Exchange rate used: 1 USD = ₹84.50.
+
+3.1 Paid Tier Pricing for gemini-3.1-flash-live-preview
+
+Modality
+
+Paid Tier Rate (USD)
+
+Paid Tier Rate (INR Equivalent)
+
+Text Input
+
+$0.75 per 1M tokens
+
+₹63.38 per 1M tokens
+
+Audio Input
+
+$3.00 per 1M tokens
+$0.005 per minute
+
+₹253.50 per 1M tokens
+₹0.42 per minute
+
+Image / Video Input
+
+$1.00 per 1M tokens
+$0.002 per minute
+
+₹84.50 per 1M tokens
+₹0.17 per minute
+
+Text Output
+
+$4.50 per 1M tokens
+
+₹380.25 per 1M tokens
+
+Audio Output
+
+$12.00 per 1M tokens
+$0.018 per minute
+
+₹1,014 per 1M tokens
+₹1.52 per minute
+
+3.2 Cost per Active Minute of ADAM Conversation (Paid Tier)
+
+An 'active minute' means ADAM and a user are engaged in conversation with camera on.
+
+Component
+
+Rate
+
+₹ per Active Minute
+
+Audio Input (user speaking)
+
+$0.005/min
+
+₹0.42
+
+Camera/Video Input (1 FPS)
+
+$0.002/min
+
+₹0.17
+
+Audio Output (ADAM speaking)
+
+$0.018/min
+
+₹1.52
+
+System context (text in)
+
+~5K tokens/min × $0.75/M
+
+₹0.32
+
+Text output tokens
+
+~500 tokens/min × $4.50/M
+
+₹0.19
+
+Total per Active Minute
+
+~$0.030/min
+
+~₹2.53/min
+
+3.3 Monthly DGEN Cost per ADAM Unit — Usage Scenarios (Paid Tier)
+
+This is what DGEN would pay Google per month per unit if operating on the paid tier, assuming smart session management (session closed when no one is present).
+
+Usage Profile
+
+Active Mins/Day
+
+Daily Cost (₹)
+
+Monthly Cost (₹)
+
+Annual Cost (₹)
+
+Minimal (student, working from home mostly)
+
+10 min
+
+₹25
+
+₹760
+
+₹9,120
+
+Light (occasional queries)
+
+20 min
+
+₹51
+
+₹1,521
+
+₹18,252
+
+Moderate (regular use)
+
+30 min
+
+₹76
+
+₹2,281
+
+₹27,372
+
+Active (frequent conversation)
+
+60 min
+
+₹152
+
+₹4,562
+
+₹54,744
+
+Heavy (constant companion)
+
+120 min
+
+₹304
+
+₹9,124
+
+₹1,09,488
+
+⚠  WARNING: These paid-tier costs make a pure subscription model unviable for the Indian market if DGEN absorbs 100% of the AI cost. The BYOK + Credit Pack hybrid model described in Section 5 is the recommended approach.
+
+4. Production API Architecture — Per-User Key Management
+
+4.1 The Core Problem
+
+When hundreds or thousands of ADAM units are deployed, you cannot embed a single DGEN API key in every ADAM's firmware. If one unit is hacked or the key leaks, every ADAM stops working. The solution is Ephemeral Tokens — Google's own recommended approach for exactly this scenario.
+
+4.2 Ephemeral Tokens — Google's Recommended Multi-User Architecture
+
+Ephemeral tokens are short-lived authentication credentials that DGEN's backend generates for each ADAM session. They are documented in the official Gemini API docs at ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens
+
+How Ephemeral Tokens Work
+
+Step
+
+Actor
+
+Action
+
+1
+
+ADAM Unit
+
+Detects presence (RCWL-0516 radar) + wake word → prepares to start session
+
+2
+
+ADAM Unit → DGEN Server
+
+Sends authentication request with device serial number + user token
+
+3
+
+DGEN Server
+
+Verifies user identity and checks if user has valid credits/is authorised
+
+4
+
+DGEN Server → Google
+
+Requests an ephemeral token using DGEN's master API key (stays server-side, never exposed)
+
+5
+
+Google → DGEN Server
+
+Returns a short-lived token (valid: 1 min to start, 30 min session max)
+
+6
+
+DGEN Server → ADAM Unit
+
+Sends ephemeral token to ADAM
+
+7
+
+ADAM Unit → Google
+
+ADAM connects directly to Gemini Live API using the ephemeral token
+
+8
+
+Session ends
+
+Token expires — useless even if extracted. Next session requires fresh token.
+
+Security Properties of This Architecture
+
+DGEN's master API key NEVER leaves the backend server
+
+Each ephemeral token is single-use and expires in 30 minutes
+
+If an ADAM unit is stolen and its token extracted, it becomes useless within 30 minutes
+
+You can revoke access for any device by simply refusing to generate tokens for it
+
+Each token can be locked to a specific model, configuration, and system prompt — users cannot change the model or bypass your system instructions
+
+4.3 Code Skeleton — Backend Token Generator (Node.js)
+
+// DGEN Backend — Ephemeral Token Generator (Express.js)
+
+// POST /api/adam/token — called by ADAM unit at session start
+
+const { GoogleGenAI } = require('@google/genai');
+
+const client = new GoogleGenAI({ apiKey: process.env.DGEN_MASTER_KEY });
+
+app.post('/api/adam/token', authenticateDevice, async (req, res) => {
+
+  const { deviceId, userId } = req.body;
+
+  // 1. Check user credit balance in Supabase
+
+  const credits = await checkUserCredits(userId);
+
+  if (credits <= 0) return res.status(402).json({ mode: 'lite' });
+
+  // 2. Generate ephemeral token locked to ADAM's config
+
+  const token = await client.authTokens.create({
+
+    config: {
+
+      uses: 1,
+
+      expireTime: new Date(Date.now() + 30*60*1000).toISOString(),
+
+      liveConnectConstraints: {
+
+        model: 'gemini-3.1-flash-live-preview',
+
+        config: { sessionResumption: {}, responseModalities: ['AUDIO'] }
+
+      },
+
+      httpOptions: { apiVersion: 'v1alpha' }
+
+    }
+
+  });
+
+  // 3. Deduct from user credits (or track usage)
+
+  await logSessionStart(userId, deviceId);
+
+  res.json({ token: token.name, expiresAt: token.expireTime });
+
+});
+
+4.4 ADAM Pi Zero 2W — Session Startup Flow
+
+The updated boot sequence for production ADAM units using ephemeral tokens:
+
+Radar detects presence → Vosk detects wake word
+
+Pi Zero 2W sends HTTPS POST to DGEN backend with device_id + stored user_token
+
+Backend validates, checks credits, returns ephemeral token (or 'lite_mode' flag)
+
+ADAM uses ephemeral token to open Gemini Live WebSocket session
+
+Session runs up to 30 minutes (with resumption handles for reconnects within that window)
+
+Session closes when user walks away (radar inactive for 30+ seconds)
+
+Next session requires a fresh token request
+
+4.5 Alternative: BYOK (Bring Your Own Key)
+
+For technically inclined users or the Indian market where cost sensitivity is high, BYOK is a valid alternative to the centralized token approach:
+
+User creates a Google account and gets their own free Gemini API key from aistudio.google.com
+
+User enters the key once during ADAM first-time setup (via a local web UI on the Pi)
+
+The key is stored encrypted in the Pi's local storage
+
+ADAM uses the user's own key → DGEN pays zero API costs
+
+User gets their own free tier quota: effectively unlimited for a single ADAM unit
+
+ℹ  NOTE: BYOK is the recommended default for Version 1 of ADAM. It has zero AI infrastructure cost for DGEN and gives users the free tier. DGEN monetizes entirely on hardware margin at this stage. The centralized token architecture becomes relevant in Version 2 when DGEN charges for AI credits.
+
+5. ADAM Monetisation Strategy — Full Plan
+
+5.1 The Indian Market Reality
+
+Indian consumers are highly cost-sensitive. A monthly subscription for a desk robot's AI component will face significant resistance. The optimal model for ADAM is:
+
+✓  One-time hardware purchase (no AI subscription required)
+
+✓  BYOK default — user's own free Google API key (₹0/month)
+
+✓  Optional DGEN-managed Credit Packs for users who want convenience (one-time, not subscription)
+
+✓  ADAM Lite mode when no credits/key — robot still useful
+
+5.2 Three-Tier User Access Model
+
+Tier
+
+How to Access
+
+DGEN Cost
+
+ADAM Features
+
+Data Privacy
+
+FREE — BYOK
+
+User provides their own Google API key
+(Free from AI Studio)
+
+₹0
+
+Full ADAM features
+(all v30+ capabilities)
+
+User's own Google account
+— user's data, user's responsibility
+
+STARTER — Credit Pack
+
+Purchase DGEN credit pack
+(DGEN manages API)
+
+~₹25–80 per pack
+
+Full features +
+Priority support
+Custom DGEN system prompt
+
+No data used for training
+(Paid tier)
+
+LITE — No Key / No Credits
+
+Default state — no setup needed
+
+₹0
+
+Time, weather (free API)
+Smart home (local MQTT)
+Pre-recorded responses
+Alarm, reminders
+Face detection (local)
+
+No API calls made
+
+5.3 Credit Pack Pricing (One-Time, No Subscription)
+
+If DGEN operates on the paid tier and sells credit packs, here is the recommended pricing with a 2.8× markup over raw API cost (enough margin to cover server costs, payment gateway fees, and profit):
+
+Pack Name
+
+Active Minutes Included
+
+Raw API Cost (₹)
+
+DGEN Sell Price (₹)
+
+Margin
+
+Best For
+
+Trial Pack
+
+100 min (~3 days)
+
+₹253
+
+₹599
+
+~2.4×
+
+First-time users, gifting
+
+Starter Pack
+
+300 min (~10 days)
+
+₹759
+
+₹1,499
+
+~2.0×
+
+Light users
+
+Standard Pack
+
+600 min (~20 days)
+
+₹1,519
+
+₹2,999
+
+~2.0×
+
+Moderate users (recommended)
+
+Value Pack
+
+1,200 min (~40 days)
+
+₹3,037
+
+₹5,499
+
+~1.8×
+
+Active users, best ₹/min
+
+Pro Pack
+
+3,000 min (~3 months)
+
+₹7,594
+
+₹11,999
+
+~1.6×
+
+Power users, gifting 1 year
+
+Raw API cost basis: ₹2.53 per active minute (paid tier, 30 min/day average user). Server + payment gateway costs add ~15%, bringing true cost to ~₹2.91/min. Pricing above gives 1.6–2.4× margin.
+
+ℹ  NOTE: These packs are one-time purchases, not subscriptions. Users buy when they want. There is no auto-renewal, no monthly charge, no credit card required unless buying a pack. This eliminates Indian consumer resistance to recurring charges.
+
+5.4 Scenario Analysis — What Does a Typical User Actually Pay?
+
+For most ADAM users, BYOK will be the default choice. Here is the realistic journey:
+
+User Journey Stage
+
+What User Does
+
+What User Pays for AI
+
+DGEN Revenue
+
+Unboxing (Day 1)
+
+Sets up ADAM, guided through BYOK setup in the companion app
+
+₹0 (own Google key)
+
+₹0 (already paid for hardware)
+
+First 6 months
+
+Uses ADAM daily with BYOK
+
+₹0
+
+₹0
+
+Wants premium features
+(no data training, DGEN system
+prompt, priority support)
+
+Buys Standard Pack ₹2,999
+
+₹2,999 (one-time)
+
+~₹1,480 profit
+
+Credits run out after 40 days
+
+Buys another Standard Pack or switches back to BYOK
+
+₹2,999 or ₹0
+
+~₹1,480 or ₹0
+
+5.5 Hardware Pricing with Bundled AI Credits (Recommended Launch Strategy)
+
+For the ADAM v1 launch, DGEN should bundle AI credits into the hardware purchase price to incentivise switching to the managed (paid) tier. This also lets DGEN collect clean usage data.
+
+ADAM Edition
+
+Hardware Price (₹)
+
+Bundled Credits
+
+AI Credit Value
+
+Total Value
+
+ADAM Standard
+
+₹14,999
+
+Trial Pack (100 min)
+
+₹599
+
+₹15,598
+
+ADAM Pro
+
+₹18,999
+
+Standard Pack (600 min)
+
+₹2,999
+
+₹21,998
+
+ADAM Elite
+
+₹24,999
+
+Pro Pack (3,000 min)
+
+₹11,999
+
+₹36,998
+
+The bundled credits serve two purposes: they demonstrate the managed tier value, and they let DGEN collect real usage data before users opt out to BYOK. Based on industry conversion rates, approximately 20–30% of users who experience the managed tier will continue purchasing credit packs.
+
+6. What Happens When a User Does Not Pay / Has No Credits
+
+6.1 Core Principle — Never Brick the Robot
+
+ADAM must remain a useful device regardless of whether the user has AI credits or a configured API key. This is critical for:
+
+User satisfaction and product reviews
+
+Smart home / IoT features which have nothing to do with AI costs
+
+Indian consumer trust — they paid ₹14,999+ for hardware, it should do something
+
+ℹ  NOTE: ADAM Lite Mode must feel like a deliberate product tier, not a broken state. Good fallback design makes the upgrade to full AI feel like a desirable enhancement, not a demand.
+
+6.2 ADAM Lite Mode — Features Available Without API Key or Credits
+
+Feature
+
+Available in Lite?
+
+Implementation
+
+Real-time clock / date / alarms
+
+✅ YES
+
+System time on Pi — no internet needed
+
+Smart home control (lights, plugs)
+
+✅ YES
+
+Local MQTT over Wi-Fi — no API needed
+
+Face detection (who's home)
+
+✅ YES
+
+Haar cascade runs locally on Pi Zero 2W
+
+Pre-recorded voice responses
+
+✅ YES
+
+Cached audio files for common questions
+
+Presence detection (radar)
+
+✅ YES
+
+RCWL-0516 is fully local hardware
+
+Weather (basic)
+
+✅ YES
+
+OpenWeatherMap free API (no Gemini needed)
+
+Timer and reminder display
+
+✅ YES
+
+TFT display driven by Pico — local
+
+Emotion faces / animations
+
+✅ YES
+
+TFT display works offline
+
+Full AI conversation
+
+❌ NO (requires key/credits)
+
+Needs Gemini Live API
+
+Web search
+
+❌ NO
+
+DuckDuckGo search requires AI session
+
+Memory (learning your name etc.)
+
+⚠️ READ-ONLY
+
+Previously saved memories still displayed
+
+6.3 Upgrade Prompts — How ADAM Encourages Users to Get Credits
+
+When in Lite Mode, ADAM should intelligently nudge users toward getting a key or buying credits, without being annoying:
+
+Once per day: ADAM face shows a gentle 'thinking' animation and ADAM speaks a pre-recorded message like: "I can do a lot more if you set up my AI connection. Want to know how?"
+
+When user tries to ask a question ADAM cannot answer in Lite Mode: ADAM says "I can answer that once you connect my brain — it takes two minutes to set up."
+
+QR code displayed on TFT screen linking to DGEN setup page
+
+DGEN app sends push notification (once per week): "ADAM is working in Lite Mode — unlock full AI for ₹599."
+
+ℹ  NOTE: Nudges should be gentle, infrequent, and helpful — not aggressive upsell. ADAM's personality must stay consistent and friendly even in Lite Mode.
+
+6.4 Key Expiry / Credits Running Out — Graceful Degradation
+
+Situation
+
+ADAM Behaviour
+
+User Experience
+
+Ephemeral token request returns 'no credits'
+
+ADAM completes current sentence, then says: "My AI connection has run out — I'll switch to basic mode for now. You can top up at dgen.in/credits."
+
+Clear, friendly, not abrupt
+
+BYOK key becomes invalid (user rotated key)
+
+ADAM detects 401 error → falls back to Lite Mode → TFT shows QR code to settings page
+
+Device shows clear error, not just silence
+
+Google API temporarily down
+
+ADAM uses last-known responses + pre-recorded responses + retries with exponential backoff
+
+Seamless for common queries
+
+Free tier 65K TPM exceeded (multi-unit)
+
+Session queued — ADAM tells user 'Just a moment, getting my thoughts together' — retries after 5 seconds
+
+User experiences slight delay, not failure
+
+7. Scaling Plan — From 10 to 10,000 ADAM Units
+
+7.1 Phase-by-Phase Architecture
+
+Phase
+
+Units Deployed
+
+API Strategy
+
+Monthly DGEN AI Cost
+
+Action Needed
+
+Phase 0: Dev & Testing
+
+1–5 units
+(DGEN team only)
+
+Single DGEN free tier key
+BYOK on dev units
+
+₹0
+
+None — free tier sufficient
+
+Phase 1: Early Access
+
+6–50 units
+(beta users)
+
+DGEN free tier key
++ BYOK for all users
+
+₹0
+
+Pool 2–3 free tier keys for redundancy. Monitor 65K TPM.
+
+Phase 2: Commercial Launch
+
+51–500 units
+
+Ephemeral token server (Railway.app)
+BYOK default
+Optional credit packs
+
+₹0–₹50K/month (depends on pack buyers)
+
+Deploy ephemeral token backend. Onboard to Gemini paid tier for credit pack users.
+
+Phase 3: Scale
+
+500–10,000 units
+
+Full ephemeral token infra
+Auto-scaling on Railway/Render
+
+₹50K–₹10L/month (offset by credit revenue)
+
+Negotiate volume discount with Google. Move to Vertex AI for enterprise billing controls.
+
+7.2 Free Tier Key Pooling Strategy (Phase 1)
+
+For Phase 1, DGEN can create multiple Google accounts (one per team member) and pool their free tier keys. Route ADAM sessions round-robin across keys to distribute the 65K TPM limit.
+
+5 free tier keys × 65K TPM = 325K TPM total
+
+325K TPM / 14K tokens per active session = ~23 simultaneous active ADAM sessions
+
+For 50 units where most users are not simultaneously active, this comfortably supports the fleet
+
+Each key is under a different Google account — usage is free with standard data-training trade-off
+
+⚠  WARNING: Operating multiple Google accounts for key pooling may be against Google's Terms of Service. Verify with Google's commercial team or simply launch with BYOK to avoid any ToS risk.
+
+7.3 When to Switch from Free to Paid Tier
+
+Trigger Condition
+
+Recommended Action
+
+Google announces end of preview pricing for gemini-3.1-flash-live-preview
+
+Immediate: switch all users to BYOK mode + launch credit packs. Budget 30 days migration time.
+
+You have 100+ credit-pack paying users
+
+Move those users' sessions to your paid tier API key via the ephemeral token server.
+
+65K TPM pooled limit frequently hit
+
+Start paid tier for premium (credit-pack) users. Free users stay on free tier keys.
+
+Need data privacy for enterprise/B2B
+
+Paid tier: data NOT used for training. Market this as a premium feature.
+
+Government/corporate contracts
+
+Vertex AI — enterprise billing, compliance, SLA, data residency in India.
+
+8. Summary Recommendations
+
+8.1 Immediate Actions (Phase 0–1)
+
+Default all ADAM units to BYOK. Add a guided 3-step setup wizard in the companion app.
+
+Implement smart session management: radar + wake word gate the Live API session open/close to keep free tier TPM consumption low.
+
+Add ADAM Lite Mode to the firmware: robot must be useful with zero API calls.
+
+Monitor the official Gemini pricing page monthly — free preview status can end.
+
+8.2 Launch Pricing Strategy
+
+Recommendation
+
+Rationale
+
+Default: BYOK (free for users, ₹0 for DGEN)
+
+Zero AI infrastructure cost at launch. Indian market accepts 'bring your own key' for technical products.
+
+Bundle Trial Pack (₹599) credit in ADAM Pro & Elite SKUs
+
+Demonstrates managed tier, collects usage data, creates conversion path.
+
+Credit Packs: ₹599 / ₹1,499 / ₹2,999 / ₹5,499 / ₹11,999 (one-time, no subscription)
+
+Matches consumer expectation for one-time purchases. No subscription friction.
+
+Never force subscription
+
+Indian consumers distrust recurring charges on devices. Optional is fine; forced kills sales.
+
+ADAM Lite Mode — always free, always functional
+
+Protects brand reputation. Robot should never feel broken.
+
+8.3 Long-Term Billing Architecture
+
+Ephemeral Token Server: deploy on Railway.app alongside the existing WebSocket relay. Supabase handles credit balance storage.
+
+Credit tracking: each ephemeral token generation event deducts from user's credit balance in Supabase.
+
+Usage analytics: log session durations → calculate actual token consumption → refine credit pack pricing quarterly.
+
+Vertex AI migration: when annual revenue from credit packs exceeds ₹25L, negotiate Vertex AI enterprise agreement for volume discounts and India data residency.
+
+8.4 Final Answer to Your Core Questions
+
+Your Question
+
+Answer
+
+Does Google charge us even on 'Unlimited' free tier?
+
+NO. The free tier for gemini-3.1-flash-live-preview is genuinely free. 'Unlimited' RPD/RPM is accurate — only the 65K TPM cap applies.
+
+How to use one API key per user without loss?
+
+Ephemeral Tokens (Google's own solution) OR BYOK. Ephemeral tokens let DGEN control access and billing. BYOK gives zero cost.
+
+Will Google charge us if usage is unlimited?
+
+NOT on free tier. On paid tier: ~₹2.53 per active minute per ADAM unit. Smart session management can keep this to ₹750–₹2,500/month per active unit.
+
+How to charge users without loss, one-time?
+
+Credit Packs at 2×–2.5× markup. ₹599 / ₹1,499 / ₹2,999 / ₹5,499 / ₹11,999. No subscription. BYOK option always available for free.
+
+Monthly/yearly INR pricing if needed?
+
+Monthly reference: ₹599/month (light user). Annual reference: ₹5,999/year (equivalent to Standard Pack × 2/year). But position these as credit packs, not subscriptions.
+
+If user doesn't pay?
+
+ADAM Lite Mode: smart home, clock, alarms, face detection, weather, pre-recorded responses. Full AI disabled. Gentle nudges once/day. Never brick the device.
+
+DGEN Technologies Pvt. Ltd. — Confidential
+
+Prepared by ADAM AI Platform Team — May 2026

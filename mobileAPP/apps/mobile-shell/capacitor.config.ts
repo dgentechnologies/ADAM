@@ -4,10 +4,8 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * Capacitor wraps @adam/web's static export directly from ../web/out, so the
  * build order is always: pnpm --filter @adam/web build → pnpm cap:sync.
  *
- * No native plugin is wired yet (BLE, camera, mDNS). Every native capability is
- * reached through apps/web/src/lib/native/*, which falls back to a browser stub
- * when Capacitor.isNativePlatform() is false — so the same bundle runs in a
- * plain browser without throwing.
+ * Native camera, sharing, preferences, account persistence and system settings
+ * use Capacitor plugins. ADAM hardware transport is intentionally deferred.
  */
 const config: CapacitorConfig = {
   appId: 'com.dgentechnologies.adam',
@@ -18,8 +16,7 @@ const config: CapacitorConfig = {
   android: {
     backgroundColor: '#000000',
     allowMixedContent: false,
-    /** Local HTTP to the Pi is explicitly permitted via network-security-config. */
-    webContentsDebuggingEnabled: true,
+    webContentsDebuggingEnabled: false,
   },
   ios: {
     backgroundColor: '#000000',
@@ -27,7 +24,8 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      launchAutoHide: false,
+      launchAutoHide: true,
+      launchShowDuration: 1500,
       backgroundColor: '#000000',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,
@@ -35,14 +33,21 @@ const config: CapacitorConfig = {
       splashImmersive: true,
     },
     StatusBar: {
-      style: 'DARK',
+      style: 'LIGHT',
       backgroundColor: '#000000',
-      overlaysWebView: true,
+      overlaysWebView: false,
     },
     Keyboard: {
       resize: 'native',
       style: 'DARK',
       resizeOnFullScreen: true,
+    },
+    GoogleAuth: {
+      scopes: ['profile', 'email'],
+      serverClientId: '759320300226-spjdvgmqm9ccm622v6l80slbusokvcsp.apps.googleusercontent.com',
+      clientId: '759320300226-spjdvgmqm9ccm622v6l80slbusokvcsp.apps.googleusercontent.com',
+      androidClientId: '759320300226-spjdvgmqm9ccm622v6l80slbusokvcsp.apps.googleusercontent.com',
+      forceCodeForRefreshToken: false,
     },
   },
 };

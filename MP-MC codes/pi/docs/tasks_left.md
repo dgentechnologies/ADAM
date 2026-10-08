@@ -189,46 +189,78 @@ Ensuring deployed desktop units can receive bug fixes and feature updates seamle
 ### Category 7: Reminders, Scheduling, Alarms & Timers Engine (High Priority)
 Enabling ADAM to act as an active desktop executive assistant with both voice and companion app schedule management.
 
-- [ ] **7.1. Offline-Compatible Alarms & Timers (Lite Mode & Full AI):**
-  - Implement a persistent schedule daemon/task (`scheduler.py`) that runs regardless of cloud connectivity.
-  - Store active alarms, timers, and reminders in `adam_schedules.json` (persisted across reboots).
-  - Fire local audio alarms (`aplay alarm_tone.wav`) when a timer or alarm expires.
-  - Physical interaction:
-    - Tap Touch1 or Touch2: Snooze alarm for 5 minutes.
-    - Tap Touch3: Dismiss/Stop alarm or timer immediately.
-- [ ] **7.2. Natural Language Scheduling Tools (Full AI Live Mode):**
-  - Add function declarations to `tools_schema.py` and dispatch in `tool_handler.py`:
-    - `set_alarm(time: str, label: str, recurring: bool)` (e.g. *"Set an alarm for 7:30 AM every weekday"*)
-    - `set_timer(duration_seconds: int, label: str)` (e.g. *"Set a 15-minute tea timer"*)
-    - `set_reminder(text: str, trigger_time: str)` (e.g. *"Remind me at 4 PM to check the solar panel telemetry"*)
-    - `list_schedules()` (e.g. *"What alarms or reminders do I have today?"*)
-    - `cancel_schedule(schedule_id: str)` (e.g. *"Cancel my 4 PM reminder"*)
-- [ ] **7.3. Proactive Voice Wake & Delivery:**
-  - When a reminder time arrives, if ADAM is in sleep/idle mode, automatically wake the unit, display an alert/excited face on the TFT display, sound an ascending chime, and speak the reminder proactively:
-    - *"Bhai, reminder: Call Sukomal about the Auralis batch now."*
-- [ ] **7.4. Mobile Companion App Schedule Synchronization:**
-  - Expose `/api/schedules` via `ws_server.py` REST handler so users can view, create, edit, and delete alarms/reminders directly from the mobile app's Home dashboard.
+**Status as of 2026-10-02 (v41): substantially delivered.** `scheduler.py` (47 KB) implements the whole engine; the nine scheduling tools are declared and dispatched; the Pi sync API serves schedules and todos. Full reference: [`scheduler.md`](scheduler.md). Remaining work is listed per item below.
+
+- [x] **7.1. Offline-Compatible Alarms & Timers (Lite Mode & Full AI):**
+  - **Done:** `scheduler.py` runs as an engine (not a separate daemon — its ticker runs as a task inside `session.py`'s existing event loop, so there is no second process to supervise and no lock between the ticker and the sync API).
+  - **Done:** state persists to `adam_schedules.json` via the same atomic `save_json()` the memory store uses, so a power cut mid-write cannot truncate it. Survives reboot.
+  - **Done:** Touch1/Touch2 snooze for 5 minutes (`_SNOOZE_SECONDS`), Touch3 dismisses immediately. Both take precedence over the normal idle/goto-sleep meaning of those gestures *while an alarm is ringing* — see `session.py:1678-1693` and `:1746-1758`. Snoozing is capped at `_MAX_SNOOZES` (12) so a forgotten alarm cannot ring until the battery dies.
+  - [ ] **7.1.a. Dedicated alarm sound asset.** `aplay alarm_tone.wav` does not exist: there is no `alarm_tone.wav` (the only `.wav` files are `hello_adam_16k.wav` and `song1-3.wav`). Alarms currently deliver as **voice** — the fired item is injected into the session and spoken. A distinct audible tone (or an ascending chime) is still wanted so an alarm registers without the user parsing a sentence. Needs the asset plus a play call on the ring path.
+- [x] **7.2. Natural Language Scheduling Tools (Full AI Live Mode):**
+  - Declared in `tools_schema.py` and dispatched in `tool_handler.py`. **Nine** tools, not the five originally scoped:
+
+    | Tool | Purpose |
+    |---|---|
+    | `set_alarm` | *"Set an alarm for 7:30 AM every weekday"* |
+    | `set_reminder` | *"Remind me at 4 PM to check the solar panel telemetry"* |
+    | `set_timer` | *"Set a 15-minute tea timer"* |
+    | `list_schedules` | *"What alarms or reminders do I have today?"* |
+    | `cancel_schedule` | *"Cancel my 4 PM reminder"* |
+    | `add_todo` | *"Add buy thermal paste to my list"* |
+    | `list_todos` | *"What's on my list?"* |
+    | `complete_todo` | *"Mark the thermal paste as done"* |
+    | `delete_todo` | *"Delete that to-do"* |
+
+  - Signature note: the tool takes a human `when` string (`"7:30 am"`, `"in twenty minutes"`, `"weekdays"`) rather than the originally specified `recurring: bool` / `duration_seconds: int`. Parsing lives in `parse_when()` / `parse_time_of_day()`, which is where an ambiguous request is caught and refused with wording ADAM can say — better than making the model compute seconds.
+- [⚠️] **7.3. Proactive Voice Wake & Delivery:**
+  - **Done (in-session):** fired items are injected into the live session via `prompt_store.injection()` from the session's own delivery loop (`session.py:1885+`), one injection per batch, into `alarm_fired` / reminder / timer pools. An alarm that cuts a conversation off is handled as a deliberate interruption rather than arriving as an ordinary turn.
+  - **Done (in-session only):** the alarm suppresses idle transition while ringing, so ADAM cannot go to sleep mid-alarm.
+  - [ ] **7.3.a. Wake from idle.** The wake path only exists while a Live session is up. If ADAM is idle with the mic on local Vosk, a due alarm does **not** currently wake it, show an alert face, or play a chime — the offline Vosk wake word is the only thing that resumes a session. This is the substantive remaining gap in Category 7, and it is the case a bedside alarm actually lives in.
+  - [ ] **7.3.b. TFT alert face + ascending chime on fire.** The face change and the chime are not wired to the fire path (the chime asset does not exist — see 7.1.a).
+- [x] **7.4. Companion App Schedule Synchronization:**
+  - Delivered via `sync_api.py` rather than `ws_server.py`, which is the more useful shape: it is a plain stdlib HTTP server, so no Flask on the Pi and no WebSocket client needed in the app. Endpoints: `GET /api/schedules`, `GET /api/todos`, `PUT /api/schedules`, `PUT /api/todos`, `POST /api/todos`, `POST /api/schedules`, `/api/todos/done`, `/api/todos/delete`, `/api/schedules/cancel`, plus `GET /api/snapshot` for the one-call tab load.
+  - Writes require `SYNC_TOKEN`; **an empty token makes the API read-only rather than open**.
+  - Rendered in the PC app's Clock tab. The mobile app is not yet a consumer — that is app-side work, not Pi-side.
 
 ---
 
 ### Category 8: Advanced Laptop Companion Control & Clipboard Sync (Medium Priority)
-Extending the modular `laptop_agent.py` running on the user's laptop to turn ADAM into an active desktop productivity co-pilot.
+Extending the modular laptop agent running on the user's laptop to turn ADAM into an active desktop productivity co-pilot.
 
-- [ ] **8.1. Laptop Clipboard Read & Write Integration:**
-  - Integrate `pyperclip` into `laptop_agent.py` to register clipboard actions in the `@action` registry:
-    - `@action("clipboard_get", "Read the text currently copied on the laptop's clipboard.")`:
-      - Allows ADAM to answer *"What's on my clipboard?"* or summarize/analyze text currently copied on the user's computer.
-    - `@action("clipboard_set", "Copy specified text to the laptop's clipboard.", needs_value=True)`:
-      - Allows the user to say *"ADAM, copy that code snippet to my laptop clipboard"* or *"Copy that summary"*, and ADAM writes it directly into the laptop's OS clipboard.
-    - `@action("clipboard_paste", "Simulate paste keystroke into the active laptop window.")`:
-      - Simulates `Ctrl+V` (Windows/Linux) or `Cmd+V` (macOS) into the active window.
-- [ ] **8.2. Extended Laptop Automation Actions:**
-  - `@action("lock_screen", "Lock the laptop screen immediately")`: For quick privacy when walking away from the desk (*"ADAM, lock my laptop"*).
-  - `@action("media_play_pause", "Toggle playback on Spotify/media player")` / `media_next` / `media_prev`.
-  - `@action("open_url", "Open a website or link in default browser", needs_value=True)`: (*"ADAM, open GitHub on my laptop"*).
-  - `@action("sleep_display", "Turn off laptop displays to save power")`.
-- [ ] **8.3. Laptop Agent Connection Resilience:**
-  - Enhance `laptop_agent_client.py` on the Pi to re-verify Zeroconf mDNS every 60 seconds and gracefully inform the user if the laptop went to sleep or changed Wi-Fi networks.
+**Status as of 2026-10-02 (v41): delivered, with two names changed and two actions still missing.** Full reference: [`clipboard_and_agent.md`](clipboard_and_agent.md).
+
+**A correction to this section's premise.** 8.1 and 8.2 below specified action names (`clipboard_get`, `clipboard_set`, `open_url`, `sleep_display`) that are **not** what shipped. The implemented and frozen manifest is different, and the difference matters because the 18 required actions are a contract: renaming one breaks a deployed agent. Use the shipped names in the table below, not the ones originally written here.
+
+**Shipped and live-parity (18 required actions in `laptop_actions.LIVE_PARITY_ACTIONS`):**
+
+| Specified here | Actually shipped | Note |
+|---|---|---|
+| `clipboard_get` | **`read_clipboard`** | same behaviour |
+| `clipboard_set` | **`write_clipboard`** | same behaviour |
+| `clipboard_paste` | **`clipboard_paste`** | *outside* the required set — canonical but not part of parity |
+| `lock_screen` | **`lock_screen`** | as specified |
+| `media_play_pause` / `media_next` / `media_prev` | **`media_play_pause`** / **`media_next`** / **`media_previous`** | `media_prev` is `media_previous`; the short form resolves through `ALIASES` |
+| — | `volume_up` / `volume_down` / `volume_set` / `volume_mute` / `volume_unmute` | not in this category's spec; shipped |
+| — | `brightness_up` / `brightness_down` / `brightness_set` | not in this category's spec; shipped |
+| — | `dispatch_coding_task` / `check_coding_task_status` / `cancel_coding_task` | not in this category's spec; shipped |
+| — | `set_robot_emotion` | mirrors ADAM's face onto the PC's 3D model |
+| `open_url` | **not implemented** | see 8.2.a |
+| `sleep_display` | **not implemented** | see 8.2.b |
+
+- [x] **8.1. Laptop Clipboard Read & Write Integration:**
+  - `read_clipboard` and `write_clipboard` are registered in `pcAPP/backend.py`'s `@action` registry and in the shared manifest. ADAM can answer *"What's on my clipboard?"*, act on that text, and write generated content back to the laptop's clipboard.
+  - `pyperclip` **is** the dependency, as originally specified — `backend.py:564` (`read_clipboard`) and `:580` (`write_clipboard`) import it lazily inside the action bodies, and `build_exe.py` names it as a hidden import so PyInstaller cannot drop it. Only the action *names* diverged from this spec, not the library.
+  - **Trust boundary:** clipboard contents are treated as untrusted *data*, never instructions. Enforced in three independent places — a permanent `clipboard_safety` section in `prompts.txt`, an `untrusted_user_data: True` label on the tool result, and truncation at `CLIPBOARD_MAX_CHARS` (4,000). The label travels with the content so a prompt edit cannot silently remove it.
+  - Values are typed by the shared manifest (`none` / `int` / `str` / `enum`), with ints **clamped** to the declared range rather than trusted, and `str` capped at `MAX_STRING_VALUE_CHARS` (200,000).
+- [x] **8.2. Extended Laptop Automation Actions:**
+  - `lock_screen`, `media_play_pause`, `media_next`, `media_previous` shipped as specified.
+  - [ ] **8.2.a. `open_url`.** Not implemented on the PC side. (The name does not appear in `backend.py`'s registry.)
+  - [ ] **8.2.b. `sleep_display`.** Not implemented. Overlaps with `brightness_set(0)`, so confirm the distinct behaviour wanted before adding it.
+  - Adding either is a **new** action name, never a rename of an existing one — the 18 required actions are frozen so that updating the Pi cannot break an agent the user has not updated yet.
+- [x] **8.3. Laptop Agent Connection Resilience:**
+  - Delivered as mDNS discovery of `_adam-laptop._tcp.local.` in `laptop_agent_client.py`, with a 3 s discovery window and `LAPTOP_AGENT_IP` in `.env` as a fallback for when discovery fails (observed resolving during testing, e.g. `192.168.1.3`).
+  - Resolution note: discovery happens **on demand at call time**, not on a 60-second background re-verify timer. That is the simpler and more robust choice — a laptop that slept or changed networks is picked up by the next call rather than having to be noticed by a poller — so the specified periodic re-check is deliberately not implemented.
+  - [ ] **8.3.a. User-facing notice when the laptop is unreachable.** A failed action currently surfaces as a speakable error string rather than a proactive *"your laptop looks asleep"*. Low priority; the error path already says the useful thing.
 
 ---
 

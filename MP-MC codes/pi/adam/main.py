@@ -1,5 +1,5 @@
 """
-main.py — ADAM v40 entrypoint
+main.py — ADAM v41 entrypoint
 ==============================================================================
 Wires together all the split-out modules and runs the top-level reconnect
 loop. This file should contain almost no logic of its own — just startup
@@ -29,12 +29,17 @@ from config import (
     NECK_TILT_CENTER, NECK_PAN_CENTER,
     OUT_Q_MAX,
     API_KEY,
+    SYNC_HOST, SYNC_PORT, SYNC_TOKEN,
 )
 from hardware import pan_servo, servo_pan
 from esp32_link import esp_link
 from memory_store import save_conversation_log, save_json, memory, faces, MEMORY_FILE, FACE_MEMORY_FILE
 from ws_server import start_ws_server
+from sync_api import start_sync_api, stop_sync_api
+import touch_controls
+import laptop_pairing
 from session import run_session, tft_set
+from mic_calibrate import calibrate as calibrate_mic
 from heartbeat import clear_heartbeat, record_heartbeat
 
 from google import genai
@@ -56,7 +61,7 @@ from laptop_agent_client import (
 
 async def main() -> None:
     print("=" * 66)
-    print("  ADAM v40 — Autonomous Desktop AI Module (Wired ESP32-CAM)")
+    print("  ADAM v41 — Autonomous Desktop AI Module (Wired ESP32-CAM)")
     print(f"  Model  : {LIVE_MODEL}  |  Voice: {VOICE}")
     print(f"  Mic    : {CAPTURE_DEVICE} {CAPTURE_FORMAT} {CAPTURE_RATE}Hz {CAPTURE_CHANNELS}ch "
           f"→ {GEMINI_SEND_RATE}Hz to Gemini")
@@ -64,6 +69,8 @@ async def main() -> None:
     print(f"  ESP32  : WIRED UART {PI_UART_PORT} @ {PI_UART_BAUD} baud (Flow 2)")
     print(f"  Display: on Pico, driven via ESP32-CAM relay (Pi->UART->ESP32->Pico)")
     print(f"  Servo  : {'✅ pan' if pan_servo else '⚠️  unavailable'} (tilt via UART)")
+    print(f"  Sync   : http://{SYNC_HOST}:{SYNC_PORT} "
+          f"{'[read-write]' if SYNC_TOKEN else '[read-only — set SYNC_TOKEN]'}")
     print(f"  DDG    : {'✅' if DDGS else '⚠️  unavailable'}")
     if LAPTOP_AGENT_STATIC_IP:
         print(f"  Laptop : ✅ static IP {LAPTOP_AGENT_STATIC_IP}:{LAPTOP_AGENT_PORT} "
@@ -79,7 +86,71 @@ async def main() -> None:
     record_heartbeat(status="starting", mic_rms=0.0, zero_run=0)
 
     await start_ws_server()
+
+    try:
+        await laptop_pairing.initialize_laptop_pairing()
+    except Exception:
+        print("  Desktop pairing could not start; connect again after checking local storage.")
+
+    # One touch controller for the whole process, so laptop shortcuts continue
+    # through Gemini reconnects. Disk and laptop I/O run outside the event loop.
+    try:
+        await touch_controls.initialize_touch_controls(esp_link)
+    except Exception:
+        print("  Touch shortcuts could not start; original gestures remain active.")
+
+    # The companion app's data API (schedules/todos/memories/conversations).
+    # Started here, beside the WS server and for the same reason: both are
+    # inbound listeners, and this one must exist BEFORE the reconnect loop
+    # below so the PC app can read the Pi's lists while ADAM is offline or
+    # waiting out a backoff. Deliberately non-fatal — the app losing its data
+    # view must never cost ADAM its startup, and the voice face channel is
+    # unaffected either way.
+    try:
+        await start_sync_api()
+    except Exception as e:
+        print(f"  ⚠️  Sync API failed to start ({e}) — PC app will show its "
+              f"cached copy only")
+
+    # The scheduler ticker. Started HERE, outside the reconnect loop below,
+    # and exactly once per process (master prompt §0.4): a reconnect must
+    # never start a second ticker, or every alarm would fire twice, then
+    # three times, for as long as the Wi-Fi stayed flaky. start_scheduler()
+    # is idempotent as a second line of defence, but the placement is the
+    # actual guarantee.
+    #
+    # It also runs before the Gemini client exists, which is deliberate —
+    # alarms are a local, offline feature and must keep working through an
+    # API outage. Firing only queues an announcement; session.py picks it up
+    # whenever there is a live session to deliver it through.
+    try:
+        from scheduler import start_scheduler
+        await start_scheduler()
+    except Exception as e:
+        # A broken scheduler costs ADAM its alarms, never its startup.
+        print(f"  ⚠️  Scheduler unavailable ({e}) — alarms and todos are off")
+
     esp_link.start()
+
+    # Measure the microphone path before anything depends on it. This runs
+    # HERE — after esp_link so the face can react, before the Gemini client
+    # exists — for two reasons. It needs the ALSA devices to itself: listen()
+    # and speaker() each hold a long-lived arecord/aplay for the whole session,
+    # and a second opener of plughw:0,0 reliably hits "Device or resource
+    # busy" (the same collision that shaped song_playback's design). And the
+    # values it produces — the noise floor the gate compares every chunk
+    # against, and which microphone feeds the speech path — have to be right
+    # BEFORE the first word is captured, not corrected a minute into the
+    # conversation.
+    #
+    # Deliberately not fatal: calibrate() returns None on any problem and
+    # leaves every existing setting untouched. A failed measurement must cost
+    # ADAM its tuning, never its startup.
+    try:
+        calibrate_mic()
+    except Exception as e:
+        print(f"  ⚠️  startup calibration failed ({e}) — continuing with "
+              f"the previously learned mic settings")
 
     client        = genai.Client(api_key=API_KEY)
     stop          = asyncio.Event()
@@ -207,6 +278,14 @@ async def main() -> None:
         except Exception:
             pass
         esp_link.stop()
+        try:
+            await touch_controls.stop_touch_controls()
+        except Exception:
+            pass
+        try:
+            await stop_sync_api()
+        except Exception:
+            pass
         save_conversation_log()
         save_json(MEMORY_FILE, memory)
         save_json(FACE_MEMORY_FILE, faces)

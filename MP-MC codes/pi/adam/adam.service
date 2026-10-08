@@ -1,5 +1,5 @@
 [Unit]
-Description=ADAM v40 — Autonomous Desktop AI Module
+Description=ADAM v41 — Autonomous Desktop AI Module
 # Needs the network up for the Gemini Live API + laptop-agent mDNS discovery.
 After=network-online.target sound.target
 Wants=network-online.target
