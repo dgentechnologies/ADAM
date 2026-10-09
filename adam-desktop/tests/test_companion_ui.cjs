@@ -14,6 +14,9 @@ test('shared planner and device controls preserve IDs and clear editors on accou
   }};
   let init;w.document.addEventListener=(event,fn)=>{if(event==='DOMContentLoaded')init=fn;};w.eval(fs.readFileSync(path.join(root,'js/companion.js'),'utf8'));init();await w.AdamShared.refresh();
   const form=()=>w.document.querySelector('#sharedDevices form');
+  w.document.getElementById('shared-deviceName').value='Unsaved draft';
+  await w.AdamShared.refresh();
+  assert.equal(w.document.getElementById('shared-deviceName').value,'Unsaved draft');
   w.document.getElementById('shared-deviceName').value='Desk ADAM';form().dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();
   w.document.getElementById('shared-deviceName').value='Studio ADAM';form().dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();
   assert.equal(data.devices.length,2);const first=data.devices[0].id;

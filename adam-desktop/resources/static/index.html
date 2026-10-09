@@ -242,6 +242,13 @@
 </p>
 </div>
 </div>
+<details class="panel account-devices" id="findAdamPanel" open>
+<summary><i data-icon="devices"></i><span>Find ADAM on this network</span><span class="summary-hint">No address or key needed</span><i data-icon="chevron"></i></summary>
+<div class="panel-heading"><div><span class="eyebrow">ON THIS NETWORK</span><h3>Nearby ADAM units</h3></div>
+<button type="button" class="button subtle" id="findAdamBtn"><i data-icon="refresh"></i>Search</button></div>
+<p id="findAdamStatus" class="help" role="status">Press Search. ADAM announces itself on your Wi-Fi, so there is nothing to type.</p>
+<div id="findAdamList" class="device-grid"></div>
+</details>
 <details class="panel account-devices">
 <summary><i data-icon="devices"></i><span>Choose from your account</span><span class="summary-hint">Use the same account as mobile</span><i data-icon="chevron"></i></summary>
 <div class="panel-heading"><div><span class="eyebrow">FROM YOUR ACCOUNT</span><h3>Your devices</h3></div>
@@ -266,9 +273,9 @@
 <input id="connectionHost" type="text" placeholder="adam-pi.local or 192.168.1.20" required maxlength="253" autocomplete="off" spellcheck="false">
 </label>
 <label>ADAM connection key
-<input id="connectionToken" type="password" autocomplete="off" placeholder="Enter the key from your ADAM setup" aria-describedby="connectionKeyHelp">
+<input id="connectionToken" type="password" autocomplete="off" placeholder="Only needed if you are not using Search" aria-describedby="connectionKeyHelp">
 </label>
-<p class="help" id="connectionKeyHelp">Required to create alarms, edit to-dos and authorize laptop control. Use the SYNC_TOKEN configured on your ADAM Pi. Leave empty to keep a saved key for this address. The key is stored securely on this computer.</p>
+<p class="help" id="connectionKeyHelp">You normally do not need this. Use <strong>Find ADAM on this network</strong> above and the key is exchanged for you. Fill this in only to connect an ADAM that discovery cannot see — for example on a different subnet or over a VPN. Leave empty to keep a saved key for this address. The key is stored securely on this computer.</p>
 <details>
 <summary>Advanced connection options
 </summary>

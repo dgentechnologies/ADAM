@@ -50,7 +50,14 @@ window.AdamShared=(()=>{
   async function refresh(){
     if(pending)return;pending=true;const uid=A().ui.account.user?.uid;
     try{const results=await Promise.all(['todos','clocks','devices'].map(k=>A().api('/companion/'+k)));if(uid!==A().ui.account.user?.uid)return;
-      ['todos','clocks','devices'].forEach((k,i)=>{state[k]=results[i].items;});renderCollection('todos',$('sharedTodos'));renderCollection('clocks',$('sharedClocks'));renderCollection('devices',$('sharedDevices'));
+      ['todos','clocks','devices'].forEach((k,i)=>{
+        const root=$(k==='todos'?'sharedTodos':k==='clocks'?'sharedClocks':'sharedDevices');
+        const changed=JSON.stringify(state[k])!==JSON.stringify(results[i].items);
+        state[k]=results[i].items;
+        // Navigation refreshes all three maps. Unchanged data must not replace
+        // a form the user is already typing in, or steal its focus.
+        if(changed||!root.children.length)renderCollection(k,root);
+      });
       A().text('sharedPlannerMessage',A().ui.account.signed_in?'Saved to this account. Use Profile & settings to sync with Android.':'Saved on this computer. Sign in and import local items to share them.');
     }catch(err){A().text('sharedPlannerMessage',err.message);A().toast(err.message,true);}finally{pending=false;}
   }

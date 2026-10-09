@@ -1618,11 +1618,27 @@ def pair_adam_endpoint():
                         or "Pairing refused (HTTP %d)" % response.status_code}), 200
 
     settings = load_settings()
-    settings["pi_ip"] = host
-    settings["pi_sync_port"] = port
-    settings["sync_token"] = str(payload["token"])
     settings["pi_device_id"] = str(payload.get("id", ""))
     save_settings(settings)
+
+    # Hand the claimed token to connection.connect() rather than writing
+    # pi_ip/sync_token ourselves.
+    #
+    # The connection module owns a lot more state than those two keys: it also
+    # sets pi_host, sync_token_host/port (so a token is never reused against a
+    # different endpoint), paired, and it verifies identity and starts the
+    # telemetry run. Writing settings directly left all of that untouched, so
+    # the app still reported "Connect ADAM before opening or changing its
+    # data" and the Clock tab stayed empty even though the pairing had worked.
+    result = connection.connect({
+        "host": host,
+        "sync_port": port,
+        "sync_token": str(payload["token"]),
+    })
+    if not result.get("ok"):
+        return jsonify({"status": "error",
+                        "reason": result.get("reason")
+                        or "ADAM was claimed but the connection could not be saved."}), 200
 
     CURRENT_ROBOT_STATE["pi_ip"] = host
     logger.info("[pair] paired with %s at %s:%d", payload.get("id"), host, port)
@@ -1643,8 +1659,11 @@ def unpair_adam_endpoint():
     the user would have to SSH in to recover.
     """
     payload, err = _pi_call("POST", "/api/pair/release", {})
+    # Clear local state through the connection module for the same reason
+    # pairing goes through it: it owns paired/sync_token_host/the telemetry run,
+    # not just the two settings keys.
+    connection.disconnect()
     settings = load_settings()
-    settings["sync_token"] = ""
     settings["pi_device_id"] = ""
     save_settings(settings)
     log_activity("adam_unpaired", "", "ok" if not err else "warn")

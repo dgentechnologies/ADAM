@@ -168,7 +168,7 @@ def main():
         saved = session.post(base_url + "/touch/save", headers=headers, json={"assignments": {"touch3": {"triple": {"action": "volume_set", "value": 37}}}}, timeout=5)
         assert saved.ok and saved.json()["assignments"]["touch3"]["triple"]["value"] == 37
         passed("Packaged touch API rejects fixed taps and persists Touch 3 triple-tap preferences")
-        for asset in ("/static/js/dashboard.js", "/static/js/controls.js", "/static/js/three.min.js", "/static/css/dashboard.css", "/static/css/dashboard-scene.css", "/static/css/workspace.css", "/static/images/logo.png", "/static/images/icons.svg", "/static/models/adam-body.glb"):
+        for asset in ("/static/js/dashboard.js", "/static/js/controls.js", "/static/js/companion.js", "/static/js/three.min.js", "/static/css/dashboard.css", "/static/css/dashboard-scene.css", "/static/css/workspace.css", "/static/css/companion.css", "/static/images/logo.png", "/static/images/icons.svg", "/static/models/adam-body.glb"):
             response = session.get(base_url + asset, timeout=5)
             assert response.ok and len(response.content) > 100
             assert response.content == (BASE / "resources" / asset.lstrip("/")).read_bytes(), "Packaged asset is stale: " + asset

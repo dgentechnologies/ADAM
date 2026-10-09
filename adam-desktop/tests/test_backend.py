@@ -69,11 +69,11 @@ class BackendTests(unittest.TestCase):
         self.local('/companion/todos/delete', {'id': todo['id']})
         self.assertEqual(self.local('/companion/todos').json['items'], [])
         self.assertTrue(self.local('/companion/ble-sync', {'deviceId': device['id']}).json['companion']['todos'][todo['id']]['deleted'])
-        self.assertEqual(self.local('/companion/devices').json['items'][0]['name'], 'Library')
+        self.assertEqual(next(item for item in self.local('/companion/devices').json['items'] if item['id'] == device['id'])['name'], 'Library')
 
     def test_shared_data_endpoints_require_local_session(self):
         for route in ('/companion/devices', '/companion/todos', '/companion/clocks'):
-            self.assertEqual(self.remote(route).status_code, 403)
+            self.assertEqual(self.remote(route).status_code, 401)
 
     def test_empty_or_wrong_lan_token_cannot_execute(self):
         settings = self.config.load_settings()

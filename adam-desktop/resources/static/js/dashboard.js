@@ -436,6 +436,50 @@ function updateCodingControls(){
   $('codingStartBtn').disabled=!allowed||paused||!toolAvailable(ui.codingTools[$('codingTool').value])||['running','needs_input'].includes(ui.codingState);
   text('codingPermissionStatus',!allowed?'Allow “Start a coding task” in Controls before starting.':paused?'Laptop control is paused. Resume it from Controls or Dashboard.':'Workspace access is allowed. Every task uses the folder you choose.');
 }
+// Find ADAM on the local network and pair with one click.
+//
+// The Pi advertises _adam._tcp over mDNS (pi/adam/discovery.py) and the
+// companion browses for it; selecting a unit calls its /api/pair/claim, which
+// hands over the sync token while the unit is unclaimed. That is why there is
+// nothing to type here — the manual address + key form below exists only for
+// an ADAM discovery cannot see (different subnet, VPN).
+async function findAdamUnits(){
+  const root=$('findAdamList');root.replaceChildren();
+  status('findAdamStatus','Looking for ADAM on your network…');
+  try{
+    const d=await api('/discover/adam');
+    const units=Array.isArray(d.units)?d.units:[];
+    if(!units.length){
+      status('findAdamStatus','No ADAM found yet. Make sure it is powered on and on this same Wi-Fi, then search again. Discovery needs a few seconds after ADAM starts.');
+      return;
+    }
+    status('findAdamStatus',units.length===1?'Found 1 ADAM. Select it to connect.':'Found '+units.length+' ADAM units. Select the one you want.');
+    units.forEach(u=>{
+      const card=element('article','device-card'),info=element('div');
+      const where=u.host+(u.port&&u.port!==8766?':'+u.port:'');
+      info.append(element('h4','',u.name&&u.name!=='ADAM'?u.name+' · '+u.id:u.id),
+                  element('p','',u.connected?'Connected · '+where:(u.paired?'Already paired with another device · '+where:where+(u.version?' · v'+u.version:''))));
+      // An already-paired unit is shown but not offered: claiming it would
+      // fail with 409, so a disabled button is honest where a failing one is
+      // not. The TXT record is what tells us, so this is accurate before we
+      // ever talk to the unit.
+      const label=u.connected?'Connected':(u.paired?'Unavailable':'Connect');
+      const choose=actionButton(label,async()=>{
+        status('findAdamStatus','Connecting to '+u.id+'…');
+        try{
+          const r=await api('/pair/adam',{host:u.host,port:u.port});
+          if(r.status!=='ok')throw new Error(r.reason||'Pairing failed.');
+          status('findAdamStatus','Connected to '+(r.id||u.id)+'. Alarms, to-dos and memories are ready.');
+          toast('ADAM connected.');
+          await loadSettings(true);await loadStatus();
+          await findAdamUnits();
+        }catch(e){status('findAdamStatus',e.message,true);throw e;}
+      },'button primary','arrow');
+      choose.disabled=u.connected||u.paired;
+      card.append(icon('devices'),info,choose);root.append(card);
+    });
+  }catch(e){status('findAdamStatus',e.message+' You can still connect by local address below.',true);}
+}
 function bindUI(){
   document.querySelectorAll('button[data-view],a[data-view]').forEach(n=>n.addEventListener('click',e=>{e.preventDefault();if(n.dataset.controlCategory){ui.actionCategory=n.dataset.controlCategory;$('actionSearch').value='';}switchView(n.dataset.view);}));
   bind('refreshActionsBtn',loadActions);$('actionSearch').addEventListener('input',renderActions);
@@ -446,6 +490,7 @@ function bindUI(){
   bind('probeConnectionBtn',async()=>{status('connectionResult','Checking your ADAM…');try{const d=await api('/connection/probe',connectionPayload());status('connectionResult',d.read_only?d.reason:d.message||'ADAM is reachable. Connect to save this address.');}catch(e){status('connectionResult',e.message,true);throw e;}});
   submit('connectionForm',async()=>{status('connectionResult','Connecting…');try{const d=await api('/connection/connect',connectionPayload());$('connectionToken').value='';status('connectionResult',d.read_only?d.reason:d.message||'ADAM connected.');await loadSettings(true);await loadStatus();toast(d.read_only?'Connected for viewing. Write access still needs setup.':'Your ADAM connection is saved.');}catch(e){status('connectionResult',e.message,true);throw e;}});
   bind('disconnectBtn',async()=>{if(!(await confirmAction('Disconnect ADAM?','This computer will stop connecting to this ADAM. Your memories and preferences stay saved.','Disconnect')))return;await api('/connection/disconnect',{});await loadSettings(true);await loadStatus();status('connectionResult','ADAM disconnected.');});
+  bind('findAdamBtn',findAdamUnits);
   bind('refreshDevicesBtn',async()=>{await loadAccount();await loadAccountDevices();});
   bind('authorizeLaptopBtn',async()=>{ui.busy.add('pairing');updatePairingControls();try{await api('/connection/authorize',{});status('laptopPairingResult','ADAM verified this computer. Your enabled laptop actions are linked.');await loadStatus();}catch(e){status('laptopPairingResult',e.message,true);throw e;}finally{ui.busy.delete('pairing');}});
   bind('revokeLaptopBtn',async()=>{if(!await confirmAction('Revoke laptop access?','ADAM will forget this laptop connection and laptop control will pause on this computer.','Revoke access'))return;ui.busy.add('pairing');updatePairingControls();try{await api('/connection/revoke',{});status('laptopPairingResult','Laptop access revoked. Control is paused on this computer.');await loadStatus();}catch(e){status('laptopPairingResult',e.message,true);throw e;}finally{ui.busy.delete('pairing');}});

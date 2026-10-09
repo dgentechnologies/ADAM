@@ -23,10 +23,15 @@ export function CanvasRevealEffect({
   reverse = false,
 }: CanvasRevealEffectProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Callers pass inline arrays; typing into a form must not rebuild its GPU scene.
+  const colorsKey = JSON.stringify(colors);
+  const opacitiesKey = JSON.stringify(opacities);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const colors: number[][] = JSON.parse(colorsKey);
+    const opacities: number[] = JSON.parse(opacitiesKey);
 
     const gl = canvas.getContext('webgl2');
     if (!gl) return;
@@ -120,10 +125,14 @@ export function CanvasRevealEffect({
 
     const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
     const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
-    if (!vs || !fs) return;
+    if (!vs || !fs) {
+      if (vs) gl.deleteShader(vs);
+      if (fs) gl.deleteShader(fs);
+      return;
+    }
 
     const program = gl.createProgram();
-    if (!program) return;
+    if (!program) { gl.deleteShader(vs); gl.deleteShader(fs); return; }
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
     gl.linkProgram(program);
@@ -174,13 +183,15 @@ export function CanvasRevealEffect({
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 
-    let animId: number;
-    let startTime = performance.now();
+    let animId = 0;
+    const startTime = performance.now();
+    let lastFrame = -Infinity;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const width = canvas.clientWidth * dpr;
-      const height = canvas.clientHeight * dpr;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const width = Math.round(canvas.clientWidth * dpr);
+      const height = Math.round(canvas.clientHeight * dpr);
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
@@ -190,21 +201,40 @@ export function CanvasRevealEffect({
     };
 
     const render = (time: number) => {
+      if (document.hidden) return;
+      if (time - lastFrame < 1000 / 30 && !reducedMotion.matches) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+      lastFrame = time;
       resize();
-      const elapsed = ((time - startTime) / 1000) * (animationSpeed / 2);
+      const elapsed = reducedMotion.matches ? 1 : ((time - startTime) / 1000) * (animationSpeed / 2);
       gl.uniform1f(uTimeLoc, elapsed);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
-      animId = requestAnimationFrame(render);
+      if (!reducedMotion.matches) animId = requestAnimationFrame(render);
     };
 
-    animId = requestAnimationFrame(render);
+    const resume = () => {
+      cancelAnimationFrame(animId);
+      lastFrame = -Infinity;
+      if (!document.hidden) animId = requestAnimationFrame(render);
+    };
+    resume();
 
-    window.addEventListener('resize', resize);
+    window.addEventListener('resize', resume);
+    document.addEventListener('visibilitychange', resume);
+    reducedMotion.addEventListener('change', resume);
     return () => {
       cancelAnimationFrame(animId);
-      window.removeEventListener('resize', resize);
+      window.removeEventListener('resize', resume);
+      document.removeEventListener('visibilitychange', resume);
+      reducedMotion.removeEventListener('change', resume);
+      gl.deleteBuffer(positionBuffer);
+      gl.deleteProgram(program);
+      gl.deleteShader(vs);
+      gl.deleteShader(fs);
     };
-  }, [animationSpeed, colors, dotSize, opacities, reverse]);
+  }, [animationSpeed, colorsKey, dotSize, opacitiesKey, reverse]);
 
   return (
     <div className={cn('relative h-full w-full pointer-events-none', containerClassName)}>
