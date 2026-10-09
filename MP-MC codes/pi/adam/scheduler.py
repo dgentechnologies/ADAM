@@ -159,6 +159,7 @@ def _sanitise() -> None:
               f"and {before[1]-after[1]} malformed todo(s)")
 
 
+_store.setdefault("tombstones", [])
 _sanitise()
 
 # Fires waiting to be delivered to the model. A single-element-list mailbox
@@ -183,6 +184,66 @@ def _now() -> dt.datetime:
 
 def _iso(t: dt.datetime) -> str:
     return t.strftime("%Y-%m-%dT%H:%M")
+
+
+# Sync metadata. `_iso` is minute-resolution because that is what a user means
+# by a time; `updated_at` needs SECONDS or two edits in the same minute tie and
+# last-write-wins cannot order them.
+def _iso_s(t: dt.datetime) -> str:
+    return t.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _touch(entry: dict) -> dict:
+    """Stamp a record as modified now. Call on every create and mutation."""
+    entry["updated_at"] = _iso_s(_now())
+    return entry
+
+
+# How long a deletion is remembered. A client that has been offline longer than
+# this will not learn about the delete and may push its stale copy back, so this
+# is the real bound on "how long may a device stay away".
+TOMBSTONE_KEEP_DAYS = 30
+
+
+def _tombstone(kind: str, entry: dict) -> None:
+    """Record that something was deliberately deleted.
+
+    Kept in its own list rather than flagged on the row: the live schedules and
+    todos lists stay exactly as every existing reader expects them, so there is
+    no way for a deleted alarm to survive into the firing path.
+    """
+    _store.setdefault("tombstones", []).append({
+        "id": entry.get("id", ""),
+        "kind": kind,                       # "schedule" | "todo"
+        "label": str(entry.get("label") or entry.get("text") or "")[:120],
+        "deleted_at": _iso_s(_now()),
+    })
+
+
+def _prune_tombstones() -> None:
+    rows = _store.get("tombstones") or []
+    if not rows:
+        return
+    cutoff = _now() - dt.timedelta(days=TOMBSTONE_KEEP_DAYS)
+    kept = []
+    for r in rows:
+        try:
+            when = dt.datetime.strptime(r.get("deleted_at", ""), "%Y-%m-%dT%H:%M:%S")
+        except Exception:
+            continue                        # undated tombstone is unusable
+        if when >= cutoff:
+            kept.append(r)
+    if len(kept) != len(rows):
+        print(f"  🧹 pruned {len(rows) - len(kept)} tombstone(s) older than "
+              f"{TOMBSTONE_KEEP_DAYS} days")
+    _store["tombstones"] = kept
+
+
+# Pruned HERE, not up beside _sanitise(). The store is loaded before this point
+# but the function is not: calling it earlier raised NameError at import, which
+# py_compile does not catch because it is a runtime ordering fault, not a syntax
+# one. Keep this call below the definition.
+_prune_tombstones()
 
 
 def _parse(s: str):
@@ -403,7 +464,7 @@ def set_alarm(label: str, when: str = "", repeat=None):
             "time_of_day": f"{hm[0]:02d}:{hm[1]:02d}",
             "repeat": {"weekdays": days},
             "enabled": True, "last_fired": None, "snoozes": 0,
-            "created": _iso(now),
+            "created": _iso(now), "updated_at": _iso_s(now),
         }
         at = next_due(entry, after=now)
         entry["at"] = _iso(at) if at else None
@@ -419,7 +480,7 @@ def set_alarm(label: str, when: str = "", repeat=None):
             "id": _new_id("al"), "kind": "alarm", "label": label,
             "at": _iso(at), "repeat": None,
             "enabled": True, "last_fired": None, "snoozes": 0,
-            "created": _iso(now),
+            "created": _iso(now), "updated_at": _iso_s(now),
         }
 
     _store["schedules"].append(entry)
@@ -473,7 +534,7 @@ def set_timer(seconds=None, label: str = "", minutes=None, hours=None):
         "label": (label or "").strip() or f"{int(round(total/60)) or 1} minute timer",
         "at": _iso(now + dt.timedelta(seconds=total)),
         "repeat": None, "enabled": True, "last_fired": None, "snoozes": 0,
-        "created": _iso(now), "duration_s": int(total),
+        "created": _iso(now), "updated_at": _iso_s(now), "duration_s": int(total),
     }
     _store["schedules"].append(entry)
     _save()
@@ -529,6 +590,7 @@ def cancel_schedule(target: str = ""):
         return _err(f"That matches more than one — which: {names}?")
     dead = match[0]
     _store["schedules"] = [s for s in _store["schedules"] if s["id"] != dead["id"]]
+    _tombstone("schedule", dead)
     if _ringing and _ringing[0] == dead["id"]:
         _ringing.clear()
     _save()
@@ -549,7 +611,8 @@ def add_todo(text: str, due: str = ""):
             return _err("I didn't understand that due date.")
         due_iso = _iso(parsed)
     entry = {"id": _new_id("td"), "text": text, "done": False,
-             "created": _iso(_now()), "due": due_iso, "done_at": None}
+             "created": _iso(_now()), "updated_at": _iso_s(_now()),
+             "due": due_iso, "done_at": None}
     _store["todos"].append(entry)
     _save()
     print(f"  📝 todo added: {text!r}")
@@ -588,6 +651,7 @@ def complete_todo(target: str = "", text: str = ""):
         return _err(err)
     todo["done"] = True
     todo["done_at"] = _iso(_now())
+    _touch(todo)
     _save()
     print(f"  ✅ todo done: {todo['text']!r}")
     return _ok(id=todo["id"], text=todo["text"],
@@ -599,6 +663,7 @@ def delete_todo(target: str = "", text: str = ""):
     if err:
         return _err(err)
     _store["todos"] = [t for t in _store["todos"] if t["id"] != todo["id"]]
+    _tombstone("todo", todo)
     _save()
     print(f"  🗑️  todo deleted: {todo['text']!r}")
     return _ok(id=todo["id"], text=todo["text"])
@@ -631,6 +696,7 @@ def replace_all(schedules=None, todos=None):
             s.setdefault("snoozes", 0)
             s.setdefault("last_fired", None)
             s.setdefault("created", _iso(_now()))
+            s.setdefault("updated_at", _iso_s(_now()))
             if s.get("repeat"):
                 days = parse_weekdays(s["repeat"].get("weekdays"))
                 if days in (None, False):
@@ -655,6 +721,7 @@ def replace_all(schedules=None, todos=None):
                 t["id"] = _new_id("td")
             t.setdefault("done", False)
             t.setdefault("created", _iso(_now()))
+            t.setdefault("updated_at", _iso_s(_now()))
             t.setdefault("done_at", None)
             t.setdefault("due", None)
             if _valid_todo(t):

@@ -268,37 +268,7 @@
 </h3>
 <p id="connectionSummary">Use ADAM's network address from the mobile app.
 </p>
-<form id="connectionForm" class="form-stack">
-<label>ADAM address
-<input id="connectionHost" type="text" placeholder="adam-pi.local or 192.168.1.20" required maxlength="253" autocomplete="off" spellcheck="false">
-</label>
-<label>ADAM connection key
-<input id="connectionToken" type="password" autocomplete="off" placeholder="Only needed if you are not using Search" aria-describedby="connectionKeyHelp">
-</label>
-<p class="help" id="connectionKeyHelp">You normally do not need this. Use <strong>Find ADAM on this network</strong> above and the key is exchanged for you. Fill this in only to connect an ADAM that discovery cannot see — for example on a different subnet or over a VPN. Leave empty to keep a saved key for this address. The key is stored securely on this computer.</p>
-<details>
-<summary>Advanced connection options
-</summary>
-<div class="form-stack">
-<div class="two-fields">
-<label>Sync port
-<input id="connectionSyncPort" type="number" min="1" max="65535" value="8766" required>
-</label>
-<label>Live status port
-<input id="connectionWsPort" type="number" min="1" max="65535" value="8765" required>
-</label>
-</div>
-</div>
-</details>
-<div class="button-row">
-<button type="button" class="button " id="probeConnectionBtn">Check connection
-</button>
-<button class="button primary" type="submit">Connect ADAM
-<i data-icon="arrow">
-</i>
-</button>
-</div>
-</form>
+<p class="help">ADAM announces itself on your network. Use <strong>Find ADAM on this network</strong> above, or sign in and pick the ADAM linked to your account — the connection key is exchanged for you.</p>
 <p id="connectionResult" class="inline-status" role="status">
 </p>
 <button type="button" class="button danger subtle" id="disconnectBtn">Disconnect this ADAM

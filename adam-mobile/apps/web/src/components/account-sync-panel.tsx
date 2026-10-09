@@ -53,10 +53,10 @@ export function AccountSyncPanel({ uid, email }: { uid: string; email: string })
       await refresh();
       setConfirm(false);
       setMessage(kind === 'enable'
-        ? 'Ready to sync. Tap Sync now to share with your desktop.'
+        ? 'Ready to sync. Tap Sync now to save to your account.'
         : kind === 'disable'
           ? 'Sync is off. Existing phone and account data have been kept.'
-          : 'Sync complete. Your memories are available to this account on desktop.');
+          : 'Account sync complete. Memories without an ADAM selected remain on this phone.');
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Sync could not finish. Please try again.');
       await refresh().catch(() => undefined);
@@ -69,15 +69,16 @@ export function AccountSyncPanel({ uid, email }: { uid: string; email: string })
       <div className="flex items-center gap-3">
         <Cloud size={20} aria-hidden="true" />
         <div>
-          <h3 className="text-sm font-medium">Sync with desktop</h3>
+          <h3 className="text-sm font-medium">Account cloud sync</h3>
           <p className="text-fg-muted mt-1 text-xs">
             {loading ? 'Checking sync settings…' : status.enabled ? 'Connected to your account' : 'Your choice, always'}
           </p>
         </div>
       </div>
       <p className="text-fg-muted my-4 text-sm leading-6">
-        Share memories, people, to-dos, clocks, saved ADAM devices, and your voice, wake word, and AI selections with the same account
-        on your PC. Photos, face profiles, notifications, and private keys stay on this phone.
+        Sync your named ADAM devices, to-dos and schedules with your account.
+        In Memory, choose the ADAM that each memory belongs to; unassigned memories stay on this phone.
+        Photos, face profiles, notifications, voice preferences and private keys stay on this phone.
         After your first sync, changes sync automatically while the app is open and online.
       </p>
       {status.enabled ? (
@@ -107,7 +108,7 @@ export function AccountSyncPanel({ uid, email }: { uid: string; email: string })
         <Confirm title="Sync this phone with your account?" busy={busy}
           onClose={() => setConfirm(false)} onConfirm={() => void action('enable')}>
           Enable sync for <strong className="break-all">{email || 'this signed-in account'}</strong>.
-          Your current memories, planner, saved devices and selections will be included when you tap Sync now.
+          Your device-assigned memories, planner and saved ADAM devices will be included when you tap Sync now.
           Account changes and deletions will also appear here after syncing. Photos and other
           private phone data are excluded. You can turn sync off at any time.
           {error && <span className="mt-2 block">{error}</span>}

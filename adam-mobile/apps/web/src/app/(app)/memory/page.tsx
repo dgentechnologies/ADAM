@@ -7,6 +7,7 @@ import { useMemoryIntent } from '@/stores/memory-intent';
 import { Confirm, Dialog, Empty, Loading, Notice, Page, Panel } from '@/components/companion-ui';
 import { deleteFact, errorMessage, saveFact, type Fact } from '@/lib/local-data';
 import { useLocalData } from '@/lib/use-local-data';
+import { stableDeviceId } from '@/lib/firebase/schema-documents';
 export default function MemoryPage() {
   const { requested, clear } = useMemoryIntent();
   const { data, loading, error: loadError } = useLocalData();
@@ -154,6 +155,8 @@ export default function MemoryPage() {
   );
 }
 function MemoryForm({ fact, onClose }: { fact: Fact | null; onClose: () => void }) {
+  const { data } = useLocalData();
+  const [deviceId, setDeviceId] = useState(fact?.deviceId ?? '');
   const [title, setTitle] = useState(fact?.title ?? '');
   const [text, setText] = useState(fact?.text ?? '');
   const [kind, setKind] = useState<Fact['kind']>(fact?.kind ?? 'fact');
@@ -164,7 +167,7 @@ function MemoryForm({ fact, onClose }: { fact: Fact | null; onClose: () => void 
     if (!title.trim() || !text.trim() || busy) return;
     setBusy(true);
     try {
-      await saveFact({ id: fact?.id, title, text, kind });
+      await saveFact({ id: fact?.id, title, text, kind, deviceId });
       onClose();
     } catch (err) {
       setError(errorMessage(err));
@@ -180,6 +183,8 @@ function MemoryForm({ fact, onClose }: { fact: Fact | null; onClose: () => void 
       }}
     >
       <form onSubmit={submit} className="flex flex-col gap-4">
+        <label className="field-label">Save for ADAM<select className="field" value={deviceId} disabled={Boolean(fact?.deviceId)} onChange={e=>setDeviceId(e.target.value)}><option value="">This phone only</option>{data.devices.map(device=><option key={device.id} value={stableDeviceId(device)}>{device.name}</option>)}</select></label>
+        <p className="text-fg-muted text-xs">Choose an ADAM to sync this memory. Each ADAM keeps its own memories.</p>
         <label className="field-label">
           Title
           <input
@@ -197,6 +202,7 @@ function MemoryForm({ fact, onClose }: { fact: Fact | null; onClose: () => void 
           <select
             className="field"
             value={kind}
+            disabled={Boolean(fact?.deviceId)}
             onChange={(e) => setKind(e.target.value as Fact['kind'])}
           >
             <option value="fact">Thought or preference</option>

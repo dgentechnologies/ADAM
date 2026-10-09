@@ -12,13 +12,13 @@ reinstalling packages:
 .\scripts\repair-workspace-links.ps1 -PreviousRoot 'D:\previous\workspace\location'
 ```
 
-Version 0.2.1 adds optional account sync with the Windows companion while keeping working phone features and the interactive ADAM hardware demo. Discovery, pairing, device status and laptop controls use clearly marked sample devices; real ADAM BLE transport remains outside this release. Managed billing is not connected.
+Version 0.2.2 fixes startup recovery and authentication, uses the desktop logo, and preserves the onboarding screens including device naming. Memories, to-dos, clocks and multiple named ADAM devices use the same version-2 account protocol as Windows 0.02. BLE transfers remain simulated; managed billing is not connected. Update both apps together; see the [shared protocol](../shared/COMPANION_PROTOCOL.md).
 
 ## Features
 
 - Optional account sign-in with Firebase; local use works without signing in.
 - Persistent memories and people: add, edit, search and delete.
-- Explicit account sync for memories, people, voice, wake word and AI selections: Settings > Your profile > Sync with desktop. The same Firebase user signs in on both apps. Choose Enable account sync, confirm the phone-data import, then tap Sync now. Photos, face profiles, notifications and private keys stay on the phone.
+- Explicit account sync for memories, people, to-dos, clocks, named devices, voice, wake word and AI selections: Settings > Your profile > Sync with desktop. Use the same Firebase user on both apps. Enable account sync, confirm the phone-data import, then tap Sync now. Later changes sync while the app is open and online. Photos, face profiles, notifications and private keys stay on the phone.
 - Camera and photo import, a private local gallery, Android sharing and deletion.
 - Local face profile with front/side photos; no recognition or robot transfer claims.
 - Home Assistant REST integration for device states and light/switch/fan/scene controls.
@@ -35,11 +35,11 @@ Requirements: Node 20.11+, pnpm 9, Java 17, Android SDK 35. Android minimum SDK 
 ```powershell
 pnpm install --frozen-lockfile
 pnpm --filter @adam/web build
-pnpm --filter @adam/api exec tsx --test ../../tests/local-data.test.ts ../../tests/home-assistant.test.ts ../../tests/mobile-sync.test.ts
+pnpm --filter @adam/api exec tsx --test ../../tests/local-data.test.ts ../../tests/home-assistant.test.ts ../../tests/mobile-sync.test.ts ../../tests/startup.test.ts ../../tests/shared-protocol.test.ts
 ./scripts/build-android.ps1 -Configuration Release -SkipWebBuild
 ```
 
-The release script requires private signing credentials. See [Android release guide](docs/ANDROID_RELEASE.md). Output: `releases/ADAM-0.2.1-release.apk` and its SHA-256 checksum. Filenames are derived from Android's `versionName`; previous versioned APKs are retained.
+The release script requires private signing credentials. See [Android release guide](docs/ANDROID_RELEASE.md). Output: `releases/ADAM-0.2.2-release.apk` and its SHA-256 checksum. Filenames are derived from Android's `versionName`; previous versioned APKs are retained.
 
 For browser development, run `pnpm dev:web`; for the exact exported bundle, run `node apps/web/serve-out.mjs` and open `http://localhost:3000`. Home Assistant browser access requires CORS; native Android uses Capacitor HTTP.
 

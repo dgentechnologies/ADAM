@@ -164,7 +164,7 @@ async def _read_body(reader, headers: dict):
 # HTTP on 0.0.0.0 — fine on a trusted home network, not fine on office, hostel
 # or hotel Wi-Fi, where `curl http://adam-pi.local:8766/api/conversations` from
 # any phone was enough.
-_SENSITIVE_GET = {"/api/memories", "/api/conversations"}
+_SENSITIVE_GET = {"/api/memories", "/api/conversations", "/api/tombstones"}
 
 _ROUTES_GET = {
     "/api/ping":          "_r_ping",
@@ -175,6 +175,7 @@ _ROUTES_GET = {
     "/api/conversations": "_r_conversations",
     "/api/touch/assignments": "_r_touch_assignments",
     "/api/pair/info":     "_r_pair_info",
+    "/api/tombstones":    "_r_tombstones",
 }
 _ROUTES_WRITE = {
     "/api/schedules":    "_w_schedules",
@@ -477,6 +478,7 @@ async def _r_snapshot(authorised: bool = False) -> dict:
     # "not allowed to see this" from "there are no memories".
     if authorised:
         snap["memories"] = dict(memory)
+        snap["tombstones"] = list(scheduler._store.get("tombstones", []))
     return {"ok": True, "api": API_VERSION, "data": snap}
 
 
@@ -488,6 +490,18 @@ async def _r_schedules(authorised: bool = False) -> dict:
 async def _r_todos(authorised: bool = False) -> dict:
     return {"ok": True, "api": API_VERSION,
             "data": scheduler.snapshot()["todos"]}
+
+
+async def _r_tombstones(authorised: bool = False) -> dict:
+    """Deletions the Pi has recorded, newest last.
+
+    A bridge needs these to tell "the user deleted this" from "this device has
+    not heard about it yet". Without them, deleting a todo on the phone lets an
+    offline Pi push its copy back and the row returns from the dead.
+    """
+    return {"ok": True, "api": API_VERSION,
+            "keep_days": getattr(scheduler, "TOMBSTONE_KEEP_DAYS", None),
+            "data": list(scheduler._store.get("tombstones", []))}
 
 
 async def _r_memories(authorised: bool = False) -> dict:

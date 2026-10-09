@@ -72,22 +72,24 @@ function harness() {
   };
 }
 
-test('merge is deterministic, preserves separate IDs, and deletion wins timestamp ties', () => {
+test('equal timestamps retain the local document and separate IDs are preserved', () => {
   const left = shared(fact(FIRST, 'left'), fact(SECOND));
   const right = shared(fact(FIRST, 'right'), fact(THIRD));
   right.memories[SECOND] = { id: SECOND, updatedAt: TIME, deleted: true };
-  assert.deepEqual(mergeCompanions(left, right), mergeCompanions(right, left));
+  assert.equal((mergeCompanions(left,right).memories[FIRST] as Fact).text,'left');
+  assert.equal((mergeCompanions(right,left).memories[FIRST] as Fact).text,'right');
   assert.equal(Object.keys(mergeCompanions(left, right).memories).length, 3);
-  assert.equal(mergeCompanions(left, right).memories[SECOND]?.deleted, true);
+  assert.equal(mergeCompanions(left, right).memories[SECOND]?.deleted, false);
+  assert.equal(mergeCompanions(right, left).memories[SECOND]?.deleted, true);
 });
 
-test('supplementary Unicode timestamp ties match Python codepoint order', () => {
+test('equal timestamps retain local Unicode text without a lexical tiebreak', () => {
   const left = shared(fact(FIRST, '\u{10000}'));
   const right = shared(fact(FIRST, '\uE000'));
   const winner = mergeCompanions(left, right).memories[FIRST]!;
   assert.equal(winner.deleted, false);
   assert.equal((winner as Fact).text, '\u{10000}');
-  assert.deepEqual(mergeCompanions(left, right), mergeCompanions(right, left));
+  assert.equal((mergeCompanions(right,left).memories[FIRST] as Fact).text,'\uE000');
 });
 
 test('unsupported, malformed, oversized and invalid Unicode cloud data are rejected', () => {

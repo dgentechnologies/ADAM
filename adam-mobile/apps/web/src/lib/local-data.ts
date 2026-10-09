@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { getItem, setItem } from './native/preferences';
-import { Clock, Todo, SavedDevice, RECORD_SCHEMAS, type RecordKind, type SharedRecord } from './companion-records';
+import { Clock, Todo, SavedDevice, RECORD_SCHEMAS, documentId, type RecordKind, type SharedRecord } from './companion-records';
 
 export const Fact = z.object({
   id: z.string(),
@@ -10,6 +10,14 @@ export const Fact = z.object({
   kind: z.enum(['fact', 'person']),
   createdAt: z.string(),
   updatedAt: z.string(),
+  deviceId: z.union([documentId, z.literal('')]).optional(),
+  cloudId: documentId.optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  source: z.enum(['conversation', 'vision', 'manual']).optional(),
+  relationship: z.string().max(2000).optional(),
+  faceEncodingId: z.string().max(128).nullable().optional(),
+  firstSeen: z.string().optional(),
+  lastSeen: z.string().optional(),
 });
 export type Fact = z.infer<typeof Fact>;
 export const LocalData = z.object({
@@ -73,12 +81,14 @@ export function restoreLocalData(backup: LocalData): Promise<LocalData> {
   return operation;
 }
 
-export function saveFact(input: { id?: string; title: string; text: string; kind: Fact['kind'] }) {
+export function saveFact(input: { id?: string; title: string; text: string; kind: Fact['kind']; deviceId?: string }) {
   return updateLocalData((data) => {
     const now = new Date().toISOString();
     const existing = data.facts.find((fact) => fact.id === input.id);
+    if (existing?.deviceId && ((input.deviceId !== undefined && input.deviceId !== existing.deviceId) || input.kind !== existing.kind))
+      throw new Error('Create a new memory to use a different ADAM or memory type.');
     const fact = Fact.parse({
-      ...input,
+      ...existing, ...input,
       title: input.title.trim(),
       text: input.text.trim(),
       id: existing?.id ?? crypto.randomUUID(),
@@ -105,7 +115,8 @@ export function saveRecord(kind: RecordKind, input: Record<string, unknown>) {
   return updateLocalData((data) => {
     const existing = data[kind].find((item) => item.id === input.id);
     const now = new Date(Math.max(Date.now(), existing ? Date.parse(existing.updatedAt) + 1 : 0)).toISOString();
-    const record = RECORD_SCHEMAS[kind].parse({ ...input, id: existing?.id ?? crypto.randomUUID(), createdAt: existing?.createdAt ?? now, updatedAt: now });
+    const id = existing?.id ?? crypto.randomUUID();
+    const record = RECORD_SCHEMAS[kind].parse({ ...existing, ...input, id, ...(kind === 'devices' && !input.deviceId && !existing ? { deviceId: `ADAM-SIM-${id.toUpperCase()}` } : {}), createdAt: existing?.createdAt ?? now, updatedAt: now });
     return { ...data, [kind]: [...data[kind].filter((item: SharedRecord) => item.id !== record.id), record] };
   });
 }

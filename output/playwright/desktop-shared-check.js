@@ -1,4 +1,5 @@
 async (page) => {
+  await page.getByRole('button', { name: 'Planner', exact: true }).click();
   await page.getByRole('textbox', { name: 'New to-do', exact: true }).first().fill('Shared QA task');
   await page.getByRole('button', { name: 'Add to-do', exact: true }).first().click();
   await page.getByText('Shared QA task', { exact: true }).waitFor();

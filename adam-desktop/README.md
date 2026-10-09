@@ -158,18 +158,18 @@ status. Signing in does not automatically import guest memories: **Import local
 memories** asks for the destination-account confirmation. Account switching
 selects a different local data file. Cloud failures preserve unsent local edits.
 
-Mobile's shared-data implementation targets **0.2.1**; an older APK does not
-implement the new sync contract. On mobile, enable account sync in Account and
+Mobile's shared-data implementation targets **0.2.2**, alongside Windows **0.02**.
+Update both clients for the version-2 sync contract. On mobile, enable account sync in Account and
 choose **Sync now**. An APK is available at
-`adam-mobile/releases/ADAM-0.2.1-release.apk`. Mobile packaging has its own release
+`adam-mobile/releases/ADAM-0.2.2-release.apk`. Mobile packaging has its own release
 record; the Windows smoke test does not establish live two-client sync.
 
-Only `users/{uid}.companion` is merged: memories/people plus voice, wake-word
-and brain selections. Photos, face profiles, notifications, network addresses,
+Only `users/{uid}.companion` is merged: memories/people, to-dos, clocks, multiple
+named devices, voice, wake-word and brain selections. Photos, face profiles, notifications, network addresses,
 API keys and pairing tokens are excluded. Robot schedules are a separate Pi
 data path. Cloud selection of a paid/managed mode does not create a subscription
 or transfer API credentials. The complete schema and account-rule requirements
-are in [SYNC_PROTOCOL.md](docs/SYNC_PROTOCOL.md).
+are in the [shared protocol](../shared/COMPANION_PROTOCOL.md).
 
 ## Local data and privacy
 

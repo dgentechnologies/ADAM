@@ -3,7 +3,7 @@ import { validateRecords, type SharedRecords, type RecordKind, type SharedRecord
 
 export type SharedMemory =
   | (Fact & { deleted: false })
-  | { id: string; updatedAt: string; deleted: true };
+  | { id: string; updatedAt: string; deleted: true; deviceId?: string; cloudId?: string; kind?: 'fact' | 'person' };
 type PreferenceName = 'voice' | 'wakeWord' | 'brain';
 type Preferences = Partial<Record<PreferenceName, { value: string; updatedAt: string }>>;
 export type Companion = {
@@ -105,6 +105,8 @@ function encodeValue(value: unknown): unknown {
   if (typeof value === 'boolean') return { booleanValue: value };
   if (typeof value === 'number') return { integerValue: String(value) };
   if (typeof value === 'string') return { stringValue: value };
+  if (value === null) return { nullValue: null };
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(encodeValue) } };
   if (object(value))
     return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([k, v]) => [k, encodeValue(v)])) } };
   throw new SyncError('Shared data contains an unsupported value.');
@@ -123,7 +125,7 @@ export function validateCompanion(value: unknown): Companion {
       throw new SyncError('A shared memory could not be read. Your phone data has been kept.');
     const updatedAt = timestamp(item.updatedAt);
     if (item.deleted) {
-      result.memories[id] = { id, updatedAt, deleted: true };
+      result.memories[id] = { id, updatedAt, deleted: true, ...(typeof item.deviceId === 'string' ? {deviceId:item.deviceId} : {}), ...(typeof item.cloudId === 'string' ? {cloudId:item.cloudId} : {}), ...(item.kind === 'fact' || item.kind === 'person' ? {kind:item.kind} : {}) };
       continue;
     }
     if (item.kind !== 'fact' && item.kind !== 'person')
@@ -133,6 +135,7 @@ export function validateCompanion(value: unknown): Companion {
     result.memories[id] = {
       id, title: validText(item.title, 80), text: validText(item.text, 2000), kind: item.kind,
       createdAt, updatedAt, deleted: false,
+      ...Object.fromEntries(['deviceId','cloudId','confidence','source','relationship','faceEncodingId','firstSeen','lastSeen'].filter(key => item[key] !== undefined).map(key => [key,item[key]])),
     };
   }
   for (const [key, item] of Object.entries(preferences)) {
@@ -146,8 +149,7 @@ export function validateCompanion(value: unknown): Companion {
 }
 function winner<T extends { updatedAt: string; deleted?: boolean }>(a: T, b: T): T {
   if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
-  if (Boolean(a.deleted) !== Boolean(b.deleted)) return a.deleted ? a : b;
-  return compareCodePoints(canonical(a), canonical(b)) >= 0 ? a : b;
+  return a; // Canonical schema: equal timestamps do not overwrite the local document.
 }
 export function mergeCompanions(left: Companion, right: Companion): Companion {
   const a = validateCompanion(left);
@@ -199,7 +201,7 @@ export function capturePhoneChanges(base: Companion, baseline: PhoneSnapshot | n
   }
   for (const [id, old] of before) {
     if (!present.has(id))
-      next.memories[id] = { id, deleted: true, updatedAt: after(now, old.updatedAt, next.memories[id]?.updatedAt) };
+      next.memories[id] = { id, deleted: true, updatedAt: after(now, old.updatedAt, next.memories[id]?.updatedAt), ...(old.deviceId ? {deviceId:old.deviceId} : {}), ...(old.cloudId ? {cloudId:old.cloudId} : {}), kind:old.kind };
   }
   for (const key of NAMES) {
     if (baseline ? current[key] === baseline[key]
@@ -215,7 +217,7 @@ export function capturePhoneChanges(base: Companion, baseline: PhoneSnapshot | n
       const existing = next[kind][item.id];
       next[kind][item.id] = { ...item, updatedAt: existing ? after(now, existing.updatedAt, item.updatedAt) : item.updatedAt, deleted: false };
     }
-    for (const [id, item] of old) if (!present.has(id)) next[kind][id] = { id, updatedAt: after(now, item.updatedAt, next[kind][id]?.updatedAt), deleted: true };
+    for (const [id, item] of old) if (!present.has(id)) next[kind][id] = { id, updatedAt: after(now, item.updatedAt, next[kind][id]?.updatedAt), deleted: true, ...(item.cloudId ? {cloudId:item.cloudId} : {}), ...('deviceId' in item && item.deviceId ? {deviceId:item.deviceId} : {}) };
   }
   return validateCompanion(next);
 }
@@ -406,9 +408,9 @@ let instance: Promise<MobileCompanionSync> | undefined;
 /** Lazy: loading the app does not start a transaction or import phone data. */
 export function getCompanionSync(): Promise<MobileCompanionSync> {
   if (!instance) instance = (async () => {
-    const [{ getFirebaseAuth, getFirebaseFirestore }, { doc, runTransaction }, { onAuthStateChanged },
+    const [{ getFirebaseAuth }, { exchangeCanonicalCloud }, { onAuthStateChanged },
       local, preferences] = await Promise.all([
-      import('./config'), import('firebase/firestore'), import('firebase/auth'),
+      import('./config'), import('./canonical-cloud'), import('firebase/auth'),
       import('../local-data'), import('../native/preferences'),
     ]);
     const auth = getFirebaseAuth();
@@ -417,14 +419,7 @@ export function getCompanionSync(): Promise<MobileCompanionSync> {
       getItem: preferences.getItem, setItem: preferences.setItem,
       readLocal: local.readLocalData, updateLocal: local.updateLocalData,
       onChange: () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('adam:account-sync')); },
-      transact: (uid, merge) => runTransaction(getFirebaseFirestore(), async (transaction) => {
-        const ref = doc(getFirebaseFirestore(), 'users', uid);
-        const saved = await transaction.get(ref);
-        const next = merge(saved.exists() ? saved.data().companion : undefined);
-        // Replace only this bounded field; profile and device ownership survive.
-        transaction.set(ref, { companion: next }, { mergeFields: ['companion'] });
-        return next;
-      }),
+      transact: (uid, merge) => exchangeCanonicalCloud(uid,merge(undefined),() => { merge(undefined); }),
     });
     onAuthStateChanged(auth, (user) => service.accountChanged(user?.uid ?? null));
     return service;

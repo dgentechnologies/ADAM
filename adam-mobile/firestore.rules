@@ -25,6 +25,14 @@ service cloud.firestore {
      */
     match /users/{uid} {
       allow read, write: if isOwner(uid);
+      match /schedules/{scheduleId} {
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
+      }
+      match /todos/{todoId} {
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
+      }
     }
 
     /**

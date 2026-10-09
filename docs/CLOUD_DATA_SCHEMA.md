@@ -217,27 +217,122 @@ alarms exist across devices.
 
 ---
 
-## 6. How the Pi reaches Firestore
+## 6. Who talks to the cloud — settled
 
-The Pi has **no Firebase Auth and no service-account key**, and it must stay
-that way: shipping admin credentials on an SD card in a consumer device means
-one extracted card compromises every account.
+**The Pi never touches Firestore.** Not through a service account, not through a
+device token, not at all. It has no Firebase credentials and must not acquire
+any: shipping one on an SD card in a consumer device means a single extracted
+card compromises every account.
 
-So the Pi does not talk to Firestore directly. It syncs through a backend that
-holds the credentials:
+The two apps are the bridge. Each already authenticates the user with Firebase,
+so the user's own login is the only credential involved.
+
+```mermaid
+graph LR
+    FS[("☁️ Firestore<br/>users/{uid}")]
+    D["🖥️ Desktop app<br/>Firebase Auth"]
+    M["📱 Mobile app<br/>Firebase Auth"]
+    E["ESP32-S3<br/>BLE + UART"]
+    P["🤖 Pi<br/>LAN only, no cloud"]
+
+    FS <--> D
+    FS <--> M
+    D <-->|"LAN · HTTP 8766<br/>X-ADAM-Token"| P
+    M <-->|"BLE GATT"| E
+    E <-->|"UART 921600"| P
+```
+
+**Two different transports to the same robot, and they are not interchangeable:**
+
+| | Desktop app | Mobile app |
+|---|---|---|
+| Transport to ADAM | **LAN**, HTTP on 8766 | **BLE GATT**, via the ESP32 |
+| Auth to ADAM | `X-ADAM-Token` (paired) | BLE pairing + proof-of-possession |
+| Needs same Wi-Fi | yes | **no** |
+| Throughput | fine for anything | ~20 B/write default, ~250 B at negotiated MTU |
+| Status | **working** (`sync_api.py`) | **not built** |
+
+The mobile app going over BLE rather than LAN is a deliberate product choice:
+the phone reaches ADAM in a hotel room, on mobile data, or before ADAM has any
+Wi-Fi at all. It costs throughput, which is affordable here only because this
+data is kilobytes — a few dozen todos and memories, never camera frames.
+
+### 6.1 Consequence: BLE is no longer provisioning-only
+
+`pi/docs/mobile_ble_sync.md` describes BLE as a setup-time channel that stops
+advertising once Wi-Fi is joined. **That is now wrong** and that document needs
+revising: BLE is the mobile app's permanent data path, so the service must stay
+available after provisioning, and it needs data characteristics on top of the
+provisioning ones.
+
+Required additions, none of which exist yet:
+
+| Characteristic | Purpose |
+|---|---|
+| `0xAD10` data request (write, chunked) | `{"op":"get","what":"todos"}` / `{"op":"put","what":"todos","rows":[...]}` |
+| `0xAD11` data response (read + notify, chunked) | the answer, framed like §6.2 |
+
+And a matching UART pair, extending the `PROV:` convention already in the S3
+firmware:
 
 ```
-Pi  ──HTTP, SYNC_TOKEN──▶  desktop app  ──Firebase Auth (user's own login)──▶  Firestore
-Pi  ──device token──────▶  relay server ──Admin SDK──▶  Firestore          (headless path)
+ESP32 → Pi :  SYNC:REQ:<json>
+Pi → ESP32 :  SYNC:RES:<json>
 ```
 
-The desktop path works today in principle: the app already authenticates the
-user and is already paired to the Pi over the sync API. The relay path is what
-makes sync work when no laptop is on — it needs a device-scoped custom token,
-minted per unit, revocable, and it does not exist yet.
+### 6.2 Chunking is mandatory on the BLE path
 
-**Until one of those is built, the Pi's data is local only.** Say that plainly
-rather than implying sync.
+Default ATT MTU is 23 bytes — 20 usable. A single todo row exceeds that, and a
+15-entry memory dict is well over a kilobyte. Both directions must frame:
+
+```json
+{"i": 0, "n": 7, "d": "<slice>"}
+```
+
+Reassemble on `i == n-1`; discard and restart on an out-of-order index or a
+transfer idle longer than 10 s. Request an MTU bump (`requestMtu(256)`) as an
+optimisation, never as a precondition — iOS negotiates its own and will not
+honour it.
+
+This is the same framing the provisioning characteristics already specify, so
+it is one implementation, not two.
+
+---
+
+## 6.3 The Pi records are missing the field sync depends on
+
+Verified against the live unit on 2026-10-09 — this is a **blocker**, not a
+detail.
+
+| Store | Fields today | Has `updated_at`? |
+|---|---|---|
+| `adam_schedules.json` → schedules | `id, kind, label, at, repeat, enabled, last_fired, snoozes, created` | **no** |
+| `adam_schedules.json` → todos | `id, text, done, created, due, done_at` | **no** |
+| `adam_memory.json` | flat `{key: value}` | **no timestamps at all** |
+
+§5 specifies last-write-wins compared on `updatedAt`. With no such field on the
+Pi side there is nothing to compare, so a bridge would have to guess which copy
+is newer — and guessing wrong silently destroys whichever edit it discards.
+
+**Required before any sync code is written:**
+
+1. `scheduler.py` stamps `updated_at` (local wall-clock, matching `created`) on
+   every create and every mutation of a schedule or todo.
+2. Deletes become tombstones in the Pi's own store too: `deleted: true` plus
+   `deleted_at`, instead of dropping the row from the list. Otherwise the Pi
+   cannot tell the cloud that an absence was deliberate, and §5's tombstone
+   rule only protects one direction.
+3. Memories need a per-entry record rather than a bare dict — at minimum
+   `{value, updated_at}` — or the same resurrection bug applies to every fact
+   ADAM has ever learned.
+
+Item 3 is the invasive one: `adam_memory.json`'s flat shape is read directly by
+`memory_store.py` and injected into the prompt, so changing it touches the
+prompt assembly path. A migration that reads both shapes is the safe route.
+
+**None of this is in the audio path** (§0.3), so it is all legitimately
+editable — but it is a real change to the Pi's storage format and should land as
+its own reviewed step, not folded into a sync feature.
 
 ---
 
@@ -307,20 +402,45 @@ match /users/{uid}/todos/{todoId} {
 
 ## 9. Open decisions
 
-These need a human answer before the sync layer is built; guessing them wrong
-is expensive to undo.
-
-1. **Which backend path for the Pi** — desktop-relayed, relay-server with
-   device tokens, or both (§6). Both means two code paths and two auth models.
-2. **Does a second ADAM on the same account share todos?** §4.1 proposes yes
-   via `deviceIds: []`. If units should be fully independent, that default has
-   to flip, and the field becomes mandatory.
-3. **Tombstone retention** — 30 days is a guess. A client that is offline
-   longer than the retention window will resurrect deleted rows.
+1. ~~Which backend path for the Pi~~ — **SETTLED (§6).** The Pi never touches
+   Firestore. The desktop app bridges over LAN; the mobile app bridges over
+   BLE. No cloud credential ever reaches the device.
+2. **Does a second ADAM on the same account share todos?** §4.1 proposes yes,
+   via `deviceIds: []` meaning "all my units". If units should be fully
+   independent the default flips and the field becomes mandatory.
+3. **Tombstone retention** — 30 days is a guess. A client offline longer than
+   the window will resurrect deleted rows.
 4. **Conversation history** — deliberately excluded from this schema. The Pi
    keeps the last 60 turns locally and the sync API already gates them behind
    the token as personal data. Putting transcripts in the cloud is a privacy
-   decision that needs to be made explicitly, not inherited from a sync feature.
+   decision to make explicitly, not to inherit from a sync feature.
+5. **Who wins when both apps are online?** Both bridges can write the same
+   document. §5's last-write-wins handles it, but only once §6.3 gives the Pi
+   an `updated_at` to compare against.
+6. **What happens to a Pi edit made while both apps are shut?** Nothing
+   transmits it until an app next connects, so ADAM is the only holder of that
+   change for a while. That is acceptable, but it means "synced across all
+   devices" is true *eventually*, not immediately, and the UI should not
+   imply otherwise.
+
+## 10. Build order
+
+The dependency chain matters — items 1 and 2 are prerequisites, not polish.
+
+| # | Step | Where | Blocks |
+|---|---|---|---|
+| 1 | `updated_at` + tombstones on schedules/todos | `pi/adam/scheduler.py` | all sync |
+| 2 | Timestamped memory records (+ read-both-shapes migration) | `pi/adam/memory_store.py` | memory sync |
+| 3 | Firestore rules for `users/{uid}/schedules|todos` (§8) | `adam-mobile/firestore.rules` | all sync |
+| 4 | Desktop bridge: Pi ⇄ Firestore over LAN | `adam-desktop/src/` | — |
+| 5 | Memory editing UI | `adam-desktop/resources/static/` | 2 |
+| 6 | BLE data characteristics `0xAD10`/`0xAD11` + chunking | `esp32_s3_head.ino` | — |
+| 7 | `SYNC:REQ`/`SYNC:RES` UART handlers | `pi/adam/esp32_link.py`, `sync_api.py` | 6 |
+| 8 | Mobile bridge: BLE ⇄ Firestore | `adam-mobile/` | 6, 7 |
+
+Steps 6–8 are the larger half and only affect the phone. Steps 1–5 deliver
+working cross-device sync for the desktop on their own, which is why they come
+first.
 
 ## 10. Files
 

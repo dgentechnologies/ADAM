@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "schedules": [],
+  "todos": [],
+  "tombstones": [
+    {
+      "id": "td_5c2f8f94",
+      "kind": "todo",
+      "label": "sync-meta test todo",
+      "deleted_at": "2026-10-09T18:00:34"
+    },
+    {
+      "id": "td_987761e8",
+      "kind": "todo",
+      "label": "__smoketest_sync_meta__",
+      "deleted_at": "2026-10-09T18:02:20"
+    }
+  ]
+}

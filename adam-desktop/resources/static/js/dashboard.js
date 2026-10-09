@@ -121,9 +121,10 @@ async function loadSettings(fill=false){
   if(fill){
     $('settingUserName').value=ui.settings.profile?.name||ui.settings.user_name||'';
     $('settingStartup').checked=!!ui.settings.startup_on_login;$('settingPaused').checked=!!ui.settings.paused;
-    $('connectionHost').value=ui.settings.pi_ip||ui.settings.pi_host||'adam-pi.local';
-    $('connectionSyncPort').value=ui.settings.pi_sync_port||8766;$('connectionWsPort').value=ui.settings.pi_ws_port||8765;
-    $('connectionToken').placeholder=ui.settings.sync_token_configured?'Saved securely · leave empty to keep':'Enter the key from your ADAM setup';
+    // The host/port/token inputs were removed with the manual connection form.
+    // They used to be filled here; $() returns null for them now, so writing
+    // .value would throw a TypeError and abort the rest of loadSettings —
+    // taking the workspace field and sensor rendering down with it.
     if(!$('codingCwd').value)$('codingCwd').value=ui.settings.coding_workspace||'';
   }
   if(!ui.touchDirty && Object.keys(ui.actions).length)renderSensors();
@@ -308,13 +309,10 @@ async function loadStats(){
   const d=await api('/system_stats');
   text('statSystem',Number.isFinite(d.cpu_pct)&&Number.isFinite(d.ram_pct)?Math.round(d.cpu_pct)+'% CPU · '+Math.round(d.ram_pct)+'% memory':'System status unavailable');
 }
-function connectionPayload(){
-  const host=$('connectionHost').value.trim();
-  if(!host||/[\/\s@?#]/.test(host))throw new Error('Enter a local IP address or hostname without http:// or a path.');
-  const payload={host,sync_port:Number($('connectionSyncPort').value),ws_port:Number($('connectionWsPort').value)};
-  if(![payload.sync_port,payload.ws_port].every(n=>Number.isInteger(n)&&n>0&&n<=65535))throw new Error('Ports must be between 1 and 65535.');
-  const token=$('connectionToken').value.trim();if(token)payload.sync_token=token;return payload;
-}
+// connectionPayload() is gone with the manual form. It read connectionHost /
+// connectionToken / the port inputs, none of which exist any more. Connecting
+// goes through /pair/adam, which gets the address from mDNS and the key from
+// ADAM itself.
 let credentialsTimer;
 function hideCredentials(){clearTimeout(credentialsTimer);$('credentialToken').value='';$('credentialsPanel').hidden=true;}
 function updatePairingControls(){
@@ -330,19 +328,48 @@ async function loadAccountDevices(){
     const data=await api('/account/devices');
     if(owner!==ui.account.user?.uid)return;
     const devices=Array.isArray(data.devices)?data.devices:[];
-    status('accountDevicesStatus',!ui.account.signed_in?'Sign in with your mobile account to find your ADAM. You can also enter its local address below.':devices.length?'Choose an address to fill the connection form. Your computer must be able to reach that network.':'No devices are linked to this account yet. Set up ADAM in the mobile app, then refresh.');
-    if(!ui.account.signed_in){root.append(actionButton('Sign in',()=>switchView('settings'),'button subtle','user'));return;}
+    if(!ui.account.signed_in){
+      status('accountDevicesStatus','Sign in with your mobile account to see the ADAM linked to it. You can also use Find ADAM on this network above.');
+      root.append(actionButton('Sign in',()=>switchView('settings'),'button subtle','user'));
+      return;
+    }
+    if(!devices.length){
+      status('accountDevicesStatus','No ADAM is linked to this account yet. Set one up in the mobile app, then refresh.');
+      return;
+    }
+    // Cross-reference the account's devices against what is actually on this
+    // network. The cloud knows WHICH ADAM is yours; mDNS knows WHERE it is. One
+    // without the other is not enough: the cloud has no routable address for a
+    // LAN device, and discovery alone cannot tell your ADAM from a flatmate's.
+    let nearby=[];
+    try{nearby=(await api('/discover/adam')).units||[];}catch(e){/* offline is fine */}
+    const byId={};nearby.forEach(u=>{byId[String(u.id).toUpperCase()]=u;});
+    let matched=0;
     devices.forEach(device=>{
+      const id=String(device.deviceId||device.serial||'').toUpperCase();
+      const here=byId[id];
+      if(here)matched++;
       const card=element('article','device-card'),info=element('div');
-      info.append(element('h4','',device.name||device.deviceId||'Your ADAM'),element('p','',device.tailscaleIp||'Find its network address in the mobile app'));
-      const choose=actionButton(device.tailscaleIp?'Use address':'Address unavailable',()=>{
-        $('connectionHost').value=device.tailscaleIp;$('connectionToken').value='';
-        $('connectionHost').scrollIntoView({block:'center'});$('connectionHost').focus();
-        status('connectionResult','Address selected. Check the connection, then connect your ADAM.');
-      },'button subtle','arrow');
-      choose.disabled=!device.tailscaleIp;card.append(icon('devices'),info,choose);root.append(card);
+      info.append(element('h4','',device.name||device.deviceId||'Your ADAM'),
+                  element('p','',here?(here.connected?'Connected · '+here.host:'On this network · '+here.host):'Not on this network right now'));
+      const label=here?(here.connected?'Connected':'Connect'):'Unavailable';
+      const choose=actionButton(label,async()=>{
+        status('accountDevicesStatus','Connecting to '+(device.name||id)+'…');
+        try{
+          const r=await api('/pair/adam',{host:here.host,port:here.port});
+          if(r.status!=='ok')throw new Error(r.reason||'Pairing failed.');
+          status('accountDevicesStatus','Connected to '+(r.id||id)+'.');
+          toast('ADAM connected.');
+          await loadSettings(true);await loadStatus();await loadAccountDevices();
+        }catch(e){status('accountDevicesStatus',e.message,true);throw e;}
+      },'button primary','arrow');
+      // Disabled when the unit is not reachable here: the cloud record alone
+      // gives us no address to dial, so offering Connect would always fail.
+      choose.disabled=!here||here.connected;
+      card.append(icon('devices'),info,choose);root.append(card);
     });
-  }catch(e){status('accountDevicesStatus',e.message+' You can still connect by local address below.',true);}
+    status('accountDevicesStatus',matched?'Found '+matched+' of your '+devices.length+' ADAM unit(s) on this network. Select one to connect — nothing to type.':'Your ADAM is linked to this account but is not on this network right now. Put it on the same Wi-Fi, then refresh.');
+  }catch(e){status('accountDevicesStatus',e.message+' You can still use Find ADAM on this network above.',true);}
   finally{ui.busy.delete('devices');}
 }
 async function loadAccount(){
@@ -487,9 +514,10 @@ function bindUI(){
   bind('applyTouchBtn',async()=>{if(ui.touchDirty)await saveTouches();if(ui.touchDirty)throw new Error('Your preferences changed while saving. Save them once more before applying.');const d=await api('/touch/apply',{});text('touchSaveStatus',d.message||'Touch preferences applied to ADAM');toast('Touch preferences applied to ADAM.');});
   bind('pauseAgentBtn',async()=>{const paused=!(ui.status.paused??ui.settings.paused);await api('/settings',{paused});ui.settings.paused=paused;await loadStatus();toast(paused?'Laptop control is paused.':'Laptop control resumed.');});
   bind('controlsPauseBtn',async()=>{const paused=!(ui.status.paused??ui.settings.paused);await api('/settings',{paused});ui.settings.paused=paused;await loadStatus();toast(paused?'Laptop control is paused.':'Laptop control resumed.');});
-  bind('probeConnectionBtn',async()=>{status('connectionResult','Checking your ADAM…');try{const d=await api('/connection/probe',connectionPayload());status('connectionResult',d.read_only?d.reason:d.message||'ADAM is reachable. Connect to save this address.');}catch(e){status('connectionResult',e.message,true);throw e;}});
-  submit('connectionForm',async()=>{status('connectionResult','Connecting…');try{const d=await api('/connection/connect',connectionPayload());$('connectionToken').value='';status('connectionResult',d.read_only?d.reason:d.message||'ADAM connected.');await loadSettings(true);await loadStatus();toast(d.read_only?'Connected for viewing. Write access still needs setup.':'Your ADAM connection is saved.');}catch(e){status('connectionResult',e.message,true);throw e;}});
-  bind('disconnectBtn',async()=>{if(!(await confirmAction('Disconnect ADAM?','This computer will stop connecting to this ADAM. Your memories and preferences stay saved.','Disconnect')))return;await api('/connection/disconnect',{});await loadSettings(true);await loadStatus();status('connectionResult','ADAM disconnected.');});
+  // The manual host/key form is gone: connecting is discovery + one click, or
+  // the account's own device matched on this network. probeConnectionBtn and
+  // connectionForm no longer exist, so their handlers went with them.
+  bind('disconnectBtn',async()=>{if(!(await confirmAction('Disconnect ADAM?','This computer will stop connecting to this ADAM. Your memories and preferences stay saved.','Disconnect')))return;await api('/pair/adam/forget',{});await loadSettings(true);await loadStatus();status('connectionResult','ADAM disconnected.');await findAdamUnits();});
   bind('findAdamBtn',findAdamUnits);
   bind('refreshDevicesBtn',async()=>{await loadAccount();await loadAccountDevices();});
   bind('authorizeLaptopBtn',async()=>{ui.busy.add('pairing');updatePairingControls();try{await api('/connection/authorize',{});status('laptopPairingResult','ADAM verified this computer. Your enabled laptop actions are linked.');await loadStatus();}catch(e){status('laptopPairingResult',e.message,true);throw e;}finally{ui.busy.delete('pairing');}});

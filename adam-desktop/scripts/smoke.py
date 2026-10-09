@@ -179,7 +179,11 @@ def main():
         targets = eventually(lambda: [target for target in session.get(f"http://127.0.0.1:{debug_port}/json", timeout=2).json()
                                       if target.get("type") == "page" and target.get("url", "").startswith(base_url)])
         client = CDP(targets[0]["webSocketDebuggerUrl"])
-        eventually(lambda: client.evaluate("document.readyState === 'complete' && !!document.querySelector('#mainContent') && [...document.images].every(i=>i.complete && i.naturalWidth > 0)"))
+        try:
+            eventually(lambda: client.evaluate("document.readyState === 'complete' && !!document.querySelector('#mainContent') && [...document.images].every(i=>i.complete && i.naturalWidth > 0)"))
+        except AssertionError:
+            print("WebView load state:", client.evaluate("({ready:document.readyState,url:location.href,images:[...document.images].map(i=>({src:i.getAttribute('src'),complete:i.complete,width:i.naturalWidth}))})"), flush=True)
+            raise
         assert client.evaluate("typeof THREE === 'object'")
         passed("Real WebView2 renders the interface and loads all images")
         eventually(lambda: client.evaluate("document.querySelector('#threeCanvas').dataset.modelSource === 'adam-body.glb'"))

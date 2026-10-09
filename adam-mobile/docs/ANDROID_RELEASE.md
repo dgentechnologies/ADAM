@@ -1,4 +1,37 @@
-# ADAM Android 0.2.1
+# ADAM Android 0.2.2
+
+Current release: 9 October 2026, package `com.dgentechnologies.adam`, version code
+10. Use `releases/ADAM-0.2.2-release.apk` with Windows `adamV0.02.exe`.
+
+## Changes in 0.2.2
+
+- Bounded startup hydration removes the splash-screen race. Damaged setup JSON
+  is backed up before recovery; unavailable storage has a Retry action.
+- The launcher icon, splash and sign-in branding use the desktop logo.
+  `scripts/sync-branding.py` regenerates the assets from the desktop ICO.
+- All setup screens remain. Device naming is restored between connecting and
+  the Founder/AI screens; Back navigation follows the selected branch.
+- Native Google sign-in initializes its plugin before use. Failed or cancelled
+  login stays on sign-in. Email/password login, registration and password reset
+  are distinct actions. Google/Firebase live acceptance is still required.
+- The shared version-2 envelope adds to-dos, alarms/timers/reminders and multiple
+  named devices. Rename/delete and simulated BLE use the same IDs, validation,
+  merge rules and tombstones on Windows and Android. Update both clients
+  together; older clients reject version 2 without overwriting its records.
+- Account sync starts only after explicit import confirmation and Sync now;
+  later edits sync while open and online. See the
+  [canonical protocol](../../shared/COMPANION_PROTOCOL.md).
+- The animated background limits rendering work, respects reduced motion and
+  releases GPU resources when its screen closes.
+- The Android notification listener declaration is restored so the existing
+  opt-in notification screen can work. No permission is requested at startup.
+
+The 0.2.2 verification record is in
+[`RELEASE_0.2.2.md`](RELEASE_0.2.2.md). Historical release evidence below describes
+the artifacts tested at those dates; it is not a claim of current live account
+or physical-device verification.
+
+## Historical 0.2.1 behavior and evidence
 
 Release work: 7 October 2026. Package: `com.dgentechnologies.adam`, version code 8. Minimum Android 6 (API 23), target/compile Android 15 (API 35). A current Android System WebView is required. The APK contains portable Java/Dex code and web assets with no required ARM-only native library. Version 0.2.0 is preserved in `releases` with its original checksum and native test record.
 

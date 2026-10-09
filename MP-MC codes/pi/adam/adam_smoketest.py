@@ -685,6 +685,72 @@ def t_security(c):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# GROUP: sync — the metadata cross-device sync depends on.
+#
+# docs/CLOUD_DATA_SCHEMA.md §5 resolves conflicts with last-write-wins on
+# updated_at, and §6.3 records that the Pi had no such field. These assertions
+# hold that contract: without a per-record modification time a bridge has to
+# GUESS which copy is newer, and guessing wrong silently destroys a real edit.
+# ═════════════════════════════════════════════════════════════════════════════
+
+@group("sync", "updated_at stamps and delete tombstones for cross-device sync")
+def t_sync(c):
+    import time
+    try:
+        import scheduler as sch
+        import sync_api as api
+    except ImportError as e:
+        c.skip("import scheduler/sync_api", str(e))
+        return
+
+    c.ok("second-resolution stamp helper exists", hasattr(sch, "_iso_s"))
+    c.ok("tombstone retention is declared",
+         isinstance(getattr(sch, "TOMBSTONE_KEEP_DAYS", None), int))
+
+    r = sch.add_todo("__smoketest_sync_meta__")
+    tid = (r.get("data") or {}).get("id")
+    if not c.ok("test todo created", bool(tid)):
+        return
+    try:
+        row = next((t for t in sch._store["todos"] if t["id"] == tid), None)
+        c.ok("create stamps updated_at", bool(row and row.get("updated_at")))
+        # Seconds, not minutes: two edits inside one minute must still order.
+        c.ok("updated_at carries seconds",
+             bool(row) and str(row.get("updated_at", "")).count(":") == 2,
+             f"got {row.get('updated_at') if row else None!r}")
+
+        before = row.get("updated_at")
+        time.sleep(1.1)
+        sch.complete_todo(tid)
+        row = next((t for t in sch._store["todos"] if t["id"] == tid), None)
+        c.ok("mutation advances updated_at",
+             bool(row) and row.get("updated_at") != before)
+
+        n0 = len(sch._store.get("tombstones", []))
+        sch.delete_todo(tid)
+        tombs = sch._store.get("tombstones", [])
+        c.ok("delete writes a tombstone", len(tombs) == n0 + 1)
+        if tombs:
+            t = tombs[-1]
+            c.ok("tombstone carries id/kind/deleted_at",
+                 bool(t.get("id")) and t.get("kind") == "todo" and bool(t.get("deleted_at")))
+        # The reason tombstones live in their own list: if a delete merely
+        # flagged the row, every reader — including drain_pending_fires — would
+        # have to filter it, and one missed filter rings a cancelled alarm.
+        c.ok("deleted row leaves the live list",
+             not any(t["id"] == tid for t in sch._store["todos"]))
+    finally:
+        sch._store["todos"] = [t for t in sch._store["todos"]
+                               if t.get("text") != "__smoketest_sync_meta__"]
+        sch._store["tombstones"] = [t for t in sch._store.get("tombstones", [])
+                                    if t.get("label") != "__smoketest_sync_meta__"]
+
+    c.ok("/api/tombstones is routed", "/api/tombstones" in api._ROUTES_GET)
+    c.ok("/api/tombstones needs the token",
+         "/api/tombstones" in api._SENSITIVE_GET)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # RUNNER
 # ═════════════════════════════════════════════════════════════════════════════
 

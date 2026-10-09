@@ -1,6 +1,7 @@
 import { getItem, setItem } from './native/preferences';
 import { readLocalData, updateLocalData } from './local-data';
-import { emptyCompanion, mergeCompanions, validateCompanion, capturePhoneChanges, type Companion } from './firebase/companion-sync';
+import { emptyCompanion, validateCompanion, capturePhoneChanges, type Companion } from './firebase/companion-sync';
+import { applyCloudDocuments, chooseCloudWrite, normalizeCloudMetadata, stableDeviceId, toCloudDocuments, type CloudDocuments } from './firebase/schema-documents';
 
 let pending: Promise<unknown> = Promise.resolve();
 /** One isolated simulated robot per account/device. No Bluetooth radio or real robot commands. */
@@ -14,27 +15,43 @@ export function syncSimulatedDevice(deviceId: string): Promise<Companion> {
     const phone = await readLocalData();
     const device = phone.devices.find((item) => item.id === deviceId);
     if (!device?.simulated) throw new Error('BLE is available for simulated ADAM devices only.');
-    const key = `adam.ble-simulation.v2.${encodeURIComponent(uid)}.${device.id}`;
+    const key = `adam.ble-simulation.v3.${encodeURIComponent(uid)}.${device.id}`;
     const raw = await getItem(key);
     const saved = raw ? JSON.parse(raw) : null;
-    const previous = saved ? validateCompanion(saved.companion) : emptyCompanion();
+    const previous = saved ? validateCompanion(saved.phoneCheckpoint) : emptyCompanion();
     const { LocalData } = await import('./local-data');
     const baseline = saved ? LocalData.parse(saved.baseline) : null;
-    const outgoing = capturePhoneChanges(previous, baseline, phone, new Date().toISOString());
-    const merged = mergeCompanions(previous, outgoing);
+    const outgoing = normalizeCloudMetadata(capturePhoneChanges(previous, baseline, phone, new Date().toISOString()));
+    const documents = exchangeSimulatedDocuments(outgoing, uid, stableDeviceId(device), saved?.documents ?? {});
+    const merged = await applyCloudDocuments(outgoing,uid,documents);
     check();
-    await setItem(key, JSON.stringify({ companion: merged, baseline: phone }));
-    check();
-    await updateLocalData((current) => {
+    let final = merged;
+    const applied = await updateLocalData((current) => {
       check();
       // Keep edits made while the simulated transfer was in flight.
-      const final = capturePhoneChanges(merged, phone, current, new Date().toISOString());
+      final = capturePhoneChanges(merged, phone, current, new Date().toISOString());
       return applySimulation(current, final);
     });
+    check();
+    await setItem(key, JSON.stringify({ documents, phoneCheckpoint:final, baseline:applied }));
     return merged;
   });
   pending = operation;
   return operation;
+}
+
+/** A robot receives only its own memories and plans targeted to it. */
+export function exchangeSimulatedDocuments(local: Companion, uid: string, deviceId: string, previous: CloudDocuments): CloudDocuments {
+  const documents: CloudDocuments = structuredClone(previous);
+  for (const entry of toCloudDocuments(local,uid)) {
+    const forDevice = entry.kind === 'devices' ? entry.path === `devices/${deviceId}`
+      : entry.kind === 'memories' ? entry.path.startsWith(`devices/${deviceId}/`)
+      : entry.data.deleted ? Boolean(documents[entry.path]) : !entry.data.deviceIds.length || entry.data.deviceIds.includes(deviceId);
+    if (!forDevice) continue;
+    const update = chooseCloudWrite(entry.data,documents[entry.path],entry.kind === 'devices');
+    if (update) documents[entry.path] = { ...documents[entry.path],...update };
+  }
+  return documents;
 }
 
 function applySimulation(data: Awaited<ReturnType<typeof readLocalData>>, companion: Companion) {

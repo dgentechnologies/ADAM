@@ -46,6 +46,15 @@ try {
             }
         }
     }
+    # AGP recreates baseline-profile folders while packaging. On Windows its
+    # Java cleanup can fail on a previous generated directory even after the
+    # read-only attributes were repaired. Remove only this derived output.
+    $apkOutputRoot = [IO.Path]::GetFullPath((Join-Path $androidRoot 'app\build\outputs\apk'))
+    $profileOutput = [IO.Path]::GetFullPath((Join-Path $apkOutputRoot "$($Configuration.ToLowerInvariant())\baselineProfiles"))
+    if (!$profileOutput.StartsWith($apkOutputRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Unexpected baseline-profile output path.'
+    }
+    if (Test-Path -LiteralPath $profileOutput) { Remove-Item -LiteralPath $profileOutput -Recurse -Force }
     Checked { pnpm --filter '@adam/mobile-shell' exec cap sync android }
     Push-Location $androidRoot
     try { Checked { .\gradlew.bat ":app:assemble$Configuration" --max-workers=2 --console=plain } }
