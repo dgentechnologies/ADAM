@@ -1,5 +1,10 @@
 # ADAM — canonical cloud data schema
 
+> Implementation review (9 October 2026): see [Desktop, Android and centralized data architecture](COMPANION_ARCHITECTURE_AND_DATA_FLOW.md).
+> This remains the intended schema agreement. Some implementation-status notes
+> below are historical: Android canonical adapters/rules and Pi schedule metadata
+> now exist, while desktop still uses the legacy companion envelope.
+
 **Status:** this document is the agreement. Where it disagrees with code, the
 code is wrong and should be changed to match — except where a section is marked
 **EXISTS**, which describes what is already deployed and must not be renamed.

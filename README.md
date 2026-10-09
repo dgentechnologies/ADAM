@@ -49,6 +49,10 @@ Companion projects: [ADAM Desktop](adam-desktop/README.md) ·
 [ADAM Mobile](adam-mobile/README.md). Desktop folder details are documented in
 [Project structure](adam-desktop/docs/PROJECT_STRUCTURE.md).
 
+Shared architecture: [Desktop, Android, Firebase and data flows](docs/COMPANION_ARCHITECTURE_AND_DATA_FLOW.md)
+documents the current login/setup paths, cloud-schema differences and the proposed
+upgrade to consistent data across devices.
+
 ## Quick Start (v30)
 
 ### 1. Requirements & Dependencies

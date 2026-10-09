@@ -1,5 +1,10 @@
 # ADAM shared companion protocol, version 2
 
+> Implementation review (9 October 2026): the envelope below remains in desktop
+> cloud sync and app-local checkpoints. Android's active cloud transport now uses
+> separate canonical documents. See the [cross-app architecture review](../docs/COMPANION_ARCHITECTURE_AND_DATA_FLOW.md)
+> before treating the two clients as cloud-compatible.
+
 Android and Windows use Firebase project `adam-ai1`, Firebase Auth UID as the
 account identity, and `users/{uid}.companion` as the shared envelope. Only the
 owner can read or write this document. The same envelope is exchanged with a
