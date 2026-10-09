@@ -67,7 +67,7 @@ async function run(button,fn) {
   if(button)button.disabled=true;
   try {return await fn();}
   catch(e){toast(e.message||'Something went wrong. Please try again.',true);}
-  finally{if(button?.isConnected)button.disabled=false;if(button?.id==='codingStartBtn')updateCodingControls();if(button?.id==='runSelectedControl')updateControlStates();if(['authorizeLaptopBtn','revokeLaptopBtn'].includes(button?.id))updatePairingControls();}
+  finally{if(button?.isConnected)button.disabled=false;if(button?.id==='codingStartBtn')updateCodingControls();if(button?.id==='runSelectedControl')updateControlStates();if(['authorizeLaptopBtn','revokeLaptopBtn'].includes(button?.id))updatePairingControls();if(button?.closest('#scheduleForm, #todoForm, #clockScheduleList, #clockTodoList'))window.AdamClock?.updateAccess();}
 }
 function bind(id,fn){$(id)?.addEventListener('click',()=>run($(id),fn));}
 function submit(id,fn){$(id)?.addEventListener('submit',e=>{e.preventDefault();if(e.target.reportValidity())run(e.submitter||e.target.querySelector('[type=submit]'),fn);});}
@@ -134,7 +134,7 @@ async function loadStatus(){
     const data=await api('/status');ui.status=data;ui.settings={...ui.settings,...data.settings};$('backendNotice').hidden=true;
     const robot=data.robot||{},connected=!!robot.connected;
     const paused=!!(data.paused??data.settings?.paused);
-    text('headerStatusText',connected?'ADAM connected':(ui.settings.paired?'ADAM offline':'Connect your ADAM'));
+    text('headerStatusText',connected?(robot.read_only?'ADAM · read-only':'ADAM connected'):(ui.settings.paired?'ADAM offline':'Connect your ADAM'));
     $('headerStatusDot').className='status-dot'+(connected?' online':'');
     $('modelStatusDot').className='status-dot'+(connected?' online':'');
     $('railServiceDot').className='status-dot'+(paused?'':' online');
@@ -149,7 +149,8 @@ async function loadStatus(){
     const version=data.version||ui.settings.version||'—';text('deviceVersion',version);text('aboutVersion',version);
     text('deviceLocalAddress',ui.settings.local_ip||data.local_ip||'Local network');
     text('connectedDeviceName',connected?(robot.device_name||'Your ADAM'):'Connect your companion');
-    text('connectionSummary',connected?'Connected on your local network. Your companion is ready.':'Set up ADAM with your mobile app, then enter its network address below.');
+    text('connectionSummary',connected?(robot.read_only?robot.reason||'Connected for viewing. Add ADAM’s connection key to make changes.':'Connected on your local network. Your companion is ready.'):'Set up ADAM with your mobile app, then enter its network address below.');
+    window.AdamClock?.updateAccess(robot);
     $('disconnectBtn').hidden=!(ui.settings.paired||connected);
     updatePairingControls();
     const last=data.recent_activity?.[0];if(last)text('statLastActivity',friendly(last.action));
@@ -317,8 +318,8 @@ let credentialsTimer;
 function hideCredentials(){clearTimeout(credentialsTimer);$('credentialToken').value='';$('credentialsPanel').hidden=true;}
 function updatePairingControls(){
   const robot=ui.status.robot||{},ready=!!robot.connected,capable=!!robot.capabilities?.laptop_pairing;
-  $('authorizeLaptopBtn').disabled=!ready||!capable||ui.busy.has('pairing');$('revokeLaptopBtn').disabled=!ready||!capable||ui.busy.has('pairing');
-  text('laptopPairingHelp',!ready?'Connect ADAM above, then allow it to use the laptop actions you have enabled.':!capable?'This ADAM needs an updated companion service for guided pairing. You can also use manual pairing below.':'Allow this ADAM to run your enabled laptop actions. You can pause control from Dashboard at any time.');
+  $('authorizeLaptopBtn').disabled=!ready||robot.read_only||!capable||ui.busy.has('pairing');$('revokeLaptopBtn').disabled=!ready||robot.read_only||!capable||ui.busy.has('pairing');
+  text('laptopPairingHelp',!ready?'Connect ADAM above, then allow it to use the laptop actions you have enabled.':robot.read_only?robot.reason||'Add ADAM’s connection key above and reconnect to authorize laptop control.':!capable?'This ADAM needs an updated companion service for guided pairing. You can also use manual pairing below.':'Allow this ADAM to run your enabled laptop actions. You can pause control from Dashboard at any time.');
 }
 async function loadAccountDevices(){
   if(ui.busy.has('devices'))return;ui.busy.add('devices');
@@ -439,8 +440,8 @@ function bindUI(){
   bind('applyTouchBtn',async()=>{if(ui.touchDirty)await saveTouches();if(ui.touchDirty)throw new Error('Your preferences changed while saving. Save them once more before applying.');const d=await api('/touch/apply',{});text('touchSaveStatus',d.message||'Touch preferences applied to ADAM');toast('Touch preferences applied to ADAM.');});
   bind('pauseAgentBtn',async()=>{const paused=!(ui.status.paused??ui.settings.paused);await api('/settings',{paused});ui.settings.paused=paused;await loadStatus();toast(paused?'Laptop control is paused.':'Laptop control resumed.');});
   bind('controlsPauseBtn',async()=>{const paused=!(ui.status.paused??ui.settings.paused);await api('/settings',{paused});ui.settings.paused=paused;await loadStatus();toast(paused?'Laptop control is paused.':'Laptop control resumed.');});
-  bind('probeConnectionBtn',async()=>{status('connectionResult','Checking your ADAM…');try{const d=await api('/connection/probe',connectionPayload());status('connectionResult',d.message||'ADAM is reachable. Connect to save this address.');}catch(e){status('connectionResult',e.message,true);throw e;}});
-  submit('connectionForm',async()=>{status('connectionResult','Connecting…');try{const d=await api('/connection/connect',connectionPayload());$('connectionToken').value='';status('connectionResult',d.message||'ADAM connected.');await loadSettings(true);await loadStatus();toast('Your ADAM connection is saved.');}catch(e){status('connectionResult',e.message,true);throw e;}});
+  bind('probeConnectionBtn',async()=>{status('connectionResult','Checking your ADAM…');try{const d=await api('/connection/probe',connectionPayload());status('connectionResult',d.read_only?d.reason:d.message||'ADAM is reachable. Connect to save this address.');}catch(e){status('connectionResult',e.message,true);throw e;}});
+  submit('connectionForm',async()=>{status('connectionResult','Connecting…');try{const d=await api('/connection/connect',connectionPayload());$('connectionToken').value='';status('connectionResult',d.read_only?d.reason:d.message||'ADAM connected.');await loadSettings(true);await loadStatus();toast(d.read_only?'Connected for viewing. Write access still needs setup.':'Your ADAM connection is saved.');}catch(e){status('connectionResult',e.message,true);throw e;}});
   bind('disconnectBtn',async()=>{if(!(await confirmAction('Disconnect ADAM?','This computer will stop connecting to this ADAM. Your memories and preferences stay saved.','Disconnect')))return;await api('/connection/disconnect',{});await loadSettings(true);await loadStatus();status('connectionResult','ADAM disconnected.');});
   bind('refreshDevicesBtn',async()=>{await loadAccount();await loadAccountDevices();});
   bind('authorizeLaptopBtn',async()=>{ui.busy.add('pairing');updatePairingControls();try{await api('/connection/authorize',{});status('laptopPairingResult','ADAM verified this computer. Your enabled laptop actions are linked.');await loadStatus();}catch(e){status('laptopPairingResult',e.message,true);throw e;}finally{ui.busy.delete('pairing');}});
@@ -497,6 +498,6 @@ async function boot(){
   const target=location.hash.slice(1);if(VIEW_NAMES[target])await switchView(target);
   poll();
 }
-window.ADAM={api,element,icon,toast,run,bind,submit,empty,confirmAction,formatDate,ui,text,status};
+window.ADAM={api,element,icon,toast,run,bind,submit,empty,confirmAction,formatDate,ui,text,status,switchView};
 document.addEventListener('DOMContentLoaded',boot);
 

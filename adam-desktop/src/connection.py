@@ -112,6 +112,7 @@ def _empty_status(reason: str = "Connect ADAM after completing setup in the mobi
         "connected": False, "data_connected": False, "telemetry_connected": False,
         "host": "", "device_name": "ADAM", "reason": reason, "read_only": True,
         "capabilities": {}, "last_seen": 0.0, "paired": False,
+        "write_access": "disconnected",
         **_TELEMETRY_DEFAULTS,
     }
 
@@ -211,10 +212,18 @@ class ConnectionService:
 
     @staticmethod
     def _identified(target: _Target, payload: dict) -> dict[str, Any]:
-        state = _empty_status("")
+        if bool(payload.get("readonly", True)):
+            access = "device_read_only"
+            reason = "ADAM is read-only: configure its SYNC_TOKEN on the Pi, restart ADAM, then enter the same key in Connection."
+        elif not target.token:
+            access = "missing_key"
+            reason = "ADAM is read-only. Enter its connection key in Connection and reconnect to save changes."
+        else:
+            access, reason = "available", ""
+        state = _empty_status(reason)
         state.update(connected=True, data_connected=True, host=target.host,
                      device_name=str(payload.get("device_name") or payload.get("name") or "ADAM")[:100],
-                     read_only=bool(payload.get("readonly", True)) or not bool(target.token),
+                     read_only=access != "available", write_access=access,
                      capabilities=_capabilities(payload), last_seen=time.time())
         return state
 
@@ -226,8 +235,8 @@ class ConnectionService:
         self._state.update(self._identified(run.target, payload))
         self._state.update(telemetry, paired=True)
         if run.write_denied:
-            self._state.update(read_only=True,
-                               reason="ADAM did not authorize changes. Check its connection key.")
+            self._state.update(read_only=True, write_access="denied",
+                               reason="ADAM is read-only: it rejected the connection key. Correct the key in Connection and reconnect.")
 
     def probe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
         """Inspect a proposed endpoint without saving it or changing live state."""
@@ -471,12 +480,12 @@ class ConnectionService:
             self._refresh_identity(run, identity)
             run.verified.set()
             if method != "GET" and self._state["read_only"]:
-                return None, "ADAM is read-only. Add its connection key to save changes."
+                return None, self._state["reason"]
         payload, error = self._request(target, method, path, body)
         with self._lock:
             if not self._current(run):
                 return None, "The ADAM connection changed before the response arrived."
             if error and "authorize" in error:
                 run.write_denied = True
-                self._state.update(read_only=True, reason=error)
+                self._state.update(read_only=True, write_access="denied", reason=error)
         return payload, error

@@ -108,7 +108,8 @@ function renderControlInspector(){
         ui.busy.add('control-run');updateControlStates();result.hidden=false;result.classList.remove('error');result.textContent='Running…';
         try{
           const response=await api('/control',{action:name,...(value===undefined?{}:{value})});
-          result.textContent=response.result&&typeof response.result==='object'?JSON.stringify(response.result,null,2):typeof response.result==='string'?response.result:response.message||response.details||'Completed on this computer.';
+          const outcome=response.result??Object.fromEntries(Object.entries(response).filter(([key])=>!['status','action'].includes(key)));
+          result.textContent=typeof outcome==='string'?outcome:Object.keys(outcome).length?JSON.stringify(outcome,null,2):'Completed on this computer.';
           toast(label+' completed.');await loadStatus();
         }catch(error){result.textContent=error.message;result.classList.add('error');throw error;}
         finally{ui.busy.delete('control-run');updateControlStates();}

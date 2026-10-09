@@ -36,8 +36,9 @@ from config import (
     LAPTOP_ACTIONS_TTL_S,
 )
 
-_laptop_agent_ip_cache: dict = {"ip": LAPTOP_AGENT_STATIC_IP or None, "ts": 0.0}
+_laptop_agent_ip_cache: dict = {"ip": None, "port": LAPTOP_AGENT_PORT, "ts": 0.0}
 _pairing_lock = threading.RLock()
+_discovery_lock = threading.Lock()
 _paired_endpoint = None
 _pairing_revoked = False
 
@@ -49,7 +50,7 @@ def configure_laptop_pairing(record: dict) -> None:
         _paired_endpoint = ((record["host"], record["port"], record["token"])
                             if record.get("enabled") else None)
         _pairing_revoked = not bool(record.get("enabled"))
-        _laptop_agent_ip_cache.update(ip=None, ts=0.0)
+        _laptop_agent_ip_cache.update(ip=None, port=LAPTOP_AGENT_PORT, ts=0.0)
         _laptop_actions_cache.update(actions=None, ts=0.0)
 
 
@@ -66,7 +67,9 @@ def get_laptop_endpoint():
             return _paired_endpoint
         if _pairing_revoked:
             return None
-        return (ip, LAPTOP_AGENT_PORT, LAPTOP_AGENT_TOKEN) if ip else None
+        port = (_laptop_agent_ip_cache["port"]
+                if _laptop_agent_ip_cache["ip"] == ip else LAPTOP_AGENT_PORT)
+        return (ip, port, LAPTOP_AGENT_TOKEN) if ip else None
 
 
 def _authority(host):
@@ -89,6 +92,13 @@ elif not LAPTOP_AGENT_STATIC_IP:
 
 
 def _discover_laptop_agent_ip(timeout: float = LAPTOP_DISCOVERY_TIMEOUT_S) -> str | None:
+    # Manifest refresh and voice dispatch can ask concurrently. Share one
+    # bounded discovery, including a short cache for a missing laptop.
+    with _discovery_lock:
+        return _discover_laptop_agent_ip_locked(timeout)
+
+
+def _discover_laptop_agent_ip_locked(timeout: float) -> str | None:
     """Find the laptop agent's current IP via mDNS. Cached briefly to avoid
     repeated network discovery on every tool call. Falls back to a static
     LAPTOP_AGENT_IP if mDNS is unavailable or fails."""
@@ -97,10 +107,10 @@ def _discover_laptop_agent_ip(timeout: float = LAPTOP_DISCOVERY_TIMEOUT_S) -> st
             return _paired_endpoint[0]
         if _pairing_revoked:
             return None
-    now = time.time()
-    if (_laptop_agent_ip_cache["ip"]
-            and now - _laptop_agent_ip_cache["ts"] < LAPTOP_DISCOVERY_TTL_S):
-        return _laptop_agent_ip_cache["ip"]
+        now = time.monotonic()
+        ttl = LAPTOP_DISCOVERY_TTL_S if _laptop_agent_ip_cache["ip"] else min(5, LAPTOP_DISCOVERY_TTL_S)
+        if _laptop_agent_ip_cache["ts"] and now - _laptop_agent_ip_cache["ts"] < ttl:
+            return _laptop_agent_ip_cache["ip"]
 
     if ZEROCONF_AVAILABLE:
         try:
@@ -111,8 +121,11 @@ def _discover_laptop_agent_ip(timeout: float = LAPTOP_DISCOVERY_TIMEOUT_S) -> st
                 def add_service(self, zc, service_type, name):
                     info = zc.get_service_info(service_type, name,
                                                timeout=int(timeout * 1000))
-                    if info and info.addresses:
-                        found["ip"] = _socket.inet_ntoa(info.addresses[0])
+                    if info and info.addresses and 1 <= info.port <= 65535:
+                        for address in info.addresses:
+                            if len(address) == 4:
+                                found.update(ip=_socket.inet_ntoa(address), port=info.port)
+                                break
 
                 def update_service(self, *a, **k):
                     pass
@@ -130,9 +143,13 @@ def _discover_laptop_agent_ip(timeout: float = LAPTOP_DISCOVERY_TIMEOUT_S) -> st
                 zc.close()
 
             if "ip" in found:
-                _laptop_agent_ip_cache["ip"] = found["ip"]
-                _laptop_agent_ip_cache["ts"] = now
-                print(f"  📡 Discovered laptop agent via mDNS: {found['ip']}")
+                with _pairing_lock:
+                    if _paired_endpoint is not None:
+                        return _paired_endpoint[0]
+                    if _pairing_revoked:
+                        return None
+                    _laptop_agent_ip_cache.update(**found, ts=time.monotonic())
+                print(f"  📡 Discovered laptop agent via mDNS: {found['ip']}:{found['port']}")
                 return found["ip"]
             else:
                 print(f"  ⚠️  mDNS discovery found no '{LAPTOP_MDNS_SERVICE}' "
@@ -140,9 +157,14 @@ def _discover_laptop_agent_ip(timeout: float = LAPTOP_DISCOVERY_TIMEOUT_S) -> st
         except Exception as e:
             print(f"  ⚠️  mDNS discovery error: {e}")
 
-    if LAPTOP_AGENT_STATIC_IP:
-        return LAPTOP_AGENT_STATIC_IP
-    return None
+    with _pairing_lock:
+        if _paired_endpoint is not None:
+            return _paired_endpoint[0]
+        if _pairing_revoked:
+            return None
+        _laptop_agent_ip_cache.update(ip=LAPTOP_AGENT_STATIC_IP or None,
+                                     port=LAPTOP_AGENT_PORT, ts=time.monotonic())
+        return _laptop_agent_ip_cache["ip"]
 
 
 def _laptop_agent_url() -> str | None:
@@ -190,8 +212,10 @@ def refresh_laptop_actions(force: bool = False) -> dict:
     ip, port, _ = endpoint
 
     try:
-        resp = requests.get(f"http://{_authority(ip)}:{port}/actions",
-                             timeout=LAPTOP_AGENT_TIMEOUT_S, allow_redirects=False)
+        with requests.Session() as http:
+            http.trust_env = False
+            resp = http.get(f"http://{_authority(ip)}:{port}/actions",
+                            timeout=LAPTOP_AGENT_TIMEOUT_S, allow_redirects=False)
         resp.raise_for_status()
         data = resp.json()
         actions = data.get("actions", {})
@@ -233,11 +257,11 @@ def laptop_control_sync(action: str, value=None) -> dict:
     endpoint = get_laptop_endpoint()
     if endpoint is None:
         return {"status": "error",
-                "reason": "Laptop agent not found on network. Make sure "
-                          "laptop_agent.py is running on the laptop, both "
-                          "devices are on the same LAN, and either mDNS is "
-                          "allowed on your router or LAPTOP_AGENT_IP is set "
-                          "in .env as a fallback."}
+                "reason": "ADAM cannot reach a paired laptop. Open the ADAM PC app, "
+                          "go to My ADAM > Connection, enter the Pi's connection key, "
+                          "connect, then choose Allow laptop control. This saves a direct "
+                          "connection even when mDNS is blocked. Keep both devices on "
+                          "the same network and allow the app through Windows Firewall."}
 
     ip, port, token = endpoint
     url = f"http://{_authority(ip)}:{port}/control"
@@ -260,13 +284,15 @@ def laptop_control_sync(action: str, value=None) -> dict:
                     "http_status": resp.status_code}
         return data
     except requests.exceptions.ConnectTimeout:
-        _laptop_agent_ip_cache["ip"] = None
+        with _pairing_lock:
+            _laptop_agent_ip_cache.update(ip=None, ts=0.0)
         return {"status": "error",
                 "reason": "Connection timed out — laptop may have changed "
                           "networks or gone to sleep. Will re-discover on "
                           "next attempt."}
     except requests.exceptions.ConnectionError as e:
-        _laptop_agent_ip_cache["ip"] = None
+        with _pairing_lock:
+            _laptop_agent_ip_cache.update(ip=None, ts=0.0)
         return {"status": "error", "reason": f"could not connect to laptop agent: {e}"}
     except Exception as e:
         return {"status": "error", "reason": f"{type(e).__name__}: {e}"}

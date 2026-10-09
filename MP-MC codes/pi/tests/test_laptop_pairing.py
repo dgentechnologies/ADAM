@@ -9,7 +9,7 @@ import tempfile
 import threading
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 PI_DIR = Path(__file__).resolve().parents[1] / "adam"
 sys.path.insert(0, str(PI_DIR))
@@ -109,6 +109,49 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "identify"):
             await self.service.pair(self.laptop.body())
         self.assertFalse(self.service.path.exists())
+
+    async def test_paired_brightness_zero_works_without_mdns_after_restart(self):
+        await self.service.pair(self.laptop.body())
+        client = isolated_client()
+        restored = pairing.LaptopPairing(self.service.path, client.configure_laptop_pairing)
+        await restored.load()
+        with patch.object(client, "Zeroconf", side_effect=AssertionError("mDNS must not be needed")):
+            result = await asyncio.to_thread(client.laptop_control_sync, "brightness_set", 0)
+        self.assertEqual(result["status"], "ok")
+        command = [row for row in self.laptop.requests if row[0] == "POST"][-1]
+        self.assertEqual(command[1], "/control")
+        self.assertEqual(command[2]["value"], 0)
+        self.assertEqual(command[2]["token"], self.laptop.body()["token"])
+
+    async def test_mdns_uses_advertised_port_for_brightness_command(self):
+        import socket
+        info = types.SimpleNamespace(addresses=[socket.inet_aton("127.0.0.1")],
+                                     port=self.laptop.server.server_port)
+        zeroconf = Mock()
+        zeroconf.get_service_info.return_value = info
+        def discover(zc, kind, listener):
+            listener.add_service(zc, kind, "fixture")
+        with patch.object(self.client, "ZEROCONF_AVAILABLE", True), \
+                patch.object(self.client, "Zeroconf", return_value=zeroconf), \
+                patch.object(self.client, "ServiceBrowser", side_effect=discover):
+            result = await asyncio.to_thread(self.client.laptop_control_sync, "brightness_set", 0)
+        self.assertEqual(result["status"], "ok")
+        command = [row for row in self.laptop.requests if row[0] == "POST"][-1][2]
+        self.assertEqual(command["action"], "brightness_set")
+        self.assertEqual(command["value"], 0)
+        self.assertEqual(self.client.get_laptop_endpoint()[1], self.laptop.server.server_port)
+
+    async def test_missing_discovery_is_shared_by_manifest_and_control(self):
+        with patch.object(self.client, "ZEROCONF_AVAILABLE", True), \
+                patch.object(self.client, "LAPTOP_AGENT_STATIC_IP", ""), \
+                patch.object(self.client, "Zeroconf"), \
+                patch.object(self.client, "ServiceBrowser") as browser:
+            await asyncio.to_thread(self.client.get_laptop_actions)
+            result = await asyncio.to_thread(self.client.laptop_control_sync, "brightness_down")
+        self.assertEqual(browser.call_count, 1)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("Allow laptop control", result["reason"])
+        self.assertEqual(self.laptop.requests, [])
 
     async def test_redirect_does_not_forward_the_private_key(self):
         other = FakeLaptop()

@@ -263,6 +263,10 @@
 <label>ADAM address
 <input id="connectionHost" type="text" placeholder="adam-pi.local or 192.168.1.20" required maxlength="253" autocomplete="off" spellcheck="false">
 </label>
+<label>ADAM connection key
+<input id="connectionToken" type="password" autocomplete="off" placeholder="Enter the key from your ADAM setup" aria-describedby="connectionKeyHelp">
+</label>
+<p class="help" id="connectionKeyHelp">Required to create alarms, edit to-dos and authorize laptop control. Use the SYNC_TOKEN configured on your ADAM Pi. Leave empty to keep a saved key for this address. The key is stored securely on this computer.</p>
 <details>
 <summary>Advanced connection options
 </summary>
@@ -275,11 +279,6 @@
 <input id="connectionWsPort" type="number" min="1" max="65535" value="8765" required>
 </label>
 </div>
-<label>ADAM connection key
-<input id="connectionToken" type="password" autocomplete="off" placeholder="Leave empty to keep the saved key">
-</label>
-<p class="help">This key comes from your ADAM setup. It is stored securely on this computer.
-</p>
 </div>
 </details>
 <div class="button-row">
@@ -335,13 +334,14 @@
 </h3>
 <p id="laptopPairingHelp">Connect ADAM above, then allow it to use the laptop actions you have enabled.
 </p>
+<p class="help">Voice commands need this return connection to your PC. Allow laptop control saves the PC address, port and key on ADAM, so it can work even when automatic discovery is blocked. Keep ADAM and this PC on the same network and allow the PC app through Windows Firewall on your trusted network.</p>
 <div class="button-row">
 <button type="button" class="button primary" id="authorizeLaptopBtn" aria-describedby="laptopPairingHelp" disabled>Allow laptop control</button>
 <button type="button" class="button danger subtle" id="revokeLaptopBtn" aria-describedby="laptopPairingHelp" disabled>Revoke access</button>
 </div>
 <p id="laptopPairingResult" class="inline-status" role="status"></p>
 <details class="manual-pairing"><summary>Manual pairing</summary>
-<p class="help">Enter these details in your trusted ADAM setup if guided pairing is unavailable.</p>
+<p class="help">If guided pairing is unavailable, set LAPTOP_AGENT_IP to this PC’s local address, LAPTOP_AGENT_PORT to the displayed port, and LAPTOP_AGENT_TOKEN to the laptop key in your Pi’s .env, then restart ADAM. These laptop credentials are separate from ADAM’s SYNC_TOKEN.</p>
 <button type="button" class="button " id="revealCredentialsBtn">
 <i data-icon="key">
 </i>Show connection details
@@ -379,6 +379,7 @@
 </div>
 <div class="notice" id="clockNotice" role="status">Connect ADAM to see its clock.
 </div>
+<button type="button" class="button" id="clockConnectionBtn" hidden>Set up write access<i data-icon="arrow"></i></button>
 <div class="two-column planner-grid">
 <article class="panel">
 <div class="panel-heading">

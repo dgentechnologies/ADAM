@@ -202,7 +202,7 @@ async def run_session(client, resume_handle: str | None,
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=system_prompt,
-        tools=build_tools(),
+        tools=await asyncio.to_thread(build_tools),
         session_resumption=types.SessionResumptionConfig(handle=resume_handle),
         # LANGUAGE HINTS, not full auto-detection. An empty
         # AudioTranscriptionConfig() means "score this audio against every

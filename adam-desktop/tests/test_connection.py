@@ -203,6 +203,34 @@ class ConnectionTests(unittest.TestCase):
             self.assertIn("read-only", error)
             self.assertFalse(any(row[0] == "POST" for row in pi.records))
 
+    def test_planner_access_explains_missing_desktop_key_and_recovers_after_connect(self):
+        with simulated_pi() as pi:
+            result = self.service.connect({**pi.config, "sync_token": ""})
+            self.assertEqual(result["write_access"], "missing_key")
+            self.assertIn("Connection", result["reason"])
+            body = {"kind": "alarm", "when": "07:00", "label": "Wake up"}
+            payload, error = self.service.call("POST", "/api/schedules", body)
+            self.assertIsNone(payload)
+            self.assertIn("read-only", error)
+            self.assertFalse(any(row[0] == "POST" for row in pi.records))
+            result = self.service.connect(pi.config)
+            self.assertEqual(result["write_access"], "available")
+            self.assertFalse(result["read_only"])
+            payload, error = self.service.call("POST", "/api/schedules", body)
+            self.assertIsNone(error)
+            self.assertTrue(payload["ok"])
+            writes = [row for row in pi.records if row[0] == "POST"]
+            self.assertEqual(len(writes), 1)
+            self.assertEqual(json.loads(writes[0][3]), body)
+
+    def test_pi_without_sync_key_reports_device_setup_even_if_desktop_has_key(self):
+        with simulated_pi() as pi:
+            pi.identity["readonly"] = True
+            result = self.service.connect(pi.config)
+            self.assertEqual(result["write_access"], "device_read_only")
+            self.assertIn("SYNC_TOKEN", result["reason"])
+            self.assertTrue(result["read_only"])
+
     def test_rejected_key_returns_authorization_error_without_retry(self):
         with simulated_pi() as pi:
             self.assertTrue(self.service.connect(pi.config)["ok"])
@@ -211,6 +239,7 @@ class ConnectionTests(unittest.TestCase):
             self.assertIsNone(payload)
             self.assertIn("authorize", error)
             self.assertTrue(self.service.status()["read_only"])
+            self.assertEqual(self.service.status()["write_access"], "denied")
             self.assertEqual(len([row for row in pi.records if row[0] == "POST"]), 1)
             payload, error = self.service.call("POST", "/api/todos", {"text": "still blocked"})
             self.assertIsNone(payload)

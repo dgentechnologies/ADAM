@@ -150,7 +150,9 @@ async def _handle_laptop_control(args: dict) -> dict:
     action = args.get("action", "")
     value = args.get("value")
 
-    manifest = get_laptop_actions()
+    # Discovery and the HTTP manifest request are blocking. Keep them off
+    # the audio event loop, just like the control request below.
+    manifest = await asyncio.to_thread(get_laptop_actions)
     canon = laptop_actions.resolve(action)
     ok, value, err = laptop_actions.coerce(action, value, manifest)
     if not ok:

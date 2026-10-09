@@ -155,6 +155,25 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.backend._hw_worker.call_sync.call_count, 1)
 
+    def test_brightness_returns_measured_result_to_local_and_voice_clients(self):
+        self.backend._hw_worker = Mock()
+        self.backend._hw_worker.call_sync.return_value = 5
+        local = self.local("/control", {"action": "brightness_set", "value": 0}).get_json()
+        self.assertEqual(local["status"], "ok")
+        self.assertEqual(local["brightness"], 5)
+        token = self.config.load_settings()["agent_token"]
+        remote = self.remote("/control", {"action": "brightness_set", "value": 0}, token).get_json()
+        self.assertEqual(remote["brightness"], 5)
+        self.assertEqual(self.backend._hw_worker.call_sync.call_args.args, ("set_bri", (0,)))
+
+    def test_planner_snapshot_includes_live_write_permissions(self):
+        state = {"connected": True, "read_only": True, "write_access": "denied",
+                 "reason": "ADAM rejected the connection key"}
+        with patch.object(self.backend, "_pi_call", return_value=({"data": {"schedules": []}}, None)), \
+                patch.object(self.backend.connection, "status", return_value=state):
+            result = self.local("/pi/snapshot").get_json()
+        self.assertEqual(result["connection"], state)
+
     def test_action_type_coercion_and_sensitive_log_redaction(self):
         action = self.backend.ACTIONS["volume_set"]
         with patch.dict(action, {"fn": Mock(return_value={"volume": 40})}):
