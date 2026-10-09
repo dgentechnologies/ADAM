@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { getItem, setItem } from './native/preferences';
+import { Clock, Todo, SavedDevice, RECORD_SCHEMAS, type RecordKind, type SharedRecord } from './companion-records';
 
 export const Fact = z.object({
   id: z.string(),
@@ -15,6 +16,9 @@ export const LocalData = z.object({
   version: z.literal(1),
   name: z.string().max(80).default(''),
   facts: z.array(Fact).max(1000).default([]),
+  todos: z.array(Todo).max(1000).default([]),
+  clocks: z.array(Clock).max(1000).default([]),
+  devices: z.array(SavedDevice).max(100).default([]),
   voice: z.enum(['Charon', 'Aoede', 'Kore', 'Puck', 'Fenrir']).default('Charon'),
   wakeWord: z.enum(['Hey ADAM', 'ADAM']).default('Hey ADAM'),
   brain: z.enum(['lite', 'byok', 'managed']).default('lite'),
@@ -95,6 +99,19 @@ export function deleteFact(id: string) {
     ...data,
     facts: data.facts.filter((fact) => fact.id !== id),
   }));
+}
+
+export function saveRecord(kind: RecordKind, input: Record<string, unknown>) {
+  return updateLocalData((data) => {
+    const existing = data[kind].find((item) => item.id === input.id);
+    const now = new Date(Math.max(Date.now(), existing ? Date.parse(existing.updatedAt) + 1 : 0)).toISOString();
+    const record = RECORD_SCHEMAS[kind].parse({ ...input, id: existing?.id ?? crypto.randomUUID(), createdAt: existing?.createdAt ?? now, updatedAt: now });
+    return { ...data, [kind]: [...data[kind].filter((item: SharedRecord) => item.id !== record.id), record] };
+  });
+}
+
+export function deleteRecord(kind: RecordKind, id: string) {
+  return updateLocalData((data) => ({ ...data, [kind]: data[kind].filter((item: SharedRecord) => item.id !== id) }));
 }
 
 export function errorMessage(error: unknown): string {

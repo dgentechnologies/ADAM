@@ -6,6 +6,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useAppStore } from '@/stores/app-store';
 import { Companion } from '@/lib/native/companion';
 import { CameraRecovery } from '@/components/camera-recovery';
+import { SetupLoading } from '@/components/setup-loading';
+import { AccountSyncWatch } from '@/components/account-sync-watch';
+import { previousSetupHref } from '@/lib/setup-flow';
+import { useSetupStore } from '@/stores/setup-store';
 function NativeShell() {
   const theme = useAppStore((s) => s.theme);
   const path = usePathname().replace(/\/+$/, '') || '/';
@@ -31,6 +35,9 @@ function NativeShell() {
         return 'handled';
       }
       if (!window.dispatchEvent(new Event('adam:back', { cancelable: true }))) return 'handled';
+      if (['/privacy', '/terms'].includes(path) && !useSetupStore.getState().completedAt) { router.replace('/sign-in'); return 'handled'; }
+      const previous = previousSetupHref(path, useSetupStore.getState());
+      if (previous) { router.replace(previous); return 'handled'; }
       if (path === '/' || path === '/home' || path === '/welcome' || path === '/sign-in')
         return 'minimize';
       if (path.startsWith('/settings/')) router.replace('/settings');
@@ -65,7 +72,7 @@ function NativeShell() {
           () => show.remove(),
           () => hide.remove(),
         );
-    });
+    }).catch(() => undefined);
     return () => {
       active = false;
       cleanup.forEach((fn) => void fn());
@@ -87,9 +94,12 @@ export function Providers({ children }: { children: ReactNode }) {
   );
   return (
     <QueryClientProvider client={client}>
+      <SetupLoading>
       <NativeShell />
       <CameraRecovery />
+      <AccountSyncWatch />
       {children}
+      </SetupLoading>
     </QueryClientProvider>
   );
 }

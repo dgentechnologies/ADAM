@@ -116,17 +116,59 @@ def decode_value(value: dict):
 
 
 def empty_companion() -> dict:
-    return {"schemaVersion": 1, "memories": {}, "preferences": {}}
+    return {"schemaVersion": 2, "memories": {}, "preferences": {}, "todos": {}, "clocks": {}, "devices": {}}
+
+
+def _record_text(value, maximum, empty=False):
+    if not isinstance(value, str) or not (0 if empty else 1) <= _text_length(_trim_text(value)) <= maximum:
+        raise CloudSyncError("A shared record contains invalid text.", "invalid_data")
+    return _trim_text(value)
+
+
+def validate_records(kind, values):
+    if not isinstance(values, dict) or len(values) > (100 if kind == "devices" else MAX_ENTRIES):
+        raise CloudSyncError("Shared data exceeds the supported limit.", "capacity")
+    result = {}
+    for key, item in values.items():
+        _memory_id(key)
+        if not isinstance(item, dict) or item.get("id") != key or type(item.get("deleted")) is not bool:
+            raise CloudSyncError("A shared record could not be read.", "invalid_data")
+        record = {"id": key, "updatedAt": _timestamp(item.get("updatedAt")), "deleted": item["deleted"]}
+        if not item["deleted"]:
+            record["createdAt"] = _timestamp(item.get("createdAt"))
+            if record["createdAt"] > record["updatedAt"]:
+                raise CloudSyncError("A shared record has inconsistent dates.", "invalid_data")
+            if kind == "devices":
+                record.update(name=_record_text(item.get("name"), 40), serial=_record_text(item.get("serial"), 80))
+                boolean = "simulated"
+            else:
+                device = item.get("deviceId")
+                record["deviceId"] = "" if device == "" else _memory_id(device)
+                if kind == "todos":
+                    record.update(text=_record_text(item.get("text"), 2000), dueAt="" if item.get("dueAt") == "" else _timestamp(item.get("dueAt")))
+                    boolean = "done"
+                else:
+                    if item.get("kind") not in ("alarm", "timer", "reminder"):
+                        raise CloudSyncError("Choose an alarm, timer or reminder.", "invalid_data")
+                    record.update(kind=item["kind"], label=_record_text(item.get("label"), 80, empty=True), when=_timestamp(item.get("when")))
+                    boolean = "enabled"
+            if type(item.get(boolean)) is not bool:
+                raise CloudSyncError("A shared record could not be read.", "invalid_data")
+            record[boolean] = item[boolean]
+        result[key] = record
+    return result
 
 
 def validate_companion(value: dict) -> dict:
-    if not isinstance(value, dict) or type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1:
+    if not isinstance(value, dict) or type(value.get("schemaVersion")) is not int or value["schemaVersion"] not in (1, 2):
         raise CloudSyncError("This shared-data version needs an app update.", "invalid_data")
     memories = value.get("memories", {})
     preferences = value.get("preferences", {})
     if not isinstance(memories, dict) or len(memories) > MAX_ENTRIES or not isinstance(preferences, dict):
         raise CloudSyncError("Shared data exceeds the supported limit.", "capacity")
     result = empty_companion()
+    for kind in ("todos", "clocks", "devices"):
+        result[kind] = validate_records(kind, value.get(kind, {}))
     for key, item in memories.items():
         _memory_id(key)
         if not isinstance(item, dict) or item.get("id") != key or type(item.get("deleted")) is not bool:
@@ -157,7 +199,7 @@ def validate_companion(value: dict) -> dict:
 def merge_companions(left: dict, right: dict) -> dict:
     left, right = validate_companion(left), validate_companion(right)
     result = empty_companion()
-    for field in ("memories", "preferences"):
+    for field in ("memories", "preferences", "todos", "clocks", "devices"):
         for key in sorted(set(left[field]) | set(right[field])):
             options = [source[field][key] for source in (left, right) if key in source[field]]
             result[field][key] = max(options, key=lambda item: (item["updatedAt"],
@@ -227,7 +269,8 @@ class CloudSync:
                 record = self._read(uid)
                 result.update(lastSynced=record.get("lastSynced"), pending=record["dirty"])
                 if uid != "guest":
-                    result["guestMemories"] = sum(not item["deleted"] for item in self._read("guest")["companion"]["memories"].values())
+                    guest = self._read("guest")["companion"]
+                    result["guestMemories"] = sum(not item["deleted"] for kind in ("memories", "todos", "clocks", "devices") for item in guest[kind].values())
             except CloudSyncError as exc:
                 result["error"] = str(exc)
             return result
@@ -237,6 +280,59 @@ class CloudSync:
             items = self._read(self._uid())["companion"]["memories"].values()
             return sorted((deepcopy(item) for item in items if not item["deleted"]),
                           key=lambda item: (item["updatedAt"], item["id"]), reverse=True)
+
+    def list_records(self, kind: str) -> list[dict]:
+        if kind not in ("todos", "clocks", "devices"):
+            raise CloudSyncError("Unsupported shared collection.", "invalid_data")
+        with self._lock:
+            return [deepcopy(item) for item in self._read(self._uid())["companion"][kind].values() if not item["deleted"]]
+
+    def sync_simulated_ble(self, device_id: str) -> dict:
+        """Exchange the shared envelope with one account-scoped local robot simulator."""
+        _memory_id(device_id)
+        with self._lock:
+            uid = self._uid()
+            saved = self._read(uid)
+            device = saved["companion"]["devices"].get(device_id)
+            if not device or device["deleted"] or not device.get("simulated"):
+                raise CloudSyncError("Select a simulated ADAM for BLE sync.", "invalid_device")
+            robot_uid = "ble-simulation:" + uid + ":" + device_id
+            robot = self._read(robot_uid)
+            merged = merge_companions(saved["companion"], robot["companion"])
+            self._write(robot_uid, {"companion": merged, "dirty": False, "lastSynced": _now()})
+            saved.update(companion=merged, dirty=True)
+            self._write(uid, saved)
+            return {"simulated": True, "deviceId": device_id, "companion": merged}
+
+    def save_record(self, kind: str, data: dict) -> dict:
+        if kind not in ("todos", "clocks", "devices") or not isinstance(data, dict):
+            raise CloudSyncError("Unsupported shared collection.", "invalid_data")
+        with self._lock:
+            uid = self._uid()
+            saved = self._read(uid)
+            key = _memory_id(data["id"]) if data.get("id") else str(uuid.uuid4())
+            old = saved["companion"][kind].get(key, {})
+            stamp = self._after(old.get("updatedAt"))
+            record = {**data, "id": key, "createdAt": old.get("createdAt", stamp), "updatedAt": stamp, "deleted": False}
+            record = validate_records(kind, {key: record})[key]
+            saved["companion"][kind][key] = record
+            saved["dirty"] = True
+            self._write(uid, saved)
+            return deepcopy(record)
+
+    def delete_record(self, kind: str, key: str) -> None:
+        if kind not in ("todos", "clocks", "devices"):
+            raise CloudSyncError("Unsupported shared collection.", "invalid_data")
+        _memory_id(key)
+        with self._lock:
+            uid = self._uid()
+            saved = self._read(uid)
+            old = saved["companion"][kind].get(key)
+            if not old:
+                raise CloudSyncError("This record no longer exists.", "not_found")
+            saved["companion"][kind][key] = {"id": key, "updatedAt": self._after(old["updatedAt"]), "deleted": True}
+            saved["dirty"] = True
+            self._write(uid, saved)
 
     def save_memory(self, data: dict) -> dict:
         if not isinstance(data, dict):

@@ -16,8 +16,14 @@ export class NativeAuthPersistence {
     await Companion.setSecret({ key, value: JSON.stringify(value) });
   }
   async _get<T>(key: string): Promise<T | null> {
-    const { value } = await Companion.getSecret({ key });
-    return value ? (JSON.parse(value) as T) : null;
+    try {
+      const { value } = await Companion.getSecret({ key });
+      return value ? (JSON.parse(value) as T) : null;
+    } catch {
+      // A stale Keystore/session record must permit a new sign-in. Keep the old
+      // ciphertext until a successful login replaces it; other secrets stay intact.
+      return null;
+    }
   }
   async _remove(key: string) {
     await Companion.removeSecret({ key });

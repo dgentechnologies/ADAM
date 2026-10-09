@@ -72,6 +72,14 @@ MP-MC codes/pi/adam/.mic_cal.json
 MP-MC codes/pi/adam/.mic_channel.json
 MP-MC codes/pi/adam/.mic_ch.json
 
+# ── Per-unit secrets and pairing state ─────────────────────────────────────
+# .sync_token is THIS unit's API token, self-provisioned on first boot when
+# SYNC_TOKEN is absent from .env. .paired.json records which device claimed
+# this unit. Both are per-unit, like the mic calibration above: copying one
+# between units would hand a second machine the first one's credentials.
+MP-MC codes/pi/adam/.sync_token
+MP-MC codes/pi/adam/.paired.json
+
 # ── Build outputs and tool caches ──────────────────────────────────────────
 # dist/ is already ignored above; build/ is PyInstaller's scratch directory and
 # The desktop's build scratch files and generated specs live under artifacts/.

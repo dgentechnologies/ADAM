@@ -246,60 +246,10 @@ export function getApiBaseUrl(): string {
 }
 
 export async function scanNetworks(force = false): Promise<WifiNetwork[]> {
-  if (typeof window === 'undefined') {
-    return MOCK_NETWORKS;
-  }
-  // 1. Native Android WebView JavascriptInterface bridge
-  if (typeof window !== 'undefined' && (window as any).AdamNativeWifi?.getWifiNetworks) {
-    try {
-      const raw = (window as any).AdamNativeWifi.getWifiNetworks();
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    } catch (e) {
-      console.warn('[wifi] Native Android Wi-Fi scan exception:', e);
-    }
-  }
-
-  // 2. Candidate backend network endpoints (LAN host, local dev, emulator)
-  const candidateUrls = [
-    typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL : null,
-    'http://192.168.0.128:3001',
-    typeof window !== 'undefined' && window.location?.hostname ? `${window.location.protocol}//${window.location.hostname}:3001` : null,
-    'http://localhost:3001',
-    'http://10.0.2.2:3001',
-  ].filter(Boolean) as string[];
-
-  const uniqueUrls = Array.from(new Set(candidateUrls));
-
-  for (const baseUrl of uniqueUrls) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const url = force ? `${baseUrl}/api/wifi/networks?force=true` : `${baseUrl}/api/wifi/networks`;
-
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json' },
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : (data.networks ?? []);
-        if (Array.isArray(list) && list.length > 0) {
-          return list;
-        }
-      }
-    } catch {
-      // Try next candidate endpoint
-    }
-  }
-
-  // 3. Resilient fallback containing real environment network
-  await delay(600);
-  return MOCK_NETWORKS;
+  // The shipped setup is a BLE simulation. It must work without probing a
+  // developer laptop, local servers, or unrelated LAN addresses.
+  if (typeof window !== 'undefined') await delay(force ? 400 : 200);
+  return MOCK_NETWORKS.map((network, index) => ({ ...network, ssid: ['Demo Home', 'Demo Studio', 'Demo Guest', 'Demo Home 5G', 'Demo ADAM Setup'][index] ?? `Demo Network ${index + 1}` }));
 }
 
 /**

@@ -7,6 +7,7 @@ import { Confirm, Loading, Notice, Page, Panel, Row } from '@/components/compani
 import { useDemoDevice, updateDemoDevice, type DemoDevice } from '@/lib/demo-device';
 import { errorMessage } from '@/lib/local-data';
 import { DemoRange } from '@/components/demo-range';
+import { SavedDevices } from '@/components/saved-devices';
 export default function DevicePage() {
   const { device, loading, error: loadError } = useDemoDevice();
   const [error, setError] = useState('');
@@ -31,6 +32,7 @@ export default function DevicePage() {
   }
   return (
     <Page title="Your ADAM" back="/home">
+      <SavedDevices />
       <div>
         <p className="eyebrow mb-3">DEMO COMPANION</p>
         <h2 className="page-title break-words">{device.name}</h2>

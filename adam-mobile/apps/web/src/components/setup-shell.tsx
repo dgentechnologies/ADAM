@@ -5,7 +5,7 @@ import { ChevronLeft } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 
-import { stepFromPathname } from '../lib/setup-flow';
+import { stepFromPathname, previousSetupHref } from '../lib/setup-flow';
 import { progressPosition, useSetupStore } from '../stores/setup-store';
 import { SetupTransition } from './setup-transition';
 
@@ -47,7 +47,7 @@ export function SetupShell({ children }: { children: ReactNode }) {
             <button
               type="button"
               aria-label="Back"
-              onClick={() => router.back()}
+              onClick={() => { const previous = previousSetupHref(pathname, useSetupStore.getState()); if (previous) router.replace(previous); else router.back(); }}
               className="-ml-2 flex h-10 w-10 items-center justify-center text-fg"
             >
               <ChevronLeft className="h-6 w-6" />

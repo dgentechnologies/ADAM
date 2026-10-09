@@ -1,7 +1,10 @@
+'use client';
 import { Page, Panel } from '@/components/companion-ui';
+import { useSetupStore } from '@/stores/setup-store';
 export default function TermsPage() {
+  const completedAt = useSetupStore((state) => state.completedAt);
   return (
-    <Page title="Terms of use" back="/settings">
+    <Page title="Terms of use" back={completedAt ? '/settings' : '/sign-in'}>
       <p className="eyebrow">ADAM COMPANION · OCTOBER 2026</p>
       <h2 className="page-title">A thoughtful companion.</h2>
       <Panel>

@@ -91,7 +91,7 @@ test('supplementary Unicode timestamp ties match Python codepoint order', () => 
 });
 
 test('unsupported, malformed, oversized and invalid Unicode cloud data are rejected', () => {
-  assert.throws(() => validateCompanion({ schemaVersion: 2 }));
+  assert.throws(() => validateCompanion({ schemaVersion: 3 }));
   assert.throws(() => validateCompanion({ schemaVersion: 1, memories: null }));
   assert.throws(() => validateCompanion(shared({ ...fact(), updatedAt: '2026-02-30T00:00:00.000Z' })));
   assert.throws(() => validateCompanion(shared({ ...fact(), text: '\ud800' })));
@@ -111,7 +111,7 @@ test('capture advances local edits past future records and excludes private phon
   const current = { ...baseline, facts: [fact(FIRST, 'edited', TIME)] };
   const next = capturePhoneChanges(base, baseline, current, NOW);
   assert.equal(next.memories[FIRST]?.updatedAt, '2027-10-07T10:00:00.001Z');
-  assert.deepEqual(Object.keys(next).sort(), ['memories', 'preferences', 'schemaVersion']);
+  assert.deepEqual(Object.keys(next).sort(), ['clocks', 'devices', 'memories', 'preferences', 'schemaVersion', 'todos']);
   assert.deepEqual(next.preferences, {});
 });
 

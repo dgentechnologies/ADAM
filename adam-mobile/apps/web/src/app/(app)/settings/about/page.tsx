@@ -10,7 +10,7 @@ export default function AboutPage() {
         <div className="text-center">
           <h2 className="text-2xl tracking-widest">ADAM</h2>
           <p className="text-fg-muted mt-3 text-sm">Autonomous Desktop AI Module</p>
-          <p className="text-fg-muted mt-2 text-xs">Companion 0.2.1 · Made in India</p>
+          <p className="text-fg-muted mt-2 text-xs">Companion 0.2.2 · Made in India</p>
         </div>
       </div>
       <Panel>

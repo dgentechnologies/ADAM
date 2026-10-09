@@ -48,6 +48,7 @@ export default function HomePage() {
         </h2>
       </div>
       {error && <Notice error>{error}</Notice>}
+      <Link href="/planner" className="border-border flex items-center justify-between rounded-2xl border p-4 text-sm"><span>Clock & to-do</span><span className="text-fg-muted">{data.todos.filter((item) => !item.done).length} open · {data.clocks.length} plans</span></Link>
       <section className="hero-halo -mx-3 flex flex-col items-center px-3 pb-6 text-center">
         <div className="flex h-36 items-center justify-center">
           <AdamFaceMark expression={device.connected ? device.expression : 'idle'} size="xl" />

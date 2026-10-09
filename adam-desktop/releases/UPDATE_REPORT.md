@@ -5,6 +5,15 @@ the existing action registry. The product flow is **mobile provisions ADAM →
 desktop connects to the configured robot → user enables laptop controls**.
 The black/white aesthetic and 3D ADAM dashboard remain the visual foundation.
 
+## Project organization update
+
+The workspace is now `adam-desktop`, alongside `adam-mobile`. Runtime code,
+shipped resources, build scripts, packaging metadata, local configuration,
+design references and generated artifacts have dedicated directories. An
+ADAM folder icon identifies the desktop project in Explorer. Existing files
+and previous build evidence were preserved. See
+[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the complete layout and reasons.
+
 ## Changes and reasons
 
 | Change | Why it was needed | Result |
@@ -35,12 +44,12 @@ The black/white aesthetic and 3D ADAM dashboard remain the visual foundation.
 
 ## Visual design and model provenance
 
-The six supplied screenshots and `ref/adam_dashboard_v2.html` informed the
+The six supplied screenshots and `design/references/adam_dashboard_v2.html` informed the
 monochrome palette, slim icon rail, product-centered scene and restrained
 controls. Their layouts were combined into an original screen. Decorative
 telemetry from the references was not presented as live device data.
 
-The scene loads the existing `static/models/adam-body.glb` assembly export
+The scene loads the existing `resources/static/models/adam-body.glb` assembly export
 (Blender glTF exporter 3.5.30). Source design assets were located at
 `design/ADAM_model.fbx` and `design/adam1.blend`; this update uses the existing
 GLB rather than claiming a new conversion. Body, head, face screen, trim and
@@ -63,7 +72,7 @@ button. The viewport layout, product framing and four labels remain intact.
 
 The official ADAM wordmark is reused in the rail and the complete first A is
 used for the Windows icon. Interface symbols come from Lucide 0.469.0, with
-its license in `static/licenses/LUCIDE.txt`; Google's own multicolor mark
+its license in `resources/static/licenses/LUCIDE.txt`; Google's own multicolor mark
 identifies Google sign-in.
 
 The touch panels use a translucent gradient, 28-pixel backdrop blur and light

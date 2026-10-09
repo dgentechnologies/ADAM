@@ -18,16 +18,18 @@ export function Wordmark({
 }) {
   return (
     <div className={cn('flex flex-col items-center gap-stack-sm', className)}>
-      <p
+      <img
+        src="/assets/adam-wordmark.png"
+        alt="ADAM"
+        width={420}
+        height={105}
         className={cn(
-          'font-display uppercase text-fg',
-          size === 'sm' && 'text-title-md tracking-[0.24em]',
-          size === 'md' && 'text-headline-sm tracking-[0.28em]',
-          size === 'lg' && 'text-headline-md tracking-[0.3em]',
+          'object-contain [html[data-theme=light]_&]:invert',
+          size === 'sm' && 'h-auto w-28',
+          size === 'md' && 'h-auto w-40',
+          size === 'lg' && 'h-auto w-52',
         )}
-      >
-        ADAM
-      </p>
+      />
       {byline ? (
         <p className="text-label-sm uppercase text-fg-subtle">by DGEN Technologies</p>
       ) : null}

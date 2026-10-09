@@ -24,6 +24,7 @@ import threading
 
 BASE = Path(__file__).resolve().parents[1]
 OUTPUT = BASE / "artifacts" / "qa"
+VERSION = re.search(r'^APP_VERSION = "([0-9.]+)"', (BASE / "src/config.py").read_text(encoding="utf-8"), re.M).group(1)
 
 
 def free_port():
@@ -93,7 +94,7 @@ class CDP:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("executable", nargs="?", type=Path, default=BASE / "releases" / "adamV0.01.exe")
+    parser.add_argument("executable", nargs="?", type=Path, default=BASE / "releases" / f"adamV{VERSION}.exe")
     parser.add_argument("--source", action="store_true")
     args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -146,7 +147,7 @@ def main():
         assert port != preferred_port
         base_url = f"http://127.0.0.1:{port}"
         ping = eventually(lambda: session.get(base_url + "/ping", timeout=2).json())
-        assert ping["app"] == "ADAM Companion" and ping["version"] == "0.01"
+        assert ping["app"] == "ADAM Companion" and ping["version"] == VERSION
         assert ping["instance_id"] == instance["instance_id"] and ping["pid"] == instance["pid"]
         assert not foreign_requests
         passed("Occupied port falls back without loading or contacting the other application")

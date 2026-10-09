@@ -5,7 +5,7 @@ import { ClipboardPaste, ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { sendByokKeyToDevice } from '@/lib/mock/api';
+import { verifyAndSaveGeminiKey } from '@/lib/gemini-key';
 import { useSetupStore } from '@/stores/setup-store';
 
 /**
@@ -35,16 +35,16 @@ export default function ByokPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function connect() {
+    if (sending) return;
     setSending(true);
     setError(null);
-    const { accepted } = await sendByokKeyToDevice(key);
-    setSending(false);
-    if (!accepted) {
-      setError('ADAM rejected that key. Check you copied all of it.');
-      return;
-    }
+    try {
+    await verifyAndSaveGeminiKey(key);
+    setKey('');
     complete('byok');
     router.push('/camera-permission');
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'The key could not be saved. Please try again.'); }
+    finally { setSending(false); }
   }
 
   /** Best-effort: the Clipboard API is permission-gated and absent in some webviews. */
@@ -62,7 +62,7 @@ export default function ByokPage() {
       <ScreenHeader
         size="xs"
         title="Connect your key"
-        subtitle="Your key goes straight to ADAM, encrypted. It never touches our servers."
+        subtitle="Verify your key with Google and save it securely on this phone. It is not sent to the cloud database or simulated ADAM."
       />
 
       <div className="flex flex-col gap-stack-md pt-stack-lg">
@@ -124,7 +124,7 @@ export default function ByokPage() {
           disabled={key.trim().length < 20 || sending}
           onClick={() => void connect()}
         >
-          {sending ? 'Connecting ADAM…' : 'Connect ADAM'}
+            {sending ? 'Verifying key…' : 'Verify and save key'}
         </Button>
       </div>
     </Screen>

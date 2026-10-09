@@ -46,10 +46,12 @@ write path.
 
 import asyncio
 import hmac
+import ipaddress
 import json
+import os
 import time
 
-from config import SYNC_HOST, SYNC_PORT, SYNC_TOKEN
+from config import SYNC_HOST, SYNC_PORT, SYNC_TOKEN, BASE_DIR, APP_VERSION
 # conv_log is imported rather than re-read from CONV_MEMORY_FILE: the file is
 # only rewritten when a session ends or a turn is appended, so reading disk
 # here would serve a stale conversation list mid-session. memory_store mutates
@@ -172,6 +174,7 @@ _ROUTES_GET = {
     "/api/memories":      "_r_memories",
     "/api/conversations": "_r_conversations",
     "/api/touch/assignments": "_r_touch_assignments",
+    "/api/pair/info":     "_r_pair_info",
 }
 _ROUTES_WRITE = {
     "/api/schedules":    "_w_schedules",
@@ -182,7 +185,15 @@ _ROUTES_WRITE = {
     "/api/touch/assignments": "_w_touch_assignments",
     "/api/laptops/pair": "_w_laptop_pair",
     "/api/laptops/unpair": "_w_laptop_unpair",
+    "/api/pair/claim":   "_w_pair_claim",
+    "/api/pair/release": "_w_pair_release",
 }
+
+# /api/pair/claim is the ONE write that cannot require the token, because
+# handing over that token is the whole point of it. It is gated on state
+# instead of on a secret: it answers only while this unit is unclaimed. See
+# _w_pair_claim for the trust model.
+_UNAUTHENTICATED_WRITE = {"/api/pair/claim"}
 
 
 async def _handle(reader, writer) -> None:
@@ -232,7 +243,7 @@ async def _handle(reader, writer) -> None:
             if fn is None:
                 await _reply(writer, 404, {"error": "unknown path", "path": path})
                 return
-            if not _authorised(headers):
+            if path not in _UNAUTHENTICATED_WRITE and not _authorised(headers):
                 # Say WHY in one line, without hinting at the token's value.
                 why = ("no SYNC_TOKEN configured — this Pi is read-only"
                        if not SYNC_TOKEN else "bad or missing X-ADAM-Token")
@@ -242,6 +253,13 @@ async def _handle(reader, writer) -> None:
             if err:
                 await _reply(writer, err, {"error": _REASON.get(err, "bad body")})
                 return
+            # Stamp the peer from the SOCKET, never from the body. _w_pair_claim
+            # refuses non-private addresses, and a caller must not be able to
+            # spoof that by sending its own "_peer".
+            try:
+                body["_peer"] = (writer.get_extra_info("peername") or ("", 0))[0]
+            except Exception:
+                body["_peer"] = ""
             status, payload = await globals()[fn](body, method)
             await _reply(writer, status, payload)
             return
@@ -270,6 +288,137 @@ async def _handle(reader, writer) -> None:
             writer.close()
         except Exception:
             pass
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ZERO-CONFIG PAIRING
+#
+# The goal: the user opens the app, presses "Find ADAM", picks the one that
+# appears, and is connected. No IP address, no port, no token typed by hand.
+#
+# mDNS (discovery.py) solves "where is it". These endpoints solve "how does the
+# app get the token", which is the part that cannot be advertised — a TXT
+# record is readable by every device on the network.
+#
+# TRUST MODEL — trust on first use, and say so out loud.
+#
+#   While this unit is UNCLAIMED, /api/pair/claim hands the sync token to
+#   whoever asks from a private address. Once claimed it refuses everyone until
+#   the owner releases it (an authenticated call) — so the window is open only
+#   between first boot and first pairing, not permanently.
+#
+#   This is the same bargain a printer or a smart speaker makes, and it is a
+#   real bargain, not a free lunch: during that window, another device on the
+#   same Wi-Fi could claim ADAM first. Three things keep that honest:
+#     1. the window closes permanently at the first claim,
+#     2. the claimer must be on a private/loopback address, so nothing off the
+#        LAN can take it,
+#     3. ADAM says the pairing out loud, so a claim the user did not make is
+#        noticed rather than silent.
+#
+#   The alternative — making the user read a code off the robot — is more
+#   secure and was explicitly not wanted. This is the documented trade.
+# ═════════════════════════════════════════════════════════════════════════════
+
+_PAIR_FILE = BASE_DIR / ".paired.json"
+_pair_state = {"paired": False, "peer": "", "at": 0}
+
+
+def _load_pair_state() -> None:
+    """Read the claim record. A corrupt file leaves the unit UNCLAIMED rather
+    than permanently locked — a user who cannot pair has a brick, whereas the
+    worst case of re-opening the window is re-pairing on their own LAN."""
+    global _pair_state
+    try:
+        if _PAIR_FILE.exists():
+            raw = json.loads(_PAIR_FILE.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and raw.get("version") == 1:
+                _pair_state = {"paired": bool(raw.get("paired")),
+                               "peer": str(raw.get("peer", ""))[:64],
+                               "at": int(raw.get("at", 0))}
+    except Exception as e:
+        print(f"  ⚠️  pairing record unreadable ({e}) — starting unpaired")
+
+
+def _save_pair_state() -> None:
+    try:
+        _PAIR_FILE.write_text(json.dumps({"version": 1, **_pair_state}),
+                              encoding="utf-8")
+        try:
+            os.chmod(_PAIR_FILE, 0o600)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"  ⚠️  could not persist pairing record: {e}")
+
+
+def _is_private(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_private or                ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+async def _r_pair_info(authorised: bool = False) -> dict:
+    """Unauthenticated identity, so the app can list what it found.
+
+    Deliberately contains NOTHING secret: a name, a stable id, and whether this
+    unit is already taken. Enough to render a picker, useless to an attacker.
+    """
+    try:
+        import discovery
+        ident = discovery.short_id()
+    except Exception:
+        ident = "ADAM"
+    return {"ok": True, "api": API_VERSION, "id": ident, "name": "ADAM",
+            "paired": _pair_state["paired"], "version": APP_VERSION,
+            "needs_token": not bool(SYNC_TOKEN)}
+
+
+async def _w_pair_claim(body: dict, method: str):
+    """Hand the sync token to a first-time claimer on the LAN."""
+    peer = str((body or {}).get("_peer", ""))
+
+    if not _is_private(peer):
+        # Off-LAN claims are refused outright. SYNC_HOST defaults to 0.0.0.0,
+        # so without this a routable address could claim the unit.
+        return 403, {"ok": False, "error": "pairing is only available on a "
+                                           "local network"}
+    if _pair_state["paired"]:
+        return 409, {"ok": False, "error": "already paired",
+                     "hint": "Unpair from the app that owns it, or say "
+                             "\"forget my laptop\" to ADAM."}
+    if not SYNC_TOKEN:
+        return 503, {"ok": False, "error": "this unit has no sync token"}
+
+    _pair_state.update({"paired": True, "peer": peer, "at": int(time.time())})
+    _save_pair_state()
+
+    try:
+        import discovery
+        await discovery.update_paired(True)
+    except Exception:
+        pass
+
+    # Announce it. A pairing the user did not initiate should be heard, not
+    # discovered weeks later.
+    print(f"  🔗 Paired with {peer}")
+    return 200, {"ok": True, "api": API_VERSION, "token": SYNC_TOKEN,
+                 "id": (await _r_pair_info())["id"], "name": "ADAM"}
+
+
+async def _w_pair_release(body: dict, method: str):
+    """Release the claim so a different device can pair. Authenticated: only
+    whoever currently holds the token may give it up."""
+    _pair_state.update({"paired": False, "peer": "", "at": 0})
+    _save_pair_state()
+    try:
+        import discovery
+        await discovery.update_paired(False)
+    except Exception:
+        pass
+    print("  🔓 Pairing released — ADAM is open to pair again")
+    return 200, {"ok": True, "api": API_VERSION, "paired": False}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -458,6 +607,7 @@ async def start_sync_api():
     global _server
     if _server is not None:
         return _server
+    _load_pair_state()
     try:
         _server = await asyncio.start_server(_handle, SYNC_HOST, SYNC_PORT)
     except Exception as e:
@@ -465,9 +615,7 @@ async def start_sync_api():
         return None
     mode = "read-only (no SYNC_TOKEN set)" if not SYNC_TOKEN else "read-write"
     print(f"✅ Sync API  → http://{SYNC_HOST}:{SYNC_PORT}  [{mode}]")
-    if not SYNC_TOKEN:
-        print("   Set SYNC_TOKEN in ~/adam/.env to let the PC app save "
-              "changes back to the Pi.")
+    print(f"   Pairing: {'claimed' if _pair_state['paired'] else 'OPEN — the app can claim this unit'}")
     return _server
 
 

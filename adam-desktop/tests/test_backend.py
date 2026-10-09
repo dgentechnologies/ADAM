@@ -55,6 +55,26 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(before, self.backend.CURRENT_ROBOT_STATE)
         self.assertFalse(self.backend.connection.status()["connected"])
 
+    def test_shared_devices_planner_and_ble_use_real_local_endpoints(self):
+        first = self.local('/companion/devices', {'name': 'Desk', 'serial': 'SIM-1', 'simulated': True})
+        self.assertEqual(first.status_code, 200)
+        device = first.json['items'][0]
+        self.assertEqual(self.local('/companion/devices', {**device, 'name': 'Library'}).json['items'][0]['id'], device['id'])
+        second = self.local('/companion/devices', {'name': 'Studio', 'serial': 'SIM-2', 'simulated': True})
+        self.assertEqual(len(second.json['items']), 2)
+        todo = self.local('/companion/todos', {'text': 'Check the app', 'done': False, 'dueAt': '', 'deviceId': device['id']}).json['items'][0]
+        clock = self.local('/companion/clocks', {'kind': 'alarm', 'label': 'Morning', 'when': '2026-10-10T04:00:00.000Z', 'enabled': True, 'deviceId': ''})
+        self.assertEqual(clock.status_code, 200)
+        self.assertEqual(self.local('/companion/ble-sync', {'deviceId': device['id']}).json['companion']['todos'][todo['id']]['text'], 'Check the app')
+        self.local('/companion/todos/delete', {'id': todo['id']})
+        self.assertEqual(self.local('/companion/todos').json['items'], [])
+        self.assertTrue(self.local('/companion/ble-sync', {'deviceId': device['id']}).json['companion']['todos'][todo['id']]['deleted'])
+        self.assertEqual(self.local('/companion/devices').json['items'][0]['name'], 'Library')
+
+    def test_shared_data_endpoints_require_local_session(self):
+        for route in ('/companion/devices', '/companion/todos', '/companion/clocks'):
+            self.assertEqual(self.remote(route).status_code, 403)
+
     def test_empty_or_wrong_lan_token_cannot_execute(self):
         settings = self.config.load_settings()
         settings["agent_token"] = ""

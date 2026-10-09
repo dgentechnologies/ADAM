@@ -1,0 +1,7 @@
+#sharedPlannerPanel { margin-bottom: 24px; }
+#sharedPlanner .list-row, #sharedDevices .list-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+#sharedPlanner .list-row > div, #sharedDevices .list-row > div { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+#sharedPlanner .list-row .button, #sharedDevices .list-row .button { min-height: 36px; padding: 8px 12px; }
+#sharedPlanner .form-stack, #sharedDevices .form-stack { margin-top: 18px; }
+#sharedPlanner .form-stack input, #sharedDevices .form-stack input { min-width: 0; width: 100%; }
+#sharedPlanner [hidden], #sharedDevices [hidden] { display: none !important; }

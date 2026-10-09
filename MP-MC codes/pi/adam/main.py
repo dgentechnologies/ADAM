@@ -36,6 +36,7 @@ from esp32_link import esp_link
 from memory_store import save_conversation_log, save_json, memory, faces, MEMORY_FILE, FACE_MEMORY_FILE
 from ws_server import start_ws_server
 from sync_api import start_sync_api, stop_sync_api
+import discovery
 import touch_controls
 import laptop_pairing
 from session import run_session, tft_set
@@ -108,6 +109,13 @@ async def main() -> None:
     # unaffected either way.
     try:
         await start_sync_api()
+        # Advertise AFTER the API is listening, so the first app that finds us
+        # can connect immediately instead of racing the socket.
+        try:
+            import sync_api as _sapi
+            await discovery.start_discovery(_sapi._pair_state["paired"])
+        except Exception as e:
+            print(f"  ⚠️  discovery unavailable: {e}")
     except Exception as e:
         print(f"  ⚠️  Sync API failed to start ({e}) — PC app will show its "
               f"cached copy only")
@@ -284,6 +292,7 @@ async def main() -> None:
             pass
         try:
             await stop_sync_api()
+            await discovery.stop_discovery()
         except Exception:
             pass
         save_conversation_log()

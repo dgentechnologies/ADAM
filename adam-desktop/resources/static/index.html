@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/static/css/dashboard.css">
 <link rel="stylesheet" href="/static/css/dashboard-scene.css">
 <link rel="stylesheet" href="/static/css/workspace.css">
+<link rel="stylesheet" href="/static/css/companion.css">
 <script defer src="/static/js/three.min.js">
 </script>
 <script defer src="/static/js/OrbitControls.js">
@@ -23,6 +24,7 @@
 <script defer src="/static/js/controls.js"></script>
 <script defer src="/static/js/clock.js">
 </script>
+<script defer src="/static/js/companion.js"></script>
 </head>
 <body data-view="dashboard">
 <a class="skip-link" href="#mainContent">Skip to content
@@ -365,6 +367,7 @@
 </div>
 </section>
 <section id="tab-clock" class="view" aria-label="clock" hidden>
+<article class="panel" id="sharedPlannerPanel"><div class="panel-heading"><h3>Your synced planner</h3><button type="button" class="button" id="sharedRefresh">Refresh saved data</button></div><p class="help">These plans sync with Android through your account and simulated BLE. Robot alerts are simulated until BLE is available.</p><div id="sharedPlanner"></div><p id="sharedPlannerMessage" class="help" role="status"></p></article>
 <div class="section-heading">
 <div>
 <h2>Make room for your day.
@@ -653,7 +656,7 @@
 <p class="inline-status" id="accountMessage" role="status">
 </p>
 <button type="button" class="button subtle" id="cancelGoogleBtn" hidden>Cancel browser sign-in</button>
-<div id="importGuestPanel" class="notice" hidden><p id="importGuestMessage"></p><button type="button" class="button" id="importGuestBtn">Import local memories</button></div>
+<div id="importGuestPanel" class="notice" hidden><p id="importGuestMessage"></p><button type="button" class="button" id="importGuestBtn">Import local items</button></div>
 <details id="sharedPreferences"><summary>Shared companion preferences</summary><form id="accountPreferencesForm" class="form-stack">
 <label>Voice<select id="preferenceVoice"><option>Charon</option><option>Aoede</option><option>Kore</option><option>Puck</option><option>Fenrir</option></select></label>
 <label>Wake word<select id="preferenceWakeWord"><option>Hey ADAM</option><option>ADAM</option></select></label>

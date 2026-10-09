@@ -7,6 +7,7 @@
  * would tie the component set to Next.
  */
 export { cn } from './lib/cn';
+export { AdamLogo } from './components/adam-logo';
 
 export { AdamFaceMark } from './components/adam-face-mark';
 export type { AdamFaceMarkProps, FaceExpression, FaceSize } from './components/adam-face-mark';

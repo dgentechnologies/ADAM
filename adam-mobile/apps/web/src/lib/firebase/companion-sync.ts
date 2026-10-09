@@ -1,4 +1,5 @@
 import type { Fact, LocalData } from '../local-data';
+import { validateRecords, type SharedRecords, type RecordKind, type SharedRecord } from '../companion-records';
 
 export type SharedMemory =
   | (Fact & { deleted: false })
@@ -6,11 +7,14 @@ export type SharedMemory =
 type PreferenceName = 'voice' | 'wakeWord' | 'brain';
 type Preferences = Partial<Record<PreferenceName, { value: string; updatedAt: string }>>;
 export type Companion = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   memories: Record<string, SharedMemory>;
   preferences: Preferences;
+  todos: SharedRecords;
+  clocks: SharedRecords;
+  devices: SharedRecords;
 };
-type PhoneSnapshot = Pick<LocalData, 'facts' | 'voice' | 'wakeWord' | 'brain'>;
+type PhoneSnapshot = Pick<LocalData, 'facts' | 'voice' | 'wakeWord' | 'brain' | 'todos' | 'clocks' | 'devices'>;
 type SyncRecord = {
   version: 1;
   uid: string;
@@ -47,11 +51,12 @@ const OPTIONS: Record<PreferenceName, readonly string[]> = {
   brain: ['lite', 'byok', 'managed'],
 };
 const NAMES = Object.keys(OPTIONS) as PreferenceName[];
+const RECORDS: RecordKind[] = ['todos', 'clocks', 'devices'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 class SyncError extends Error {}
 
 export function emptyCompanion(): Companion {
-  return { schemaVersion: 1, memories: {}, preferences: {} };
+  return { schemaVersion: 2, memories: {}, preferences: {}, todos: {}, clocks: {}, devices: {} };
 }
 function object(value: unknown): value is Record<string, any> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -105,13 +110,14 @@ function encodeValue(value: unknown): unknown {
   throw new SyncError('Shared data contains an unsupported value.');
 }
 export function validateCompanion(value: unknown): Companion {
-  if (!object(value) || value.schemaVersion !== 1)
+  if (!object(value) || ![1, 2].includes(value.schemaVersion))
     throw new SyncError('This shared-data version needs an app update. Your phone data has been kept.');
   const memories = 'memories' in value ? value.memories : {};
   const preferences = 'preferences' in value ? value.preferences : {};
   if (!object(memories) || !object(preferences) || Object.keys(memories).length > 1000)
     throw new SyncError('Shared memories have reached the supported limit.');
   const result = emptyCompanion();
+  for (const kind of RECORDS) result[kind] = validateRecords(kind, value[kind] ?? {});
   for (const [id, item] of Object.entries(memories)) {
     if (!UUID.test(id) || !object(item) || item.id !== id || typeof item.deleted !== 'boolean')
       throw new SyncError('A shared memory could not be read. Your phone data has been kept.');
@@ -155,10 +161,16 @@ export function mergeCompanions(left: Companion, right: Companion): Companion {
     const first = a.preferences[key], second = b.preferences[key];
     if (first || second) result.preferences[key] = first && second ? winner(first, second) : (first ?? second)!;
   }
+  for (const kind of RECORDS) {
+    for (const id of new Set([...Object.keys(a[kind]), ...Object.keys(b[kind])])) {
+      result[kind][id] = a[kind][id] && b[kind][id] ? winner(a[kind][id]!, b[kind][id]!) : (a[kind][id] ?? b[kind][id])!;
+    }
+  }
   return validateCompanion(result);
 }
 function snapshot(data: LocalData): PhoneSnapshot {
-  return { facts: data.facts.map((fact) => ({ ...fact })), voice: data.voice, wakeWord: data.wakeWord, brain: data.brain };
+  return { facts: data.facts.map((fact) => ({ ...fact })), voice: data.voice, wakeWord: data.wakeWord, brain: data.brain,
+    todos: data.todos.map((item) => ({ ...item })), clocks: data.clocks.map((item) => ({ ...item })), devices: data.devices.map((item) => ({ ...item })) };
 }
 function after(now: string, ...previous: (string | undefined)[]): string {
   let stamp = timestamp(now);
@@ -194,6 +206,17 @@ export function capturePhoneChanges(base: Companion, baseline: PhoneSnapshot | n
       : current[key] === DEFAULTS[key] && !next.preferences[key]) continue;
     next.preferences[key] = { value: current[key], updatedAt: after(now, next.preferences[key]?.updatedAt) };
   }
+  for (const kind of RECORDS) {
+    const old = new Map((baseline?.[kind] ?? []).map((item) => [item.id, item]));
+    const present = new Set(current[kind].map((item) => item.id));
+    if (present.size !== current[kind].length) throw new SyncError('Two shared records have the same identifier.');
+    for (const item of current[kind]) {
+      if (canonical(old.get(item.id)) === canonical(item)) continue;
+      const existing = next[kind][item.id];
+      next[kind][item.id] = { ...item, updatedAt: existing ? after(now, existing.updatedAt, item.updatedAt) : item.updatedAt, deleted: false };
+    }
+    for (const [id, item] of old) if (!present.has(id)) next[kind][id] = { id, updatedAt: after(now, item.updatedAt, next[kind][id]?.updatedAt), deleted: true };
+  }
   return validateCompanion(next);
 }
 function applyShared(current: LocalData, companion: Companion): LocalData {
@@ -205,6 +228,10 @@ function applyShared(current: LocalData, companion: Companion): LocalData {
   for (const key of NAMES) {
     const preference = companion.preferences[key];
     if (preference) (next[key] as string) = preference.value;
+  }
+  for (const kind of RECORDS) {
+    (next[kind] as SharedRecord[]) = Object.values(companion[kind]).filter((item) => !item.deleted)
+      .map(({ deleted: _deleted, ...item }) => item as SharedRecord);
   }
   return next;
 }
@@ -298,7 +325,8 @@ export class MobileCompanionSync {
       const record = await this.read(scope.uid);
       const phone = snapshot(await this.deps.readLocal());
       this.check(scope);
-      record.companion = capturePhoneChanges(record.companion, null, phone, this.now());
+      const owner = await this.deps.getItem(OWNER_KEY);
+      record.companion = capturePhoneChanges(record.companion, owner === scope.uid ? record.baseline : null, phone, this.now());
       record.baseline = phone;
       record.pending = true;
       record.enabled = true;
@@ -400,6 +428,6 @@ export function getCompanionSync(): Promise<MobileCompanionSync> {
     });
     onAuthStateChanged(auth, (user) => service.accountChanged(user?.uid ?? null));
     return service;
-  })();
+  })().catch((error) => { instance = undefined; throw error; });
   return instance;
 }

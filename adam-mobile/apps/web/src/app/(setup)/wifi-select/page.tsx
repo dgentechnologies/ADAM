@@ -50,7 +50,7 @@ export default function WifiSelectPage() {
         <ScreenHeader
           size="md"
           title="Get him online."
-          subtitle="Select a network to connect ADAM to your local environment."
+          subtitle="Choose a sample network for this BLE simulation. Your phone’s Wi-Fi stays unchanged."
         />
       </div>
 

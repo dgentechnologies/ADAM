@@ -1,7 +1,10 @@
+'use client';
 import { Page, Panel } from '@/components/companion-ui';
+import { useSetupStore } from '@/stores/setup-store';
 export default function PrivacyPage() {
+  const completedAt = useSetupStore((state) => state.completedAt);
   return (
-    <Page title="Privacy notice" back="/settings">
+    <Page title="Privacy notice" back={completedAt ? '/settings' : '/sign-in'}>
       <p className="eyebrow">ADAM COMPANION · OCTOBER 2026</p>
       <h2 className="page-title">
         Your information,
@@ -12,8 +15,8 @@ export default function PrivacyPage() {
         <h3 className="mb-3 font-medium">On this phone</h3>
         <p className="text-fg-muted text-sm leading-7">
           Memories, gallery photos, face images, and preferences are stored locally in the app.
-          Memories and selected preferences can also sync to your account when you enable account
-          sync and tap Sync now. Photos, face images, and private keys stay on this phone.
+          Memories, planner entries, saved ADAM devices and selected preferences can also sync to your account when you enable account
+          sync and tap Sync now. After that, changes sync while the app is open and online. Photos, face images, and private keys stay on this phone.
           Uninstalling removes local data. Backups and photo sharing happen only when you choose them.
         </p>
       </Panel>
@@ -22,7 +25,7 @@ export default function PrivacyPage() {
         <p className="text-fg-muted text-sm leading-7">
           Google Firebase handles authentication. Your account ID, name, email, and optional Google
           avatar are used for your cloud profile. In Your profile, you can choose to share memories,
-          people, voice, wake word, and AI selections with the same account on desktop. Turning sync
+          people, to-dos, clocks, saved devices, voice, wake word, and AI selections with the same account on desktop. Turning sync
           off keeps existing phone and account data; deleting your account removes its shared data.
           On Android, sign-in credentials and saved API
           tokens use encrypted storage backed by Android Keystore. You can sign out or delete your

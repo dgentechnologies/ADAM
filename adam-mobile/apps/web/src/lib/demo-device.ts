@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { getItem, setItem } from './native/preferences';
-import { errorMessage } from './local-data';
+import { errorMessage, readLocalData, saveRecord } from './local-data';
 
 const Schema = z.object({
   connected: z.boolean().default(false),
@@ -17,13 +17,23 @@ const Schema = z.object({
 });
 export type DemoDevice = z.infer<typeof Schema>;
 const KEY = 'adam.demo.v1';
+const SELECTED = 'adam.demo.selected.v1';
+export async function selectSimulatedDevice(id: string) {
+  const device = (await readLocalData()).devices.find((item) => item.id === id);
+  if (!device?.simulated) throw new Error('Choose a saved simulated ADAM.');
+  await setItem(SELECTED, id);
+  await updateDemoDevice({ connected: true, name: device.name });
+}
 const initial = () => Schema.parse({});
 let pending: Promise<unknown> = Promise.resolve();
 async function read(): Promise<DemoDevice> {
-  const raw = await getItem(KEY);
+  const selected = await getItem(SELECTED);
+  const saved = selected ? (await readLocalData()).devices.find((item) => item.id === selected) : undefined;
+  if (selected && !saved) return initial();
+  const raw = await getItem(selected ? `${KEY}.${selected}` : KEY);
   if (!raw) return initial();
   try {
-    return Schema.parse(JSON.parse(raw));
+    return Schema.parse({ ...JSON.parse(raw), ...(saved ? { name: saved.name } : {}) });
   } catch {
     return initial();
   }
@@ -33,7 +43,12 @@ export function updateDemoDevice(patch: Partial<DemoDevice>) {
     .catch(() => undefined)
     .then(async () => {
       const next = Schema.parse({ ...(await read()), ...patch });
-      await setItem(KEY, JSON.stringify(next));
+      const selected = await getItem(SELECTED);
+      if (selected && patch.name) {
+        const saved = (await readLocalData()).devices.find((item) => item.id === selected);
+        if (saved) await saveRecord('devices', { ...saved, name: patch.name });
+      }
+      await setItem(selected ? `${KEY}.${selected}` : KEY, JSON.stringify(next));
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('adam:demo'));
       return next;
     });
@@ -65,9 +80,11 @@ export function useDemoDevice() {
     };
     refresh();
     window.addEventListener('adam:demo', refresh);
+    window.addEventListener('adam:data', refresh);
     return () => {
       active = false;
       window.removeEventListener('adam:demo', refresh);
+      window.removeEventListener('adam:data', refresh);
     };
   }, []);
   return { device, loading, error };

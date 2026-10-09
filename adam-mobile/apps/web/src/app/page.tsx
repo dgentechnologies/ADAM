@@ -2,7 +2,7 @@
 
 import { Wordmark } from '@adam/ui';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 import { useSetupStore } from '@/stores/setup-store';
 
@@ -23,16 +23,7 @@ export default function RootPage() {
   const router = useRouter();
   const completedAt = useSetupStore((state) => state.completedAt);
   const currentStep = useSetupStore((state) => state.currentStep);
-  const [hydrated, setHydrated] = useState(() => useSetupStore.persist.hasHydrated());
-
   useEffect(() => {
-    if (hydrated) return;
-    return useSetupStore.persist.onFinishHydration(() => setHydrated(true));
-  }, [hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-
     // One frame of the wordmark before moving on — the "waking up" beat.
     const timer = setTimeout(() => {
       if (completedAt) {
@@ -43,7 +34,7 @@ export default function RootPage() {
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [hydrated, completedAt, currentStep, router]);
+  }, [completedAt, currentStep, router]);
 
   return (
     <main className="relative flex min-h-dvh flex-col items-center justify-center">

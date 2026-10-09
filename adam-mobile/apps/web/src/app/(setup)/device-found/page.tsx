@@ -52,7 +52,7 @@ export default function DeviceFoundPage() {
             }}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Nearby • BLE Connected</span>
+            <span>Demo • BLE Simulation</span>
           </div>
 
           {/* ADAM Signature Glowing Eyes (Clean, borderless, no container outline) */}

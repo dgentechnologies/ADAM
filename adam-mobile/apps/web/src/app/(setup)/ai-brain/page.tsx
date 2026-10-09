@@ -3,6 +3,8 @@
 import type { AiBrainMode } from '@adam/types';
 import { OptionCard, Screen, ScreenHeader } from '@adam/ui';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { updateLocalData, errorMessage } from '@/lib/local-data';
 
 import { nextStep, setupHref } from '@/lib/setup-flow';
 import { useSetupStore } from '@/stores/setup-store';
@@ -46,12 +48,19 @@ export default function AiBrainPage() {
   const setAiBrainMode = useSetupStore((state) => state.setAiBrainMode);
   const complete = useSetupStore((state) => state.complete);
   const isFounderEdition = useSetupStore((state) => state.isFounderEdition);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  function choose(mode: AiBrainMode) {
+  async function choose(mode: AiBrainMode) {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+    await updateLocalData((data) => ({ ...data, brain: mode }));
     setAiBrainMode(mode);
     complete('ai-brain');
     const next = nextStep('ai-brain', { isFounderEdition, aiBrainMode: mode });
     router.push(next === 'done' ? '/home' : setupHref(next));
+    } catch (failure) { setError(errorMessage(failure)); } finally { setBusy(false); }
   }
 
   return (
@@ -63,6 +72,7 @@ export default function AiBrainPage() {
       />
 
       <div className="flex flex-col gap-stack-md pt-stack-lg">
+        {error && <p role="alert" className="text-sm text-amber-400">{error}</p>}
         {MODES.map(({ mode, title, description, badge }) => (
           <OptionCard
             key={mode}
@@ -70,7 +80,8 @@ export default function AiBrainPage() {
             description={description}
             badge={badge}
             affordance="chevron"
-            onSelect={() => choose(mode)}
+            disabled={busy}
+            onSelect={() => void choose(mode)}
           />
         ))}
       </div>

@@ -112,7 +112,8 @@ async function switchView(id) {
     if(id==='memories'){await loadMemories();if($('robotMemoriesPanel').open)await window.AdamClock?.refresh();}
     if(id==='activity')await loadLogs();
     if(id==='coding')await loadCoding();
-    if(id==='clock')await window.AdamClock?.refresh();
+    if(id==='clock'){await window.AdamShared?.refresh();await window.AdamClock?.refresh();}
+    if(id==='devices')await window.AdamShared?.refresh();
   }catch(e){toast(e.message,true);}
 }
 async function loadSettings(fill=false){
@@ -345,7 +346,9 @@ async function loadAccountDevices(){
   finally{ui.busy.delete('devices');}
 }
 async function loadAccount(){
+  const previousAccount=ui.account.user?.uid;
   const d=await api('/account/status');ui.account=d.account||d;
+  if(previousAccount!==ui.account.user?.uid)window.AdamShared?.accountChanged();
   const signed=!!ui.account.signed_in,user=ui.account.user||{};
   $('accountSignedOut').hidden=signed;$('accountSignedIn').hidden=!signed;
   if(!signed)$('accountDeviceList').replaceChildren();
@@ -355,7 +358,7 @@ async function loadAccount(){
   const sync=ui.account.sync||{};const syncText=sync.error?'Sync needs attention':sync.syncing?'Syncing':sync.pending?'Changes waiting to sync':sync.lastSynced?'Last synced '+formatDate(sync.lastSynced):signed?'Ready to sync':'Saved on this computer';
   text('accountSyncState',syncText);text('memorySyncStatus',syncText);
   $('importGuestPanel').hidden=!signed||!sync.guestMemories;
-  text('importGuestMessage',sync.guestMemories+' local memories are available on this computer. Import them only if they belong in this account.');
+  text('importGuestMessage',sync.guestMemories+' local items are available on this computer. Import them only if they belong in this account.');
   $('cancelGoogleBtn').hidden=!ui.account.google?.pending;
   const prefs=ui.account.preferences||{};
   if(!$('sharedPreferences').open){$('preferenceVoice').value=prefs.voice||'Charon';$('preferenceWakeWord').value=prefs.wakeWord||'Hey ADAM';$('preferenceBrain').value=prefs.brain||'lite';}
@@ -450,7 +453,7 @@ function bindUI(){
   bind('hideCredentialsBtn',hideCredentials);bind('copyCredentialsBtn',async()=>{if(!$('credentialToken').value)return;await navigator.clipboard.writeText($('credentialToken').value);toast('Connection key copied.');});
   bind('googleSignInBtn',async()=>{const d=await api('/account/google/start',{});ui.googlePending=true;status('accountMessage',d.message||'Continue in your browser, then return here.');});
   bind('cancelGoogleBtn',async()=>{await api('/account/google/cancel',{});ui.googlePending=false;await loadAccount();status('accountMessage','Browser sign-in cancelled.');});
-  bind('importGuestBtn',async()=>{if(!await confirmAction('Import local memories into this account?','These memories will be copied to '+(ui.account.user?.email||'your signed-in account')+' and synced with its devices.','Import memories'))return;await api('/account/import-guest',{});ui.syncPending=true;await loadAccount();await loadMemories();});
+  bind('importGuestBtn',async()=>{if(!await confirmAction('Import local items into this account?','Memories, planner entries and saved devices will be copied to '+(ui.account.user?.email||'your signed-in account')+' and synced with its devices.','Import items'))return;await api('/account/import-guest',{});ui.syncPending=true;await loadAccount();await loadMemories();});
   submit('accountPreferencesForm',async()=>{await api('/account/preferences',{voice:$('preferenceVoice').value,wakeWord:$('preferenceWakeWord').value,brain:$('preferenceBrain').value});toast('Companion preferences saved.');if(ui.account.signed_in)await syncAccount();});
   submit('emailSignInForm',async()=>{try{await api('/account/email',{email:$('accountEmail').value.trim(),password:$('accountPassword').value,create:ui.createAccount,name:$('accountName').value.trim()});$('accountPassword').value='';await loadAccount();await loadMemories();toast('Your ADAM account is connected.');}catch(e){status('accountMessage',e.message,true);throw e;}});
   bind('toggleCreateAccountBtn',()=>{ui.createAccount=!ui.createAccount;$('accountNameLabel').hidden=!ui.createAccount;$('accountPassword').autocomplete=ui.createAccount?'new-password':'current-password';text('emailSignInBtn',ui.createAccount?'Create account':'Sign in');text('toggleCreateAccountBtn',ui.createAccount?'I already have an account':'Create an account');});

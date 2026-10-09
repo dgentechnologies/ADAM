@@ -57,7 +57,7 @@ export default function CameraPermissionPage() {
           align="center"
           size="md"
           title="Let ADAM see you"
-          subtitle="He learns your face so he knows who he's talking to. Face data stays on the device and is never uploaded — no photos, only a local mathematical signature you can delete any time from Settings → Memory."
+          subtitle="Create a private face profile with front and side photos. Photos stay on this phone. Recognition and transfer to ADAM are simulated for now."
         />
       </div>
 

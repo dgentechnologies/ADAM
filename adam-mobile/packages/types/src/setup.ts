@@ -16,6 +16,7 @@ export const SetupStep = z.enum([
   'wifi-select',
   'wifi-password',
   'connecting',
+  'name-device',
   'founder-reveal',
   'ai-brain',
   'byok',

@@ -16,6 +16,7 @@ export const SETUP_ORDER: readonly SetupStep[] = [
   'wifi-select',
   'wifi-password',
   'connecting',
+  'name-device',
   'founder-reveal',
   'ai-brain',
   'byok',
@@ -34,6 +35,17 @@ export function stepFromPathname(pathname: string): SetupStep | null {
   return SETUP_ORDER.find((step) => step === slug) ?? null;
 }
 
+export function previousSetupHref(path: string, context: { isFounderEdition: boolean; aiBrainMode: string | null; completedAt: string | null }): string | null {
+  const step = stepFromPathname(path);
+  if (!step || step === 'splash' || step === 'welcome') return null;
+  if (step === 'sign-in' && context.completedAt) return '/settings/account';
+  if (step === 'name-device') return '/wifi-password';
+  if (step === 'ai-brain') return context.isFounderEdition ? '/founder-reveal' : '/name-device';
+  if (step === 'byok' || step === 'credits') return '/ai-brain';
+  if (step === 'camera-permission') return context.aiBrainMode === 'byok' ? '/byok' : context.aiBrainMode === 'managed' ? '/credits' : '/ai-brain';
+  return setupHref(SETUP_ORDER[Math.max(0, SETUP_ORDER.indexOf(step) - 1)]!);
+}
+
 /**
  * Branch points the linear order cannot express:
  *  - a non-Founder unit skips the reveal;
@@ -46,6 +58,8 @@ export function nextStep(
 ): SetupStep | 'done' {
   switch (step) {
     case 'connecting':
+      return 'name-device';
+    case 'name-device':
       return context.isFounderEdition ? 'founder-reveal' : 'ai-brain';
     case 'ai-brain':
       if (context.aiBrainMode === 'byok') return 'byok';

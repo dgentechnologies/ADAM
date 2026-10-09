@@ -11,6 +11,10 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { getItem, removeItem, setItem } from '../lib/native/preferences';
+import { setupStorage } from '../lib/setup-storage';
+
+// Separate from persisted state: reporting a read failure must never write defaults.
+export const useSetupLoading = create<{ status: 'loading' | 'ready' | 'error' }>(() => ({ status: 'loading' }));
 
 /**
  * Setup wizard state.
@@ -76,11 +80,16 @@ export const useSetupStore = create<SetupStore>()(
     }),
     {
       name: STORAGE_KEY,
-      storage: createJSONStorage(() => ({
+      skipHydration: true,
+      storage: createJSONStorage(() => setupStorage({
         getItem: (name) => getItem(name),
         setItem: (name, value) => setItem(name, value),
         removeItem: (name) => removeItem(name),
       })),
+      onRehydrateStorage: () => {
+        useSetupLoading.setState({ status: 'loading' });
+        return (_state, error) => useSetupLoading.setState({ status: error ? 'error' : 'ready' });
+      },
       /** Actions are recreated on load; only the data half is written. */
       partialize: (state) => SetupState.parse(state satisfies SetupState),
       merge: (persisted, current) => {

@@ -109,7 +109,7 @@ export default function DataPage() {
         <Shield size={25} strokeWidth={1.3} />
         <p className="text-fg-muted mt-4 text-sm leading-7">
           Your data stays on this phone by default. In Your profile, you can choose to sync memories,
-          people, and selected preferences with your desktop account. Photos, face profiles,
+            people, planner entries, saved ADAM devices, and selected preferences with your desktop account. Photos, face profiles,
           notification history, and private keys stay on this phone.
         </p>
       </Panel>
@@ -118,7 +118,7 @@ export default function DataPage() {
       <Panel>
         <h3 className="text-sm font-semibold">Memory backup</h3>
         <p className="text-fg-muted my-4 text-sm leading-6">
-          Export your memories, name, and preferences. API keys, access tokens, photos, and face
+            Export your memories, planner, saved devices, name, and preferences. API keys, access tokens, photos, and face
           images are excluded. Share photos individually from Moments.
         </p>
         <div className="space-y-3">
@@ -154,8 +154,8 @@ export default function DataPage() {
           onConfirm={apply}
           busy={busy}
         >
-          Replace the memories and preferences on this phone with {restore.facts.length} saved
-          memories from this backup? Photos and credentials will stay as they are.
+            Replace the memories, planner, saved devices and preferences on this phone with {restore.facts.length} memories,
+            {restore.todos.length} to-dos, {restore.clocks.length} clocks and {restore.devices.length} devices from this backup? Photos and credentials will stay as they are.
           {error && <span className="mt-2 block">{error}</span>}
         </Confirm>
       )}

@@ -1477,6 +1477,45 @@ SYNC_HOST  = os.getenv("SYNC_HOST", "0.0.0.0")
 SYNC_PORT  = int(os.getenv("SYNC_PORT", "8766"))
 SYNC_TOKEN = os.getenv("SYNC_TOKEN", "").strip()
 
+# Version string, advertised in the mDNS TXT record and /api/ping.
+APP_VERSION = "41.1"
+
+# ── Self-provisioned sync token (zero-config pairing) ───────────────────────
+# If SYNC_TOKEN is not in the environment, generate one and keep it in
+# `.sync_token` beside this file instead of leaving the API read-only.
+#
+# Why: requiring a hand-edited .env was the single thing standing between "the
+# app found ADAM" and "the app can actually save to ADAM". The user should
+# never have to SSH into the Pi, invent a secret, paste it into a desktop app,
+# and keep the two in sync — that is four manual steps and three ways to get it
+# silently wrong, and an empty token made the Clock tab look broken when it was
+# only read-only.
+#
+# An env SYNC_TOKEN still wins, so an existing deployment keeps its token and
+# nothing rotates underneath it.
+#
+# The file is 0600 and its contents are never printed. It is NOT in git — see
+# .gitignore. This is a per-unit secret, like the mic calibration files: it must
+# never be copied between units.
+if not SYNC_TOKEN:
+    _token_file = BASE_DIR / ".sync_token"
+    try:
+        if _token_file.exists():
+            SYNC_TOKEN = _token_file.read_text(encoding="utf-8").strip()
+        if not SYNC_TOKEN:
+            import secrets
+            SYNC_TOKEN = secrets.token_urlsafe(32)
+            _token_file.write_text(SYNC_TOKEN, encoding="utf-8")
+            try:
+                os.chmod(_token_file, 0o600)
+            except Exception:
+                pass
+            print("  🔑 Generated this unit's sync token (.sync_token, mode 600)")
+    except Exception as e:
+        # Fail soft: no token means read-only, which is the safe direction.
+        print(f"  ⚠️  Could not establish a sync token ({e}) — API stays read-only")
+        SYNC_TOKEN = ""
+
 # ═════════════════════════════════════════════════════════════════════════════
 # MODEL ROUTER — specialised on-demand generation (v41, master prompt §10/§12)
 # ------------------------------------------------------------------------------

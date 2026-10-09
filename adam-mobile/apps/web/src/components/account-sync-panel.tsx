@@ -76,8 +76,9 @@ export function AccountSyncPanel({ uid, email }: { uid: string; email: string })
         </div>
       </div>
       <p className="text-fg-muted my-4 text-sm leading-6">
-        Share memories, people, and your voice, wake word, and AI selections with the same account
+        Share memories, people, to-dos, clocks, saved ADAM devices, and your voice, wake word, and AI selections with the same account
         on your PC. Photos, face profiles, notifications, and private keys stay on this phone.
+        After your first sync, changes sync automatically while the app is open and online.
       </p>
       {status.enabled ? (
         <div className="space-y-3">
@@ -103,10 +104,10 @@ export function AccountSyncPanel({ uid, email }: { uid: string; email: string })
       {(error || status.error) && <div className="mt-3"><Notice error>{error || status.error}</Notice></div>}
       {message && <div className="mt-3"><Notice>{message}</Notice></div>}
       {confirm && (
-        <Confirm title="Share this phone's memories?" busy={busy}
+        <Confirm title="Sync this phone with your account?" busy={busy}
           onClose={() => setConfirm(false)} onConfirm={() => void action('enable')}>
           Enable sync for <strong className="break-all">{email || 'this signed-in account'}</strong>.
-          Your current phone memories and selections will be included when you tap Sync now.
+          Your current memories, planner, saved devices and selections will be included when you tap Sync now.
           Account changes and deletions will also appear here after syncing. Photos and other
           private phone data are excluded. You can turn sync off at any time.
           {error && <span className="mt-2 block">{error}</span>}

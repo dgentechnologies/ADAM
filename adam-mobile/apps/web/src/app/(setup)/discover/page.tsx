@@ -31,7 +31,7 @@ export default function DiscoverPage() {
   useEffect(() => {
     if (!isSuccess || !first) return;
     selectDevice(first.serial, first.isFounderEdition, first.isFounderEdition ? 7 : null);
-    const timer = setTimeout(() => router.push('/device-found'), 15000);
+    const timer = setTimeout(() => router.push('/device-found'), 750);
     return () => clearTimeout(timer);
   }, [isSuccess, first, router, selectDevice]);
 
@@ -48,8 +48,8 @@ export default function DiscoverPage() {
             title={first ? 'Found him.' : 'Looking for ADAM...'}
             subtitle={
               first
-                ? `${first.shortId} is responding over ${first.transport.toUpperCase()}.`
-                : 'Make sure he’s powered on and the eyes are open.'
+                ? `${first.shortId} is ready in BLE simulation.`
+                : 'Previewing discovery. Real ADAM BLE pairing will be available later.'
             }
           />
         </div>

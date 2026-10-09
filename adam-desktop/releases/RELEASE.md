@@ -3,15 +3,15 @@
 Artifact: **`adam-desktop/releases/adamV0.01.exe`**. The release is a portable
 Windows x64 app. It is not an MSI/setup installer and has no supplied Authenticode
 signing certificate. The executable name requested for distribution is retained
-independently of the internal PyInstaller output `dist/ADAM.exe`.
+independently of the internal PyInstaller output `artifacts/dist/ADAM.exe`.
 
 ## Build prerequisites
 
 - Windows x64 and Python3.11 x64.
 - Dependencies from `requirements-dev.txt`; this includes the pinned runtime
   dependencies and PyInstaller6.16.0.
-- Local assets in `static`, `assets`, and `logo.png`.
-- The project's native Desktop OAuth client in `firebase-desktop-client.json`
+- Local assets under `resources/static`, `resources/icons`, and `resources/logo.png`.
+- The project's native Desktop OAuth client in `config/local/firebase-desktop-client.json`
   for the release's bundled Google configuration. Use an `installed` client
   for Firebase project `adam-ai1`, not `google-services.json` or a service-account
   key. Its contents must never be printed into a build log.
@@ -23,14 +23,14 @@ From `adam-desktop` in PowerShell:
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
-$env:ADAM_DATA_DIR=Join-Path $PWD 'output\test-data'
+$env:ADAM_DATA_DIR=Join-Path $PWD 'artifacts\qa\test-data'
 $env:ADAM_DISABLE_HARDWARE='1'
 .\.venv\Scripts\python.exe -m pytest tests -q
-.\.venv\Scripts\python.exe build_exe.py
-.\.venv\Scripts\python.exe test_exe.py
+.\.venv\Scripts\python.exe scripts\build.py
+.\.venv\Scripts\python.exe scripts\smoke.py
 ```
 
-`build_exe.py` reads the version from `config.py`, builds with PyInstaller, and
+`scripts/build.py` reads the version from `src/config.py`, builds with PyInstaller, and
 copies the output into `releases` with a matching `.exe.sha256` file. Verify the
 final file rather than an older `dist` output:
 
@@ -70,7 +70,7 @@ local checks from external account and physical-device acceptance.
 
 | Check | Result |
 | --- | --- |
-| Desktop automated suite | 96 passed; `output/desktop-tests.log` |
+| Desktop automated suite | 96 passed; `artifacts/qa/reorganization-tests.log` |
 | Pi touch suite | 16 passed; fixed single taps, double/triple/hold classification, priority, migration-compatible storage, async dispatch and API checks; no physical deployment |
 | Responsive browser checks | All 8 views at 860×620, 1060×740 and 1440×960; no horizontal overflow; dashboard fits one viewport |
 | Controls and navigation | 18 controls in 5 groups; 4 primary workspaces; permission save/reload, pause, search, response/error fixtures and workspace permission guidance passed |
@@ -79,8 +79,8 @@ local checks from external account and physical-device acceptance.
 | Glass menus | All 4 menus within all 3 window sizes; 28px blur and minimal content verified |
 | Occupied port and native source lifecycle | Passed with another service occupying the requested port; exact process identity, saved fallback port, verified second launch, tray/restore/shutdown |
 | Mobile package | `adam-mobile/releases/ADAM-0.2.1-release.apk` exists; mobile packaging has a separate record |
-| Portable EXE build/version/checksum | Passed; build exited 0; Windows x64, version 0.01, 35,484,995 bytes; checksum verified against the sidecar; `output/windows-build.log` |
-| Packaged WebView2 UI smoke | All 14 checks passed; process exited 0; `output/native-exe-x98gdxsg/report.json` and `native-window.png` |
+| Portable EXE build/version/checksum | Passed; build exited 0; Windows x64, version 0.01, 35,484,019 bytes; checksum verified against the sidecar; `artifacts/qa/reorganization-build.log` |
+| Packaged WebView2 UI smoke | All 14 checks passed; process exited 0; `artifacts/qa/native-exe-lj8aa38q/report.json` and `native-window.png` |
 | Google consent, email and Firebase rules | Requires configured project and a live test account; not tested here |
 | Real mobile↔desktop account exchange | Requires both clients and a live test account; not tested here |
 | Physical ADAM controls and touch pads | Pi source not deployed; hardware acceptance pending |
@@ -92,9 +92,9 @@ local checks from external account and physical-device acceptance.
 - Filename: `adamV0.01.exe`
 - File/product version: `0.01`
 - Architecture: Windows x64 (PE machine `0x8664`)
-- Size: **35,484,995 bytes**
+- Size: **35,484,019 bytes**
 - Authenticode status: **NotSigned**
-- SHA256: `f2a35131d1036085b7db0523c6fd877d6602f1de01ddf8f90703889593c3bf62`
+- SHA256: `a30e7af3bbdf450a52acd5879aa7df95c2fcdaf18cd751b720eac7ca62f288a4`
 - Checksum sidecar: `adamV0.01.exe.sha256`
 
 The final executable's smoke test verified that served UI assets match the
@@ -111,8 +111,8 @@ loopback session guards, empty/offline states, duplicate-launch activation and
 tray lifecycle. Then test supported hardware controls with an explicit human
 test session. Do not grant live account access merely to perform a UI smoke.
 
-Browser evidence: `output/workspace-final-qa.log`, `output/glass-qa.log` and
-screenshots under `output/playwright/release-*`. Control success/failure UI
+Browser evidence: `artifacts/qa/workspace-final-qa.log`, `artifacts/qa/glass-qa.log` and
+screenshots under `artifacts/qa/playwright/release-*`. Control success/failure UI
 checks use explicit browser response fixtures, not physical hardware changes.
 Account and robot connectivity tests use isolated local services.
 
@@ -120,6 +120,26 @@ The current build environment reports Python **3.11.0rc2 x64** and
 PyInstaller **6.16.0**. This records the actual toolchain used; a clean stable
 Python toolchain and publisher signing are recommended for a wider commercial
 distribution pipeline.
+
+## Workspace reorganization verification
+
+The executable above was rebuilt from `adam-desktop/src/` after relocating
+resources and packaging tools. The desktop suite passed **96 tests in 70.29s**.
+Both source and packaged native smoke checks passed all 14 checks; source
+evidence is in `artifacts/qa/native-source-5mzbcoc2/`. Windows Explorer resolved
+the custom relative icon path, recorded in
+`artifacts/qa/folder-icon-verification.json`.
+
+The sibling workspace is now `adam-mobile`. Its pnpm junctions were repaired,
+TypeScript 5.7.2 and Capacitor CLI 6.2.0 resolved, and the web TypeScript check
+passed. The existing Android APK checksum still matches its sidecar; no new
+Android APK was required for a directory rename.
+
+Previous browser and Pi results in the table refer to the earlier UI release;
+its evidence is preserved under `artifacts/qa/`. The previous executable,
+checksum and release record are in
+`artifacts/archive/release-before-reorganization/`. See
+[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the directory map and rationale.
 
 ## External integration acceptance
 

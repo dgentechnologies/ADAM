@@ -10,7 +10,7 @@ import {
 } from '@adam/ui';
 import type { HandoffProgress, HandoffStep } from '@adam/types';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { runHandoff } from '@/lib/mock/api';
 import { useSetupStore } from '@/stores/setup-store';
@@ -33,23 +33,22 @@ export default function ConnectingPage() {
   const ssid = useSetupStore((state) => state.selectedSsid);
   const complete = useSetupStore((state) => state.complete);
   const [progress, setProgress] = useState<HandoffProgress | null>(null);
-  const started = useRef(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     void runHandoff({ ssid: ssid ?? '', password: '' }, (next) => {
       if (!cancelled) setProgress(next);
     }).then(() => {
       if (cancelled) return;
       complete('connecting');
-      setTimeout(() => router.push('/name-device'), 700);
-    });
+      timer = setTimeout(() => router.push('/name-device'), 700);
+    }).catch(() => { if (!cancelled) setError('Setup could not finish. Please try the Wi-Fi step again.'); });
 
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [ssid, complete, router]);
 
@@ -65,7 +64,7 @@ export default function ConnectingPage() {
     state: state === 'complete' ? 'done' : state,
   }));
 
-  const failure = progress?.failure ?? null;
+  const failure = progress?.failure ?? (error || null);
 
   return (
     <Screen className="pt-safe">

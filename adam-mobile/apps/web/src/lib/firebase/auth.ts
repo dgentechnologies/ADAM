@@ -12,7 +12,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { performNativeGoogleSignIn } from '../native/google-auth';
+import { performNativeGoogleSignIn, signOutNativeGoogle } from '../native/google-auth';
 import { getFirebaseAuth, getFirebaseFirestore } from './config';
 export interface EnsureUserResult {
   isNewUser: boolean;
@@ -112,12 +112,17 @@ export async function checkAuthStateAndLinkedDevice(
 }
 export async function signOutUser() {
   await signOut(getFirebaseAuth());
+  await signOutNativeGoogle().catch(() => undefined);
 }
 export function subscribeToAuthState(callback: (user: User | null) => void) {
   return onAuthStateChanged(getFirebaseAuth(), callback);
 }
 export function authError(error: unknown): string {
   const code = String((error as { code?: string })?.code ?? '');
+  if (code === '10' || code === '12500')
+    return 'Google sign-in is not configured for this app release. Please use email sign-in for now.';
+  if (code === '12501' || code === 'popup_closed_by_user') return 'Sign-in cancelled.';
+  if (code === '7') return 'Could not connect. Check your internet connection and try again.';
   if (/invalid-credential|wrong-password|user-not-found/.test(code))
     return 'The email or password is incorrect.';
   if (code.includes('email-already-in-use'))

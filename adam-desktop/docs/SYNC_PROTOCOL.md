@@ -1,5 +1,11 @@
 # ADAM companion account and sync protocol
 
+The current release writes **version 2**. See the canonical
+[shared protocol](../../shared/COMPANION_PROTOCOL.md) for to-dos, clocks, multiple
+named devices, BLE simulation, limits, and upgrade behavior. Both apps must be
+updated together. The version-1 memory/preference details below remain the
+base contract and migrate without loss into the current envelope.
+
 Desktop and mobile use the existing Firebase project `adam-ai1` and the same
 Firebase Auth user ID. A new Firebase project is not needed. Public web config
 is not a service-account credential. No service-account key ships in the app.

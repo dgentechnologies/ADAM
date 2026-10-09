@@ -38,7 +38,7 @@ export default function CreditsPage() {
       <ScreenHeader
         size="md"
         title="Pick a credit pack."
-        subtitle="Credits are active processing minutes. They never expire."
+        subtitle="Preview the planned credit packs. Billing is not connected and no payment is taken."
       />
 
       <div className="flex flex-col gap-stack-md pt-stack-lg">
@@ -65,7 +65,7 @@ export default function CreditsPage() {
 
       <ScreenActions>
         <Button block variant="primary" disabled={!selected} onClick={submit}>
-          Continue to Payment
+          Continue setup
           <ArrowRight className="h-5 w-5" strokeWidth={1.5} aria-hidden />
         </Button>
         <p className="text-center text-label-md text-fg-faint">
