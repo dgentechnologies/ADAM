@@ -551,15 +551,13 @@ BRIGHTNESS_STEP = 10
 @action("volume_up", "Increase system volume by 10%.", category="Media")
 def act_volume_up():
     new_val = min(100, get_system_volume() + VOLUME_STEP)
-    set_system_volume(new_val)
-    return {"volume": new_val}
+    return {"volume": set_system_volume(new_val)}
 
 
 @action("volume_down", "Decrease system volume by 10%.", category="Media")
 def act_volume_down():
     new_val = max(0, get_system_volume() - VOLUME_STEP)
-    set_system_volume(new_val)
-    return {"volume": new_val}
+    return {"volume": set_system_volume(new_val)}
 
 
 @action("volume_set", "Set system volume to an exact percentage.",
@@ -569,8 +567,7 @@ def act_volume_set(value: int):
         val = max(0, min(100, int(float(value))))
     except (ValueError, TypeError):
         return {"status": "error", "reason": f"Invalid numeric value: {value}"}
-    set_system_volume(val)
-    return {"volume": val}
+    return {"volume": set_system_volume(val)}
 
 
 @action("volume_mute", "Mute system audio.", category="Media")
@@ -590,15 +587,13 @@ def act_volume_unmute():
 @action("brightness_up", "Increase screen brightness by 10%.", category="System")
 def act_brightness_up():
     new_val = min(100, get_system_brightness() + BRIGHTNESS_STEP)
-    set_system_brightness(new_val)
-    return {"brightness": new_val}
+    return {"brightness": set_system_brightness(new_val)}
 
 
 @action("brightness_down", "Decrease screen brightness by 10%.", category="System")
 def act_brightness_down():
     new_val = max(0, get_system_brightness() - BRIGHTNESS_STEP)
-    set_system_brightness(new_val)
-    return {"brightness": new_val}
+    return {"brightness": set_system_brightness(new_val)}
 
 
 @action("brightness_set", "Set screen brightness to an exact percentage.",
@@ -608,8 +603,7 @@ def act_brightness_set(value: int):
         val = max(0, min(100, int(float(value))))
     except (ValueError, TypeError):
         return {"status": "error", "reason": f"Invalid numeric value: {value}"}
-    set_system_brightness(val)
-    return {"brightness": val}
+    return {"brightness": set_system_brightness(val)}
 
 
 def _send_media_key(vk: int):
@@ -1328,8 +1322,9 @@ def pi_snapshot_endpoint():
     data, err = _pi_call("GET", "/api/snapshot")
     if err:
         return jsonify({"status": "error", "reason": err,
-                        "cached": False}), 200
+                        "cached": False, "connection": connection.status()}), 200
     return jsonify({"status": "ok", "data": data.get("data", {}),
+                    "connection": connection.status(),
                     "fetched_at": time.time()})
 
 

@@ -80,6 +80,10 @@ inventing a successful result. Clipboard, screen locking and coding-task
 dispatch start disabled. The Windows desktop does not request microphone,
 camera, notification-reading or accessibility access for these controls.
 
+If voice controls cannot find the laptop or Planner reports read-only access,
+follow [Voice controls and planner access](docs/CONTROL_TROUBLESHOOTING.md) to
+configure the Pi key and authorize the return connection to this computer.
+
 Coding tools are separate installations with their own login and permissions.
 Select an existing absolute project path and enable coding tasks before use.
 The runner is noninteractive and does not bypass the installed tool's approval

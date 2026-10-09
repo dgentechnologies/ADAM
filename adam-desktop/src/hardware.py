@@ -47,11 +47,20 @@ class WindowsHardwareWorker(threading.Thread):
             return bool(self._endpoint().GetMute())
         import screen_brightness_control as sbc
         if task == "set_bri":
-            sbc.set_brightness(args[0])
-        values = sbc.get_brightness()
-        if not values:
-            raise RuntimeError("This display does not expose brightness control")
-        return int(values[0] if isinstance(values, list) else values)
+            # The default no_return=True can hide failed writes. Read back
+            # through the same per-display operation so success is confirmed.
+            values = sbc.set_brightness(args[0], no_return=False)
+        elif task == "get_bri":
+            values = sbc.get_brightness()
+        else:
+            raise ValueError("Unknown hardware request")
+        # Mixed monitor setups return None for unsupported displays, even
+        # when another display worked. Do not let the first monitor mask it.
+        values = values if isinstance(values, list) else [values]
+        supported = [value for value in values if value is not None]
+        if not supported:
+            raise RuntimeError("No display acknowledged brightness control. For an external monitor, enable DDC/CI in its menu.")
+        return int(supported[0])
 
     def _refresh(self):
         for field, task in (("volume", "get_vol"), ("brightness", "get_bri")):
