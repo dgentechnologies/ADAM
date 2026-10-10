@@ -86,7 +86,7 @@ window.AdamClock=(()=>{
   }
   function init(){
     A().bind('clockRefreshBtn',refresh);
-    A().bind('clockConnectionBtn',async()=>{await A().switchView('devices');$('connectionToken').focus();});
+    A().bind('clockConnectionBtn',async()=>{await window.AdamOnboarding.selectDevice();});
     A().bind('robotMemoriesRefreshBtn',refresh);
     $('robotMemoriesPanel').addEventListener('toggle',()=>{if($('robotMemoriesPanel').open)refresh();});
     $('scheduleKind').addEventListener('change',()=>{

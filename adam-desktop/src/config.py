@@ -11,7 +11,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 APP_NAME = "ADAM Companion"
-APP_VERSION = "0.02"
+APP_VERSION = "0.03"
 MDNS_SERVICE_TYPE = "_adam-laptop._tcp.local."
 SOURCE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SOURCE_DIR.parent

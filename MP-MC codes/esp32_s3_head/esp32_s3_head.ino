@@ -729,6 +729,11 @@ static void stopBleAdvertising() {
 // ═════════════════════════════════════════════════════════════════════════════
 // SECTION 5 — INBOUND COMMANDS FROM THE PI
 // ═════════════════════════════════════════════════════════════════════════════
+// Pairing information is physical-display-only: never advertise or log it.
+static String desktopPairCode;
+static uint32_t desktopPairUntil = 0;
+static bool desktopPairPainted = false;
+
 static void handleLine(String line) {
     line.trim();
     if (line.length() == 0) return;
@@ -756,6 +761,26 @@ static void handleLine(String line) {
         v.toUpperCase();
         if (v == "ON")       startCamera();
         else if (v == "OFF") stopCamera();
+        return;
+    }
+
+    if (line.startsWith("PAIR:")) {
+        String rest = line.substring(5);
+        if (rest == "CLEAR") {
+            desktopPairCode = ""; desktopPairUntil = 0; desktopPairPainted = false;
+            return;
+        }
+        int split = rest.indexOf(':');
+        String code = rest.substring(0, split);
+        int seconds = rest.substring(split + 1).toInt();
+        if (split != 18 || seconds < 1 || seconds > 300) return;
+        for (int i = 0; i < 18; ++i) {
+            char c = code[i];
+            if (i < 12 ? !isxdigit(c) : !isdigit(c)) return;
+        }
+        desktopPairCode = code;
+        desktopPairUntil = millis() + seconds * 1000UL;
+        desktopPairPainted = false;
         return;
     }
 
@@ -855,5 +880,21 @@ void loop() {
     serviceTouch();
     serviceCamera();
     serviceServo();
-    updateEmotion();                   // drives the face animation
+    if (desktopPairCode.length() && (int32_t)(desktopPairUntil - millis()) > 0) {
+        if (!desktopPairPainted) {
+            tft.fillScreen(TFT_BLACK);
+            tft.setTextColor(TFT_WHITE, TFT_BLACK);
+            tft.setTextDatum(MC_DATUM);
+            tft.drawString("PAIR YOUR DESKTOP", tft.width()/2, 45, 2);
+            String pin = desktopPairCode.substring(0, 4) + "-" + desktopPairCode.substring(4, 8) + "-" + desktopPairCode.substring(8, 12);
+            tft.drawString(pin, tft.width()/2, 93, 2);
+            tft.drawString(desktopPairCode.substring(12), tft.width()/2, 135, 4);
+            tft.drawString("Enter both lines in your app", tft.width()/2, 180, 2);
+            tft.drawString("One use / expires in 5 minutes", tft.width()/2, 205, 2);
+            desktopPairPainted = true;
+        }
+    } else {
+        desktopPairCode = "";
+        updateEmotion();               // resumes the ordinary face
+    }
 }

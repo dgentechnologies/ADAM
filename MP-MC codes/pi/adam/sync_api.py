@@ -60,6 +60,7 @@ from memory_store import memory, conv_log
 import scheduler
 import touch_controls
 import laptop_pairing
+import desktop_pairing
 
 __all__ = ["start_sync_api", "stop_sync_api", "API_VERSION"]
 
@@ -106,9 +107,11 @@ async def _reply(writer, status: int, payload: dict) -> None:
 
 def _authorised(headers: dict) -> bool:
     """Writes need the token. An unset token means read-only, not open."""
-    if not SYNC_TOKEN:
-        return False
     supplied = headers.get("x-adam-token", "")
+    if desktop_pairing.authenticate(supplied):
+        return True
+    if desktop_pairing.identity() or not SYNC_TOKEN:
+        return False
     if not supplied:
         auth = headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
@@ -224,13 +227,50 @@ async def _handle(reader, writer) -> None:
             await _reply(writer, 200, {"ok": True})
             return
 
+        if path == "/api/pair/desktop" and method == "POST":
+            body, err = await _read_body(reader, headers)
+            if err:
+                await _reply(writer, err, {"ok": False})
+                return
+            try:
+                payload = desktop_pairing.claim(body)
+                await _reply(writer, 200, payload)
+            except ValueError:
+                await _reply(writer, 403, {"ok": False, "error": "Authorization required"})
+            return
+        if path in ('/api/sync/records', '/api/sync/apply'):
+            grant = desktop_pairing.authenticate(headers.get('x-adam-token', ''))
+            if not grant:
+                await _reply(writer, 403, {'ok': False, 'error': 'Authorization required'})
+                return
+            import record_sync
+            try:
+                if path == '/api/sync/records' and method == 'GET':
+                    payload = record_sync.snapshot()
+                elif path == '/api/sync/apply' and method == 'POST':
+                    body, err = await _read_body(reader, headers)
+                    if err:
+                        await _reply(writer, err, {'ok': False})
+                        return
+                    payload = record_sync.apply(body)
+                else:
+                    raise ValueError('Unsupported sync operation')
+                await _reply(writer, 200, payload)
+            except (ValueError, KeyError, TypeError):
+                await _reply(writer, 409, {'ok': False, 'error': 'Record rejected; refresh sync or check timezone and schema.'})
+            return
+        if path == "/api/pair/session" and method == "GET":
+            grant = desktop_pairing.authenticate(headers.get("x-adam-token", ""))
+            await _reply(writer, 200 if grant else 403, {"ok": bool(grant), **(grant or {})})
+            return
+
         if method == "GET":
             fn = _ROUTES_GET.get(path)
             if fn is None:
                 await _reply(writer, 404, {"error": "unknown path", "path": path})
                 return
             auth = _authorised(headers)
-            if path in _SENSITIVE_GET and not auth:
+            if (path in _SENSITIVE_GET or desktop_pairing.identity() and path not in ("/api/ping", "/api/pair/info")) and not auth:
                 await _reply(writer, 403, {
                     "error": "forbidden",
                     "reason": ("this read needs X-ADAM-Token — set SYNC_TOKEN "
@@ -373,39 +413,12 @@ async def _r_pair_info(authorised: bool = False) -> dict:
         ident = "ADAM"
     return {"ok": True, "api": API_VERSION, "id": ident, "name": "ADAM",
             "paired": _pair_state["paired"], "version": APP_VERSION,
-            "needs_token": not bool(SYNC_TOKEN)}
+            "needs_token": not bool(SYNC_TOKEN), "wsPort": 8765, **desktop_pairing.public_info()}
 
 
 async def _w_pair_claim(body: dict, method: str):
-    """Hand the sync token to a first-time claimer on the LAN."""
-    peer = str((body or {}).get("_peer", ""))
-
-    if not _is_private(peer):
-        # Off-LAN claims are refused outright. SYNC_HOST defaults to 0.0.0.0,
-        # so without this a routable address could claim the unit.
-        return 403, {"ok": False, "error": "pairing is only available on a "
-                                           "local network"}
-    if _pair_state["paired"]:
-        return 409, {"ok": False, "error": "already paired",
-                     "hint": "Unpair from the app that owns it, or say "
-                             "\"forget my laptop\" to ADAM."}
-    if not SYNC_TOKEN:
-        return 503, {"ok": False, "error": "this unit has no sync token"}
-
-    _pair_state.update({"paired": True, "peer": peer, "at": int(time.time())})
-    _save_pair_state()
-
-    try:
-        import discovery
-        await discovery.update_paired(True)
-    except Exception:
-        pass
-
-    # Announce it. A pairing the user did not initiate should be heard, not
-    # discovered weeks later.
-    print(f"  🔗 Paired with {peer}")
-    return 200, {"ok": True, "api": API_VERSION, "token": SYNC_TOKEN,
-                 "id": (await _r_pair_info())["id"], "name": "ADAM"}
+    """Legacy LAN-first claims cannot prove possession; never return the shared key."""
+    return 403, {"ok": False, "error": "Use authenticated desktop pairing with a code from ADAM."}
 
 
 async def _w_pair_release(body: dict, method: str):
@@ -622,8 +635,12 @@ async def start_sync_api():
     if _server is not None:
         return _server
     _load_pair_state()
+    if desktop_pairing.identity():
+        import memory_sync
+        memory_sync.recover()
+    asyncio.create_task(desktop_pairing.display_codes())
     try:
-        _server = await asyncio.start_server(_handle, SYNC_HOST, SYNC_PORT)
+        _server = await asyncio.start_server(_handle, SYNC_HOST, SYNC_PORT, ssl=desktop_pairing.ssl_context())
     except Exception as e:
         print(f"⚠️  Sync API unavailable on {SYNC_HOST}:{SYNC_PORT}: {e}")
         return None

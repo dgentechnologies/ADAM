@@ -22,6 +22,11 @@ def build_tools() -> list:
     return [types.Tool(function_declarations=[
 
         types.FunctionDeclaration(
+            name="open_desktop_pairing",
+            description="Only when the user explicitly asks to pair or authorize their desktop computer, show a temporary pairing code on ADAM’s physical screen. Never speak or transmit the code.",
+            parameters=S(type=T.OBJECT, properties={})),
+
+        types.FunctionDeclaration(
             name="get_current_datetime",
             description="Returns the current local date and time.",
             parameters=S(type=T.OBJECT, properties={})),

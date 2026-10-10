@@ -103,3 +103,6 @@ adam-mobile/google-services.json
 /MP-MC codes/pi/adam/laptop_pairing.json.tmp
 /MP-MC codes/pi/adam/touch_assignments.json
 /MP-MC codes/pi/adam/touch_assignments.json.tmp
+
+# Robot-specific identity, TLS key and desktop authorizations
+/MP-MC codes/pi/adam/.desktop-pairing/

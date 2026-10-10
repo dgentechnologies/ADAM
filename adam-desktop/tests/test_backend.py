@@ -26,6 +26,11 @@ class BackendTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location(name, APP / "backend.py")
         self.backend = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.backend)
+        # Existing endpoint tests run inside an already verified session.
+        # Mandatory-gate denial and lifecycle tests live in test_onboarding.py.
+        gate = patch.object(self.backend.onboarding, 'status', return_value={'ready': True})
+        gate.start()
+        self.addCleanup(gate.stop)
         self.backend.app.config.update(TESTING=False, PROPAGATE_EXCEPTIONS=False)
         self.client = self.backend.app.test_client()
         self.headers = {"X-ADAM-Session": self.backend.DESKTOP_SESSION}
@@ -55,21 +60,13 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(before, self.backend.CURRENT_ROBOT_STATE)
         self.assertFalse(self.backend.connection.status()["connected"])
 
-    def test_shared_devices_planner_and_ble_use_real_local_endpoints(self):
-        first = self.local('/companion/devices', {'name': 'Desk', 'serial': 'SIM-1', 'simulated': True})
-        self.assertEqual(first.status_code, 200)
-        device = first.json['items'][0]
-        self.assertEqual(self.local('/companion/devices', {**device, 'name': 'Library'}).json['items'][0]['id'], device['id'])
-        second = self.local('/companion/devices', {'name': 'Studio', 'serial': 'SIM-2', 'simulated': True})
-        self.assertEqual(len(second.json['items']), 2)
-        todo = self.local('/companion/todos', {'text': 'Check the app', 'done': False, 'dueAt': '', 'deviceId': device['id']}).json['items'][0]
-        clock = self.local('/companion/clocks', {'kind': 'alarm', 'label': 'Morning', 'when': '2026-10-10T04:00:00.000Z', 'enabled': True, 'deviceId': ''})
-        self.assertEqual(clock.status_code, 200)
-        self.assertEqual(self.local('/companion/ble-sync', {'deviceId': device['id']}).json['companion']['todos'][todo['id']]['text'], 'Check the app')
-        self.local('/companion/todos/delete', {'id': todo['id']})
-        self.assertEqual(self.local('/companion/todos').json['items'], [])
-        self.assertTrue(self.local('/companion/ble-sync', {'deviceId': device['id']}).json['companion']['todos'][todo['id']]['deleted'])
-        self.assertEqual(next(item for item in self.local('/companion/devices').json['items'] if item['id'] == device['id'])['name'], 'Library')
+    def test_legacy_records_remain_readable_but_cannot_create_new_split_brain_writes(self):
+        self.backend.cloud.save_record('todos', {'text':'Preserved legacy item','done':False,'dueAt':'','deviceId':''})
+        original = self.local('/companion/todos').json['items']
+        for path, body in [('/companion/todos', {'text':'New item'}),
+                           ('/companion/todos/delete', {'id':original[0]['id']})]:
+            self.assertEqual(self.local(path, body).status_code, 400)
+        self.assertEqual(self.local('/companion/todos').json['items'], original)
 
     def test_shared_data_endpoints_require_local_session(self):
         for route in ('/companion/devices', '/companion/todos', '/companion/clocks'):
@@ -152,7 +149,8 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(response.get_json()["status"], "error")
 
     def test_memory_validation_preserves_existing_records(self):
-        response = self.local("/memories", {"title": "Fixture", "text": "Keep this", "kind": "fact"})
+        self.backend.cloud.save_memory({"title": "Fixture", "text": "Keep this", "kind": "fact"})
+        response = self.local("/memories")
         self.assertEqual(response.status_code, 200)
         original = response.get_json()["memories"]
         for body in ({"title": [], "text": "No", "kind": "fact"},

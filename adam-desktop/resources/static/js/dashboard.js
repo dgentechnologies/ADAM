@@ -94,7 +94,7 @@ function renderSectionNav(id){
   });
 }
 async function switchView(id) {
-  if(!VIEW_NAMES[id])return;
+  if(!VIEW_NAMES[id]||window.AdamOnboarding&&!window.AdamOnboarding.ready)return;
   if(ui.view==='devices'&&id!=='devices')hideCredentials();
   ui.view=id;
   document.querySelector('.profile-link').setAttribute('aria-current',id==='settings'?'page':'false');
@@ -109,7 +109,7 @@ async function switchView(id) {
     if(id==='settings'){await Promise.all([loadSettings(true),loadAccount()]);}
     if(id==='actions')await loadActions();
     if(id==='devices'){await Promise.all([loadSettings(true),loadAccount()]);await loadAccountDevices();}
-    if(id==='memories'){await loadMemories();if($('robotMemoriesPanel').open)await window.AdamClock?.refresh();}
+    if(id==='memories'){await window.AdamShared?.refresh();await loadMemories();if($('robotMemoriesPanel').open)await window.AdamClock?.refresh();}
     if(id==='activity')await loadLogs();
     if(id==='coding')await loadCoding();
     if(id==='clock'){await window.AdamShared?.refresh();await window.AdamClock?.refresh();}
@@ -321,57 +321,11 @@ function updatePairingControls(){
   text('laptopPairingHelp',!ready?'Connect ADAM above, then allow it to use the laptop actions you have enabled.':robot.read_only?robot.reason||'Add ADAM’s connection key above and reconnect to authorize laptop control.':!capable?'This ADAM needs an updated companion service for guided pairing. You can also use manual pairing below.':'Allow this ADAM to run your enabled laptop actions. You can pause control from Dashboard at any time.');
 }
 async function loadAccountDevices(){
-  if(ui.busy.has('devices'))return;ui.busy.add('devices');
-  const owner=ui.account.user?.uid,root=$('accountDeviceList');root.replaceChildren();
-  status('accountDevicesStatus','Finding your devices…');
-  try{
-    const data=await api('/account/devices');
-    if(owner!==ui.account.user?.uid)return;
-    const devices=Array.isArray(data.devices)?data.devices:[];
-    if(!ui.account.signed_in){
-      status('accountDevicesStatus','Sign in with your mobile account to see the ADAM linked to it. You can also use Find ADAM on this network above.');
-      root.append(actionButton('Sign in',()=>switchView('settings'),'button subtle','user'));
-      return;
-    }
-    if(!devices.length){
-      status('accountDevicesStatus','No ADAM is linked to this account yet. Set one up in the mobile app, then refresh.');
-      return;
-    }
-    // Cross-reference the account's devices against what is actually on this
-    // network. The cloud knows WHICH ADAM is yours; mDNS knows WHERE it is. One
-    // without the other is not enough: the cloud has no routable address for a
-    // LAN device, and discovery alone cannot tell your ADAM from a flatmate's.
-    let nearby=[];
-    try{nearby=(await api('/discover/adam')).units||[];}catch(e){/* offline is fine */}
-    const byId={};nearby.forEach(u=>{byId[String(u.id).toUpperCase()]=u;});
-    let matched=0;
-    devices.forEach(device=>{
-      const id=String(device.deviceId||device.serial||'').toUpperCase();
-      const here=byId[id];
-      if(here)matched++;
-      const card=element('article','device-card'),info=element('div');
-      info.append(element('h4','',device.name||device.deviceId||'Your ADAM'),
-                  element('p','',here?(here.connected?'Connected · '+here.host:'On this network · '+here.host):'Not on this network right now'));
-      const label=here?(here.connected?'Connected':'Connect'):'Unavailable';
-      const choose=actionButton(label,async()=>{
-        status('accountDevicesStatus','Connecting to '+(device.name||id)+'…');
-        try{
-          const r=await api('/pair/adam',{host:here.host,port:here.port});
-          if(r.status!=='ok')throw new Error(r.reason||'Pairing failed.');
-          status('accountDevicesStatus','Connected to '+(r.id||id)+'.');
-          toast('ADAM connected.');
-          await loadSettings(true);await loadStatus();await loadAccountDevices();
-        }catch(e){status('accountDevicesStatus',e.message,true);throw e;}
-      },'button primary','arrow');
-      // Disabled when the unit is not reachable here: the cloud record alone
-      // gives us no address to dial, so offering Connect would always fail.
-      choose.disabled=!here||here.connected;
-      card.append(icon('devices'),info,choose);root.append(card);
-    });
-    status('accountDevicesStatus',matched?'Found '+matched+' of your '+devices.length+' ADAM unit(s) on this network. Select one to connect — nothing to type.':'Your ADAM is linked to this account but is not on this network right now. Put it on the same Wi-Fi, then refresh.');
-  }catch(e){status('accountDevicesStatus',e.message+' You can still use Find ADAM on this network above.',true);}
-  finally{ui.busy.delete('devices');}
+  const root=$('accountDeviceList');root.replaceChildren();
+  root.append(actionButton('Choose another ADAM',()=>window.AdamOnboarding.selectDevice(),'button primary','devices'));
+  status('accountDevicesStatus','Device selection rechecks account ownership, identity and local authorization.');
 }
+
 async function loadAccount(){
   const previousAccount=ui.account.user?.uid;
   const d=await api('/account/status');ui.account=d.account||d;
@@ -380,7 +334,7 @@ async function loadAccount(){
   $('accountSignedOut').hidden=signed;$('accountSignedIn').hidden=!signed;
   if(!signed)$('accountDeviceList').replaceChildren();
   text('accountTitle',signed?'Welcome, '+(user.displayName||user.display_name||'you')+'.':'Bring your world together.');
-  text('accountDescription',signed?'Your ADAM account connects this desktop with your mobile memories.':'Use the same account as the ADAM mobile app to keep your memories in sync.');
+  text('accountDescription',signed?'Your account connects this desktop to the canonical shared database.':'Sign in with the same account you use on your phone.');
   text('accountUserEmail',user.email||'—');
   const sync=ui.account.sync||{};const syncText=sync.error?'Sync needs attention':sync.syncing?'Syncing':sync.pending?'Changes waiting to sync':sync.lastSynced?'Last synced '+formatDate(sync.lastSynced):signed?'Ready to sync':'Saved on this computer';
   text('accountSyncState',syncText);text('memorySyncStatus',syncText);
@@ -389,7 +343,7 @@ async function loadAccount(){
   $('cancelGoogleBtn').hidden=!ui.account.google?.pending;
   const prefs=ui.account.preferences||{};
   if(!$('sharedPreferences').open){$('preferenceVoice').value=prefs.voice||'Charon';$('preferenceWakeWord').value=prefs.wakeWord||'Hey ADAM';$('preferenceBrain').value=prefs.brain||'lite';}
-  if(ui.syncPending&&!sync.syncing){ui.syncPending=false;await loadMemories();if(!sync.error)toast(sync.pending?'Saved locally. Changes are waiting to sync.':'Your memories are up to date.');}
+  if(ui.syncPending&&!sync.syncing){ui.syncPending=false;await loadMemories();if(!sync.error)toast(sync.pending?'Saved locally. Changes are waiting to sync.':'Canonical cloud sync finished. Robot delivery is tracked separately.');}
   if(sync.syncing)ui.syncPending=true;
   if(sync.error)status('accountMessage',sync.error,true);
   else if(ui.googlePending&&signed){ui.googlePending=false;status('accountMessage','You are signed in.');toast('Your ADAM account is connected.');await loadMemories();}
@@ -471,42 +425,9 @@ function updateCodingControls(){
 // nothing to type here — the manual address + key form below exists only for
 // an ADAM discovery cannot see (different subnet, VPN).
 async function findAdamUnits(){
-  const root=$('findAdamList');root.replaceChildren();
-  status('findAdamStatus','Looking for ADAM on your network…');
-  try{
-    const d=await api('/discover/adam');
-    const units=Array.isArray(d.units)?d.units:[];
-    if(!units.length){
-      status('findAdamStatus','No ADAM found yet. Make sure it is powered on and on this same Wi-Fi, then search again. Discovery needs a few seconds after ADAM starts.');
-      return;
-    }
-    status('findAdamStatus',units.length===1?'Found 1 ADAM. Select it to connect.':'Found '+units.length+' ADAM units. Select the one you want.');
-    units.forEach(u=>{
-      const card=element('article','device-card'),info=element('div');
-      const where=u.host+(u.port&&u.port!==8766?':'+u.port:'');
-      info.append(element('h4','',u.name&&u.name!=='ADAM'?u.name+' · '+u.id:u.id),
-                  element('p','',u.connected?'Connected · '+where:(u.paired?'Already paired with another device · '+where:where+(u.version?' · v'+u.version:''))));
-      // An already-paired unit is shown but not offered: claiming it would
-      // fail with 409, so a disabled button is honest where a failing one is
-      // not. The TXT record is what tells us, so this is accurate before we
-      // ever talk to the unit.
-      const label=u.connected?'Connected':(u.paired?'Unavailable':'Connect');
-      const choose=actionButton(label,async()=>{
-        status('findAdamStatus','Connecting to '+u.id+'…');
-        try{
-          const r=await api('/pair/adam',{host:u.host,port:u.port});
-          if(r.status!=='ok')throw new Error(r.reason||'Pairing failed.');
-          status('findAdamStatus','Connected to '+(r.id||u.id)+'. Alarms, to-dos and memories are ready.');
-          toast('ADAM connected.');
-          await loadSettings(true);await loadStatus();
-          await findAdamUnits();
-        }catch(e){status('findAdamStatus',e.message,true);throw e;}
-      },'button primary','arrow');
-      choose.disabled=u.connected||u.paired;
-      card.append(icon('devices'),info,choose);root.append(card);
-    });
-  }catch(e){status('findAdamStatus',e.message+' You can still connect by local address below.',true);}
+  await window.AdamOnboarding.selectDevice();
 }
+
 function bindUI(){
   document.querySelectorAll('button[data-view],a[data-view]').forEach(n=>n.addEventListener('click',e=>{e.preventDefault();if(n.dataset.controlCategory){ui.actionCategory=n.dataset.controlCategory;$('actionSearch').value='';}switchView(n.dataset.view);}));
   bind('refreshActionsBtn',loadActions);$('actionSearch').addEventListener('input',renderActions);
@@ -517,7 +438,7 @@ function bindUI(){
   // The manual host/key form is gone: connecting is discovery + one click, or
   // the account's own device matched on this network. probeConnectionBtn and
   // connectionForm no longer exist, so their handlers went with them.
-  bind('disconnectBtn',async()=>{if(!(await confirmAction('Disconnect ADAM?','This computer will stop connecting to this ADAM. Your memories and preferences stay saved.','Disconnect')))return;await api('/pair/adam/forget',{});await loadSettings(true);await loadStatus();status('connectionResult','ADAM disconnected.');await findAdamUnits();});
+  bind('disconnectBtn',async()=>{if(!(await confirmAction('Disconnect ADAM?','This computer will stop connecting to this ADAM. Your memories and preferences stay saved.','Disconnect')))return;await window.AdamOnboarding.selectDevice();});
   bind('findAdamBtn',findAdamUnits);
   bind('refreshDevicesBtn',async()=>{await loadAccount();await loadAccountDevices();});
   bind('authorizeLaptopBtn',async()=>{ui.busy.add('pairing');updatePairingControls();try{await api('/connection/authorize',{});status('laptopPairingResult','ADAM verified this computer. Your enabled laptop actions are linked.');await loadStatus();}catch(e){status('laptopPairingResult',e.message,true);throw e;}finally{ui.busy.delete('pairing');}});
@@ -531,7 +452,7 @@ function bindUI(){
   submit('emailSignInForm',async()=>{try{await api('/account/email',{email:$('accountEmail').value.trim(),password:$('accountPassword').value,create:ui.createAccount,name:$('accountName').value.trim()});$('accountPassword').value='';await loadAccount();await loadMemories();toast('Your ADAM account is connected.');}catch(e){status('accountMessage',e.message,true);throw e;}});
   bind('toggleCreateAccountBtn',()=>{ui.createAccount=!ui.createAccount;$('accountNameLabel').hidden=!ui.createAccount;$('accountPassword').autocomplete=ui.createAccount?'new-password':'current-password';text('emailSignInBtn',ui.createAccount?'Create account':'Sign in');text('toggleCreateAccountBtn',ui.createAccount?'I already have an account':'Create an account');});
   bind('resetPasswordBtn',async()=>{if(!$('accountEmail').reportValidity())return;await api('/account/reset',{email:$('accountEmail').value.trim()});status('accountMessage','If this email has an account, a reset link is on its way.');});
-  bind('signOutBtn',async()=>{if(!(await confirmAction('Sign out of ADAM?','Account sync will pause. You can still use this computer locally.','Sign out')))return;await api('/account/signout',{});await loadAccount();await loadMemories();});
+  bind('signOutBtn',async()=>{if(!(await confirmAction('Sign out of ADAM?','Your desktop will return to sign-in and disconnect from ADAM.','Sign out')))return;await api('/account/signout',{});window.location.reload();});
   bind('accountSyncBtn',syncAccount);bind('syncMemoriesBtn',syncAccount);
   bind('addMemoryBtn',()=>editMemory());bind('closeMemoryBtn',()=>$('memoryDialog').close());$('memorySearch').addEventListener('input',renderMemories);
   submit('memoryForm',async()=>{const title=$('memoryTitle').value.trim(),content=$('memoryText').value.trim();if(!title||!content)throw new Error('Add a title and some text for your memory.');await api('/memories',{...(ui.memoryEditId?{id:ui.memoryEditId}:{}),title,text:content,kind:$('memoryKind').value});$('memoryDialog').close();await loadMemories();toast('Memory saved.');});
@@ -543,13 +464,10 @@ function bindUI(){
   let searchTimer;const refreshLogs=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadLogs().catch(e=>toast(e.message,true)),200);};
   $('logSearchInput').addEventListener('input',refreshLogs);$('logCategoryFilter').addEventListener('change',refreshLogs);
   bind('clearLogsBtn',async()=>{if(!(await confirmAction('Clear activity history?','This removes the activity history shown on this computer.','Clear history')))return;await api('/activity_log/clear',{});await loadLogs();});
-  bind('openSetupBtn',()=>$('setupDialog').showModal());
-  for(const [id,target] of [['setupAccountBtn','settings'],['setupConnectBtn','devices'],['setupExploreBtn','dashboard']]){
-    bind(id,async()=>{await api('/settings',{setup_complete:true});$('setupDialog').close();await switchView(target);});
-  }
+  bind('openSetupBtn',()=>window.AdamOnboarding.selectDevice());
 }
 async function poll(){
-  if(!document.hidden){
+  if(!document.hidden&&window.AdamOnboarding?.ready){
     try{await loadStatus();}catch(e){$('backendNotice').hidden=false;text('headerStatusText','Service offline');$('headerStatusDot').className='status-dot error';}
     try{
       if(ui.view==='activity')await loadLogs();
@@ -570,10 +488,10 @@ async function boot(){
   const results=await Promise.allSettled([loadSettings(true),loadActions(),loadStatus(),loadAccount()]);
   results.filter(r=>r.status==='rejected').forEach(r=>toast(r.reason.message,true));
   if(!ui.touchLoaded&&Object.keys(ui.actions).length)renderSensors();
-  if(results[0].status==='fulfilled'&&!ui.settings.setup_complete)$('setupDialog').showModal();
+
   const target=location.hash.slice(1);if(VIEW_NAMES[target])await switchView(target);
   poll();
 }
 window.ADAM={api,element,icon,toast,run,bind,submit,empty,confirmAction,formatDate,ui,text,status,switchView};
-document.addEventListener('DOMContentLoaded',boot);
+window.bootDashboard=boot;
 

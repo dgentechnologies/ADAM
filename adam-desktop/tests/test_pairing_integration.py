@@ -130,6 +130,11 @@ class PairingIntegrationTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("_adam_pairing_" + uuid.uuid4().hex, APP / "backend.py")
         self.backend = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.backend)
+        # Existing endpoint tests run inside an already verified session.
+        # Mandatory-gate denial and lifecycle tests live in test_onboarding.py.
+        gate = patch.object(self.backend.onboarding, 'status', return_value={'ready': True})
+        gate.start()
+        self.addCleanup(gate.stop)
         self.backend.app.config.update(TESTING=False, PROPAGATE_EXCEPTIONS=False)
         self.client = self.backend.app.test_client()
         self.headers = {"X-ADAM-Session": self.backend.DESKTOP_SESSION}

@@ -87,9 +87,18 @@ def protect_desktop_and_agent():
     if request.path == "/show_window" and _loopback_request() and not origin:
         return None
     if _local_session():
+        if request.path == '/pair/adam':
+            return jsonify(status='error', reason='Connect using your account device picker.'), 410
+        # Server gate, not just a hidden dashboard. Only authentication and
+        # onboarding are reachable until both account and robot are verified.
+        bootstrap = request.path.startswith('/account/') or request.path.startswith('/onboarding/')
+        if not bootstrap and not onboarding.status()['ready']:
+            return jsonify(status='error', reason='Sign in and connect your ADAM to continue.'), 403
         return None
     remote_action = request.path in ("/pair/verify", "/control", "/coding/dispatch", "/coding/input", "/coding/cancel", "/coding_task_status", "/robot/state") or request.path.startswith("/action/")
     if remote_action and _is_request_authenticated(request.get_json(silent=True) or {}):
+        if not onboarding.status()["ready"]:
+            return jsonify(status="error", reason="Sign in and connect ADAM first."), 403
         return None
     return jsonify(status="error", reason="Authentication required"), 401
 
@@ -160,9 +169,46 @@ from cloud_sync import CloudSync
 from connection import ConnectionService
 
 account = AccountService()
-cloud = CloudSync(account)
+cloud = CloudSync(account)  # read-only legacy recovery source
+from canonical_sync import CanonicalSync
+from device_catalog import list_devices as _owned_devices
+canonical = CanonicalSync(account, _owned_devices)
 connection = ConnectionService(load_settings, update_settings)
 _sync_thread_lock = threading.Lock()
+from onboarding import OnboardingService
+
+def _nearby_units():
+    start_adam_discovery()
+    cutoff = time.time() - ADAM_STALE_AFTER_S
+    return [dict(u) for u in list(_found_adams.values()) if u['seen_at'] > cutoff]
+
+onboarding = OnboardingService(account, connection, _nearby_units)
+from pi_bridge import PiBridge
+bridge = PiBridge(canonical, onboarding, connection)
+
+@app.route('/sync/robot', methods=['POST'])
+def sync_robot():
+    canonical.sync()
+    result = bridge.run()
+    canonical.sync()
+    return jsonify(result)
+
+@app.route('/onboarding/status')
+def onboarding_status():
+    return jsonify(onboarding.status())
+
+@app.route('/onboarding/refresh', methods=['POST'])
+def onboarding_refresh():
+    return jsonify(onboarding.refresh())
+
+@app.route('/onboarding/connect', methods=['POST'])
+def onboarding_connect():
+    data = request.get_json()
+    return jsonify(onboarding.connect(data.get('deviceId', ''), data.get('code', '')))
+
+@app.route('/onboarding/cancel', methods=['POST'])
+def onboarding_cancel():
+    return jsonify(onboarding.cancel())
 
 
 def _start_cloud_sync():
@@ -171,7 +217,7 @@ def _start_cloud_sync():
     if _sync_thread_lock.acquire(blocking=False):
         def work():
             try:
-                cloud.sync()
+                canonical.sync()
             except Exception:
                 # The sync service keeps its safe error and all unsent edits.
                 pass
@@ -184,8 +230,33 @@ def account_status():
     result = account.status()
     return {**result, "signed_in": result.get("authenticated", False),
             "configured": True, "google_available": result.get("google", {}).get("configured", False),
-            "sync": cloud.status(), "preferences": cloud.get_preferences()}
+            "sync": canonical.status(), "preferences": cloud.get_preferences()}
 
+
+@app.route('/sync/records', methods=['GET', 'POST'])
+def canonical_records():
+    if request.method == 'POST':
+        data = request.get_json()
+        return jsonify(canonical.save(data.get('path', ''), data.get('record', {})))
+    return jsonify(canonical.records())
+
+@app.route('/sync/run', methods=['POST'])
+def canonical_run():
+    return jsonify(canonical.sync())
+
+@app.route('/sync/resolve', methods=['POST'])
+def canonical_resolve():
+    data = request.get_json()
+    return jsonify(canonical.resolve(data.get('path', ''), data.get('choice', '')))
+
+@app.route('/sync/migration')
+def migration_inventory():
+    # Read-only inventory. No guessing original wall time or robot assignment.
+    uid = canonical.uid()
+    with cloud._lock:
+        old = cloud._read(uid)['companion']
+    return jsonify(status='review_required', counts={key:len(value) for key,value in old.items() if isinstance(value,dict)},
+        reason='Legacy records are preserved. Review device mappings and schedule timezones before importing.')
 
 @app.route("/account/status")
 def account_status_endpoint():
@@ -207,19 +278,19 @@ def google_start():
 @app.route("/companion/<kind>", methods=["GET", "POST"])
 def companion_records(kind):
     if request.method == "POST":
-        cloud.save_record(kind, request.get_json())
+        raise ValueError("Use the canonical account planner. Legacy records are preserved for migration.")
     return jsonify(items=cloud.list_records(kind), sync=cloud.status())
 
 
 @app.route("/companion/<kind>/delete", methods=["POST"])
 def companion_record_delete(kind):
-    cloud.delete_record(kind, request.get_json().get("id", ""))
+    raise ValueError("Legacy records are preserved for migration. Use the canonical account planner.")
     return jsonify(items=cloud.list_records(kind), sync=cloud.status())
 
 
 @app.route("/companion/ble-sync", methods=["POST"])
 def companion_ble_sync():
-    return jsonify(cloud.sync_simulated_ble(request.get_json().get("deviceId", "")))
+    raise ValueError("Desktop physical synchronization uses the authenticated LAN bridge.")
 
 
 @app.route("/account/google/cancel", methods=["POST"])
@@ -247,7 +318,10 @@ def account_reset():
 
 @app.route("/account/signout", methods=["POST"])
 def account_signout():
+    onboarding.invalidate()
     account.signout()
+    onboarding.invalidate()
+    update_settings({"paused": True})
     return jsonify(account_status())
 
 
@@ -259,8 +333,7 @@ def account_sync():
 
 @app.route("/account/import-guest", methods=["POST"])
 def account_import_guest():
-    cloud.import_guest()
-    _start_cloud_sync()
+    raise ValueError("Legacy import requires reviewing device mappings and schedule timezones first.")
     return jsonify(account_status())
 
 
@@ -273,13 +346,13 @@ def account_preferences():
 @app.route("/memories", methods=["GET", "POST"])
 def memories():
     if request.method == "POST":
-        cloud.save_memory(request.get_json())
+        raise ValueError("Use the device-scoped canonical memory editor.")
     return jsonify(memories=cloud.list_memories(), sync=cloud.status())
 
 
 @app.route("/memories/delete", methods=["POST"])
 def memory_delete():
-    cloud.delete_memory(request.get_json().get("id", ""))
+    raise ValueError("Legacy memories are preserved for migration.")
     return jsonify(status="ok", memories=cloud.list_memories(), sync=cloud.status())
 
 
@@ -1515,7 +1588,7 @@ def start_adam_discovery():
                 txt = _decode_txt(info.properties)
                 ip = socket.inet_ntoa(info.addresses[0])
                 dev_id = txt.get("id") or name.split(".")[0]
-                _found_adams[dev_id] = {
+                _found_adams[name + "@" + ip] = {
                     "id": dev_id,
                     "name": txt.get("name", "ADAM"),
                     "host": ip,
@@ -1540,7 +1613,7 @@ def start_adam_discovery():
 
         def remove_service(self, zc, type_, name):
             for k in list(_found_adams):
-                if name.startswith(k):
+                if k.startswith(name + "@") :
                     _found_adams.pop(k, None)
 
     try:
@@ -1583,70 +1656,7 @@ def discover_adam_endpoint():
 
 @app.route("/pair/adam", methods=["POST"])
 def pair_adam_endpoint():
-    """Claim an ADAM and store what it hands back.
-
-    This is the step that removes the manual token: the Pi gives up its sync
-    token while it is unclaimed, and the app saves it alongside the address.
-    The user picks a name from a list; nothing is typed.
-    """
-    data = request.get_json(silent=True) or {}
-    host = str(data.get("host", "")).strip()
-    try:
-        port = int(data.get("port", 8766) or 8766)
-    except (TypeError, ValueError):
-        port = 8766
-    if not host:
-        return jsonify({"status": "error", "reason": "no address given"}), 200
-
-    try:
-        response = requests.post("http://%s:%d/api/pair/claim" % (host, port),
-                                 json={}, timeout=(3.05, 8))
-        payload = response.json()
-    except requests.RequestException:
-        return jsonify({"status": "error",
-                        "reason": "Could not reach ADAM at %s:%d" % (host, port)}), 200
-    except ValueError:
-        return jsonify({"status": "error",
-                        "reason": "ADAM returned an unreadable reply"}), 200
-
-    if response.status_code == 409:
-        return jsonify({"status": "error",
-                        "reason": payload.get("hint") or "That ADAM is already paired."}), 200
-    if response.status_code != 200 or not payload.get("token"):
-        return jsonify({"status": "error",
-                        "reason": payload.get("error")
-                        or "Pairing refused (HTTP %d)" % response.status_code}), 200
-
-    settings = load_settings()
-    settings["pi_device_id"] = str(payload.get("id", ""))
-    save_settings(settings)
-
-    # Hand the claimed token to connection.connect() rather than writing
-    # pi_ip/sync_token ourselves.
-    #
-    # The connection module owns a lot more state than those two keys: it also
-    # sets pi_host, sync_token_host/port (so a token is never reused against a
-    # different endpoint), paired, and it verifies identity and starts the
-    # telemetry run. Writing settings directly left all of that untouched, so
-    # the app still reported "Connect ADAM before opening or changing its
-    # data" and the Clock tab stayed empty even though the pairing had worked.
-    result = connection.connect({
-        "host": host,
-        "sync_port": port,
-        "sync_token": str(payload["token"]),
-    })
-    if not result.get("ok"):
-        return jsonify({"status": "error",
-                        "reason": result.get("reason")
-                        or "ADAM was claimed but the connection could not be saved."}), 200
-
-    CURRENT_ROBOT_STATE["pi_ip"] = host
-    logger.info("[pair] paired with %s at %s:%d", payload.get("id"), host, port)
-    log_activity("adam_paired", str(payload.get("id", "")), "ok")
-
-    return jsonify({"status": "ok", "id": payload.get("id", ""),
-                    "name": payload.get("name", "ADAM"),
-                    "host": host, "port": port})
+    return jsonify(status='error', reason='Use the account device picker to authorize ADAM.'), 410
 
 
 @app.route("/pair/adam/forget", methods=["POST"])
@@ -1735,7 +1745,8 @@ def stop_mdns_broadcast() -> None:
 # ═════════════════════════════════════════════════════════════════════════
 
 def start_pi_ws_client():
-    connection.start()
+    # Onboarding revalidates ownership and the pinned grant before starting.
+    return
 
 
 def stop_pi_ws_client():

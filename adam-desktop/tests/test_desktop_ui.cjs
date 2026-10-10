@@ -47,7 +47,7 @@ async function fixture(t) {
     $: id => w.document.getElementById(id)};
 }
 
-test('read-only planner disables every edit and links directly to the visible key field', async t => {
+test('read-only planner disables every edit and returns to verified device selection', async t => {
   const f = await fixture(t);
   await f.w.AdamClock.refresh();
   const edits = f.w.document.querySelectorAll('#scheduleForm input, #scheduleForm select, #scheduleForm button, #todoForm input, #todoForm button, #clockScheduleList button, #clockTodoList button, #clockTodoList input');
@@ -55,16 +55,11 @@ test('read-only planner disables every edit and links directly to the visible ke
   assert.ok([...edits].every(n => n.disabled));
   assert.equal(f.$('clockNotice').textContent, f.state.reason);
   assert.equal(f.$('clockConnectionBtn').hidden, false);
-  assert.equal(f.$('connectionToken').closest('details'), null);
-  let view;
-  f.w.ADAM.switchView = async id => {
-    view = id;
-    f.$('tab-devices').hidden = false;
-  };
+  let selected=false;
+  f.w.AdamOnboarding={selectDevice:async()=>{selected=true;}};
   f.$('clockConnectionBtn').click();
   await tick();
-  assert.equal(view, 'devices');
-  assert.equal(f.w.document.activeElement, f.$('connectionToken'));
+  assert.equal(selected,true);
   f.$('scheduleForm').dispatchEvent(new f.w.Event('submit', {bubbles: true, cancelable: true}));
   await tick();
   assert.equal(f.calls.filter(c => c.url.startsWith('/pi/write/')).length, 0);

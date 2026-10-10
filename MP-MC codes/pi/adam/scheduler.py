@@ -190,12 +190,12 @@ def _iso(t: dt.datetime) -> str:
 # by a time; `updated_at` needs SECONDS or two edits in the same minute tie and
 # last-write-wins cannot order them.
 def _iso_s(t: dt.datetime) -> str:
-    return t.strftime("%Y-%m-%dT%H:%M:%S")
+    return t.astimezone(dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _touch(entry: dict) -> dict:
     """Stamp a record as modified now. Call on every create and mutation."""
-    entry["updated_at"] = _iso_s(_now())
+    entry["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return entry
 
 
@@ -221,29 +221,8 @@ def _tombstone(kind: str, entry: dict) -> None:
 
 
 def _prune_tombstones() -> None:
-    rows = _store.get("tombstones") or []
-    if not rows:
-        return
-    cutoff = _now() - dt.timedelta(days=TOMBSTONE_KEEP_DAYS)
-    kept = []
-    for r in rows:
-        try:
-            when = dt.datetime.strptime(r.get("deleted_at", ""), "%Y-%m-%dT%H:%M:%S")
-        except Exception:
-            continue                        # undated tombstone is unusable
-        if when >= cutoff:
-            kept.append(r)
-    if len(kept) != len(rows):
-        print(f"  🧹 pruned {len(rows) - len(kept)} tombstone(s) older than "
-              f"{TOMBSTONE_KEEP_DAYS} days")
-    _store["tombstones"] = kept
-
-
-# Pruned HERE, not up beside _sanitise(). The store is loaded before this point
-# but the function is not: calling it earlier raised NameError at import, which
-# py_compile does not catch because it is a runtime ordering fault, not a syntax
-# one. Keep this call below the definition.
-_prune_tombstones()
+    # Retain deletions until a coordinated acknowledgement horizon is deployed.
+    return
 
 
 def _parse(s: str):

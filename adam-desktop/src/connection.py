@@ -67,6 +67,11 @@ class _Target:
     sync_port: int
     ws_port: int
     token: str = field(default="", repr=False)
+    certificate: str = field(default="", repr=False)
+    expected_uid: str = ""
+    expected_device: str = ""
+    expected_hardware: str = ""
+    expected_client: str = ""
 
     @property
     def authority(self) -> str:
@@ -104,7 +109,9 @@ def _target(config: dict[str, Any], saved: dict[str, Any]) -> _Target:
             token = saved.get("sync_token", "")
     if not isinstance(token, str) or len(token) > 4096 or any(ord(c) < 32 or ord(c) > 126 for c in token):
         raise ValueError("Enter a valid connection key.")
-    return _Target(host, port, ws_port, token.strip())
+    return _Target(host, port, ws_port, token.strip(), str(config.get('certificate', '')),
+                   str(config.get('expected_uid', '')), str(config.get('expected_device', '')),
+                   str(config.get('expected_hardware', '')), str(config.get('expected_client', '')))
 
 
 def _empty_status(reason: str = "Connect ADAM after completing setup in the mobile app.") -> dict[str, Any]:
@@ -161,6 +168,15 @@ class ConnectionService:
                  body: dict[str, Any] | None = None) -> tuple[dict | None, str | None]:
         if method not in {"GET", "POST", "PUT"} or not re.fullmatch(r"/api/[a-z0-9_/-]+", path):
             return None, "This ADAM request is not supported."
+        if target.certificate:
+            from onboarding import robot_request
+            try:
+                if method == 'PUT':
+                    return None, 'Use individual changes instead of replacing robot data.'
+                return robot_request(target.host, target.sync_port, target.certificate,
+                                     path, body if method != 'GET' else None, target.token), None
+            except ValueError as error:
+                return None, str(error)
         headers = {"Accept": "application/json"}
         # Identity checks never disclose the private write key.
         if target.token and path != "/api/ping":
@@ -200,6 +216,13 @@ class ConnectionService:
             return None, "ADAM did not respond. Check that both devices are on the same network."
 
     def _identity(self, target: _Target) -> tuple[dict | None, str | None]:
+        if target.certificate:
+            grant, error = self._request(target, 'GET', '/api/pair/session')
+            if error:
+                return None, error
+            if (grant.get('uid'), grant.get('id'), grant.get('hardwareId'), grant.get('clientId')) != (
+                    target.expected_uid, target.expected_device, target.expected_hardware, target.expected_client):
+                return None, 'Robot identity or account authorization changed.'
         payload, error = self._request(target, "GET", "/api/ping")
         if error:
             return None, error
@@ -212,7 +235,9 @@ class ConnectionService:
 
     @staticmethod
     def _identified(target: _Target, payload: dict) -> dict[str, Any]:
-        if bool(payload.get("readonly", True)):
+        if target.certificate:
+            access, reason = "available", ""
+        elif bool(payload.get("readonly", True)):
             access = "device_read_only"
             reason = "ADAM is read-only: configure its SYNC_TOKEN on the Pi, restart ADAM, then enter the same key in Connection."
         elif not target.token:
@@ -222,6 +247,8 @@ class ConnectionService:
             access, reason = "available", ""
         state = _empty_status(reason)
         state.update(connected=True, data_connected=True, host=target.host,
+                     authorized_uid=target.expected_uid, authorized_device=target.expected_device,
+                     secure_authorized=bool(target.certificate),
                      device_name=str(payload.get("device_name") or payload.get("name") or "ADAM")[:100],
                      read_only=access != "available", write_access=access,
                      capabilities=_capabilities(payload), last_seen=time.time())
@@ -266,7 +293,7 @@ class ConnectionService:
                 self._update_settings({
                     "pi_host": target.host, "pi_ip": target.host,
                     "pi_sync_port": target.sync_port, "pi_ws_port": target.ws_port,
-                    "sync_token": target.token, "sync_token_host": target.host,
+                    "sync_token": "" if target.certificate else target.token, "sync_token_host": target.host,
                     "sync_token_port": target.sync_port, "paired": True,
                 })
             except Exception:
@@ -437,8 +464,17 @@ class ConnectionService:
             if not run.verified.wait(0.25):
                 continue
             try:
-                with connect(f"ws://{run.target.authority}:{run.target.ws_port}",
-                             open_timeout=2, close_timeout=0.25, max_size=65536, proxy=None) as socket:
+                from onboarding import tls_context
+                secure = bool(run.target.certificate)
+                options = {'ssl': tls_context(run.target.certificate),
+                           'additional_headers': {'X-ADAM-Token': run.target.token}} if secure else {}
+                with connect(f"{'wss' if secure else 'ws'}://{run.target.authority}:{run.target.ws_port}",
+                             open_timeout=2, close_timeout=0.25, max_size=65536, proxy=None, **options) as socket:
+                    if secure:
+                        hello = json.loads(socket.recv(timeout=3))
+                        if (hello.get('type'), hello.get('uid'), hello.get('id'), hello.get('hardwareId'), hello.get('clientId')) != (
+                                'authorized', run.target.expected_uid, run.target.expected_device, run.target.expected_hardware, run.target.expected_client):
+                            raise ValueError('Telemetry authorization mismatch')
                     with self._lock:
                         if not self._current(run) or not run.verified.is_set():
                             return

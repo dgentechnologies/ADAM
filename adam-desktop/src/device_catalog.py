@@ -27,7 +27,7 @@ def list_devices(account, session=None):
         if not isinstance(rows, list):
             raise ValueError()
     except (requests.RequestException, ValueError) as error:
-        raise RuntimeError("Your account's devices could not be reached. You can connect by local address.") from error
+        raise RuntimeError("Your account's devices could not be reached. Check your internet connection and try again.") from error
     current_user = account.user
     if not current_user or current_user["uid"] != uid:
         raise RuntimeError("The account changed. Refresh your devices.")
@@ -43,7 +43,9 @@ def list_devices(account, session=None):
             field = fields.get(key)
             value = field.get("stringValue") if isinstance(field, dict) else None
             return value[:256] if isinstance(value, str) else ""
-        if string_field("ownerUid") != uid:
+        if (string_field("ownerUid") != uid or fields.get('simulated', {}).get('booleanValue') is True
+                or fields.get('deleted', {}).get('booleanValue') is True
+                or string_field('deviceId').startswith('ADAM-SIM-')):
             continue
         item = {key: string_field(key) for key in
                 ("deviceId", "name", "hardwareSerial", "tailscaleIp", "osVersion", "status")}

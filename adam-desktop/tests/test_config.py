@@ -30,7 +30,12 @@ def isolated_config():
                                     "ADAM_DISABLE_HARDWARE": "1"}):
             with patch("logging.getLogger", return_value=fixture_logger):
                 spec.loader.exec_module(config)
-            with patch.dict(sys.modules, {"config": config}):
+            # Inject a cipher only in the isolated fixture; production keeps
+            # Windows DPAPI mandatory. This makes backend tests portable.
+            from test_identity_sync import FakeCipher
+            import secure_store
+            store = secure_store.SecretStore(root_path / 'data' / 'credentials', cipher=FakeCipher())
+            with patch.dict(sys.modules, {"config": config}), patch.object(secure_store, '_store', return_value=store):
                 try:
                     yield config, root_path
                 finally:

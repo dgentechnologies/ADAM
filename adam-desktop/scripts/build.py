@@ -31,6 +31,10 @@ VERSION = re.search(r'^APP_VERSION = "([0-9.]+)"',
 
 
 def build():
+    if sys.platform != 'win32':
+        raise SystemExit('Build with Windows Python (native Windows or a verified Wine Windows-Python toolchain).')
+    if not CLIENT_PATH.exists():
+        raise SystemExit('Missing config/local/firebase-desktop-client.json; Google login release cannot be built.')
     print("=" * 60)
     print("Building ADAM Windows Companion App (.exe)...")
     print(f"Base Directory: {BASE_DIR}")
@@ -106,6 +110,10 @@ def build():
         "--hidden-import", "connection",
         "--hidden-import", "hardware",
         "--hidden-import", "device_catalog",
+        "--hidden-import", "onboarding",
+        "--hidden-import", "canonical_sync",
+        "--hidden-import", "pi_bridge",
+        "--collect-data", "tzdata",
         # The shared protocol module (v41). backend.py imports it inside a
         # try/except that degrades to untyped behaviour on failure, so a
         # packaged build that silently lost this module would still START —

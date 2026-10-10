@@ -523,6 +523,10 @@ async def handle_tool_call(tc, ws_broadcast_fn) -> list:
                     result = {"available": True, "direction": direction,
                               "degrees_off_center": abs(int(_doa_angle[0]))}
 
+            elif name == "open_desktop_pairing":
+                from desktop_pairing import open_window
+                result = open_window()
+
             elif name == "enter_idle_mode":
                 _idle_mode_requested[0] = True
                 print("  🔇 enter_idle_mode called — will go silent")

@@ -37,6 +37,7 @@ pairing endpoints.
 """
 
 import socket
+import desktop_pairing
 
 from config import SYNC_PORT, APP_VERSION
 
@@ -89,7 +90,8 @@ def _local_ip() -> str:
 
 def _txt(paired: bool) -> dict:
     return {
-        b"id": short_id().encode(),
+        b"id": desktop_pairing.public_info().get("id", short_id()).encode(),
+        b"secure": b"2" if desktop_pairing.identity() else b"0",
         b"name": b"ADAM",
         b"api": b"1",
         b"ver": str(APP_VERSION).encode(),

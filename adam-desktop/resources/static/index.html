@@ -12,6 +12,8 @@
 <link rel="stylesheet" href="/static/css/dashboard-scene.css">
 <link rel="stylesheet" href="/static/css/workspace.css">
 <link rel="stylesheet" href="/static/css/companion.css">
+<link rel="stylesheet" href="/static/css/onboarding.css">
+<script defer src="/static/js/onboarding.js"></script>
 <script defer src="/static/js/three.min.js">
 </script>
 <script defer src="/static/js/OrbitControls.js">
@@ -24,9 +26,54 @@
 <script defer src="/static/js/controls.js"></script>
 <script defer src="/static/js/clock.js">
 </script>
-<script defer src="/static/js/companion.js"></script>
+<script defer src="/static/js/canonical.js"></script>
 </head>
 <body data-view="dashboard">
+<section id="onboarding" class="onboarding" aria-label="Set up your desktop companion">
+  <header class="onboarding-header"><img src="/static/images/adam-wordmark.png" alt="ADAM"><span>DESKTOP COMPANION</span></header>
+  <div class="onboarding-layout">
+    <div class="onboarding-story">
+      <span class="eyebrow">A MORE HUMAN TOMORROW</span>
+      <h1>A familiar face.<br><span>A new place.</span></h1>
+      <p>Your ADAM, now part of your desktop.<br>A little closer to everything you do.</p>
+      <div class="onboarding-orbit" aria-hidden="true"><div class="onboarding-face"><span></span><span></span></div></div>
+      <ol class="onboarding-steps" aria-label="Setup progress"><li id="stepAccount">01 <span>Your account</span></li><li id="stepDevice">02 <span>Your ADAM</span></li><li id="stepReady">03 <span>Your space</span></li></ol>
+    </div>
+    <div class="onboarding-card">
+      <div id="onboardingSplash" role="status"><span class="eyebrow">WELCOME BACK</span><h2>Making room for you.</h2><p>Checking your secure session…</p><div class="onboarding-loader"></div></div>
+      <section id="onboardingLogin" hidden aria-labelledby="onboardingLoginTitle">
+        <span class="eyebrow">YOUR ACCOUNT</span><h2 id="onboardingLoginTitle">Welcome to ADAM.</h2><p>Sign in with the account you use on your phone.</p>
+        <button id="onboardingGoogle" class="button onboarding-google" type="button"><span aria-hidden="true">G</span> Continue with Google</button>
+        <button id="onboardingGoogleCancel" class="text-button" type="button" hidden>Cancel browser sign-in</button>
+        <div class="onboarding-divider"><span>or use email</span></div>
+        <form id="onboardingEmailForm" class="form-stack">
+          <label id="onboardingNameLabel" hidden>Your name<input id="onboardingName" autocomplete="name" maxlength="100"></label>
+          <label>Email address<input id="onboardingEmail" type="email" autocomplete="username" required maxlength="254" placeholder="you@example.com"></label>
+          <label>Password<input id="onboardingPassword" type="password" autocomplete="current-password" required minlength="6" maxlength="4096" placeholder="Your password"></label>
+          <button id="onboardingEmailSubmit" class="button primary" type="submit">Sign in <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        </form>
+        <div class="onboarding-account-links"><button id="onboardingRegister" class="text-button" type="button">Create an account</button><button id="onboardingReset" class="text-button" type="button">Forgot password?</button></div>
+      </section>
+      <section id="onboardingDevices" hidden aria-labelledby="onboardingDevicesTitle">
+        <span class="eyebrow">YOUR ADAM</span><h2 id="onboardingDevicesTitle">Find your familiar face.</h2><p>Keep ADAM and this computer on the same network.</p>
+        <div id="onboardingDeviceList" class="onboarding-device-list" aria-live="polite"></div>
+        <form id="onboardingCodeForm" class="form-stack" hidden>
+          <label>Pairing code from ADAM<input id="onboardingCode" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="24" placeholder="abcd-1234-ef56-123456" required aria-describedby="onboardingCodeHelp"></label>
+          <p id="onboardingCodeHelp" class="help">Open a pairing window on your ADAM and enter its one-time code. You only need this when authorizing a new computer.</p>
+          <button type="submit" class="button primary">Authorize this computer</button>
+        </form>
+        <div class="onboarding-account-links"><button id="onboardingRefresh" class="button" type="button">Refresh devices</button><button id="onboardingSignout" class="text-button" type="button">Switch account</button></div>
+        <button id="onboardingCancel" class="text-button" type="button" hidden>Cancel connection</button>
+      </section>
+      <p id="onboardingMessage" class="onboarding-message" role="status" aria-live="polite"></p>
+      <button id="onboardingRetry" class="button" type="button" hidden>Try again</button>
+      <div class="onboarding-footer"><span class="onboarding-lock" aria-hidden="true">◇</span> Your account. Your ADAM. Your space.</div>
+    </div>
+  </div>
+  <footer class="onboarding-bottom"><span>DGEN TECHNOLOGIES</span><span>DESIGNED TO FEEL FAMILIAR</span></footer>
+</section>
+
+<div id="desktopShell" hidden inert>
 <a class="skip-link" href="#mainContent">Skip to content
 </a>
 <aside class="sidebar">
@@ -693,6 +740,7 @@
 </div>
 </section>
 </main>
+</div>
 </div>
 <dialog id="setupDialog" class="setup-dialog" aria-labelledby="setupTitle">
 <form method="dialog">

@@ -55,7 +55,7 @@ def load_json(path: Path, default):
         return default
 
 
-def save_json(path: Path, data) -> None:
+def save_json(path: Path, data, *, strict: bool = False) -> None:
     """Atomic write — write to a temp file in the same directory, fsync it,
     then os.replace() onto the real path. os.replace is atomic on POSIX, so
     a power loss or crash mid-write leaves either the OLD complete file or
@@ -70,6 +70,8 @@ def save_json(path: Path, data) -> None:
             os.fsync(f.fileno())
         os.replace(tmp_path, path)
     except Exception as e:
+        if strict:
+            raise
         print(f"⚠️  Save {path.name}: {e}")
         try:
             if tmp_path.exists():
