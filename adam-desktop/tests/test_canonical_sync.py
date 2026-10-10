@@ -113,3 +113,31 @@ def test_new_edit_invalidates_old_application_badge_but_keeps_baseline(fixture):
     evidence=service.records()['bridge']['ADAM-TEST'][PATH]
     assert evidence['status']=='waiting_for_cloud'
     assert evidence['piRevision']=='old'
+
+
+def test_execution_relay_advances_only_after_entire_page_accepted(fixture):
+    service,server,_,_=fixture
+    gate=SimpleNamespace(status=lambda:{'ready':True,'selected':'ADAM-TEST'})
+    connection=Mock()
+    connection.call.return_value=({'deviceId':'ADAM-TEST','receipts':[{'payload':'signed'}],'nextCursor':'next'},None)
+    server.post=Mock(return_value=SimpleNamespace(ok=False,json=lambda:{}))
+    bridge=PiBridge(service,gate,connection)
+    with pytest.raises(ValueError,match='verification is pending'):bridge.report_execution()
+    assert not service.read(UID).get('receiptCursors')
+    server.post.return_value=SimpleNamespace(ok=True,json=lambda:{'result':{'ok':True}})
+    assert bridge.report_execution()=={'verified':1,'more':True}
+    assert service.read(UID)['receiptCursors']['ADAM-TEST']=='next'
+    assert server.post.call_args.kwargs['allow_redirects'] is False
+
+
+def test_execution_relay_account_change_cannot_commit_cursor(fixture):
+    service,server,account,_=fixture
+    gate=SimpleNamespace(status=lambda:{'ready':True,'selected':'ADAM-TEST'})
+    connection=Mock()
+    connection.call.return_value=({'deviceId':'ADAM-TEST','receipts':[{'payload':'signed'}],'nextCursor':'next'},None)
+    def post(*args,**kwargs):
+        account._epoch+=1
+        return SimpleNamespace(ok=True,json=lambda:{'result':{'ok':True}})
+    server.post=post
+    with pytest.raises(ValueError):PiBridge(service,gate,connection).report_execution()
+    assert not service.read(UID).get('receiptCursors')

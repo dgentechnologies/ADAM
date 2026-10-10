@@ -130,7 +130,7 @@ def provision(uid, device_id):
         fd = os.open(ROOT / filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'wb') as file:
             file.write(data)
-    write('identity.json', {'uid': uid, 'deviceId': device_id, 'hardwareId': hardware})
+    write('identity.json', {'uid': uid, 'deviceId': device_id, 'hardwareId': hardware, 'ownershipEpoch': 0})
 
 
 async def display_codes():
@@ -170,7 +170,7 @@ def open_window():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['provision', 'code', 'revoke-all', 'transfer'])
+    parser.add_argument('action', choices=['provision', 'code', 'revoke-all', 'transfer', 'public-bundle', 'cloud-claim'])
     parser.add_argument('--uid')
     parser.add_argument('--device-id')
     parser.add_argument('--timezone')
@@ -183,21 +183,22 @@ def main():
         provision(args.uid, args.device_id)
         write('identity.json', {**identity(), 'timeZone': args.timezone})
         print('Provisioned. Restart ADAM to enable authenticated HTTPS/WSS, then run code.')
+    elif args.action in ('public-bundle', 'cloud-claim'):
+        import cloud_evidence
+        print(json.dumps(cloud_evidence.public_bundle() if args.action == 'public-bundle' else cloud_evidence.sign('claim')))
     elif args.action == 'code':
         if not identity():
             raise ValueError('Provision this ADAM first.')
         print(open_window()['message'])
     else:
+        if args.action == 'transfer':
+            raise ValueError('Ownership transfer requires an administrator-reviewed data archive and reset. Use the documented cloud transfer workflow; do not relabel private robot data.')
         record = identity()
         if not record:
             raise ValueError('Provision this ADAM first.')
         write('grants.json', {})
         write('display.json', {'code': '', 'expiresAt': 0})
         write('window.json', {'expiresAt': 0, 'attempts': 5})
-        if args.action == 'transfer':
-            if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', args.uid or ''):
-                raise ValueError('Supply the new owner UID.')
-            write('identity.json', {**record, 'uid': args.uid})
         print('Desktop grants revoked. Update cloud ownership separately when transferring.')
 
 

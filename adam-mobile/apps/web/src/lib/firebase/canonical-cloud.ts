@@ -24,14 +24,12 @@ export async function exchangeCanonicalCloud(uid: string, input: Companion, asse
     check();
     for (const item of snapshot.docs) documents[item.ref.path] = item.data();
   }
-  const [owned, legacyOwned] = await Promise.all(['ownerUid','ownerId'].map(field =>
-    getDocsFromServer(query(collection(db,'devices'),where(field,'==',uid),limit(101)))));
+  const owned = await getDocsFromServer(query(collection(db,'devices'),where('ownerUid','==',uid),limit(101)));
   check();
-  if (owned!.size > 100 || legacyOwned!.size > 100) throw new Error('This account has too many saved ADAM devices.');
-  for (const item of [...owned!.docs,...legacyOwned!.docs]) {
-    const data = item.data();
-    // ownerUid is authoritative when both the current and legacy field exist.
-    if ((data.ownerUid ?? data.ownerId) === uid) documents[item.ref.path] = data;
+  if (owned.size > 100) throw new Error('This account has too many saved ADAM devices.');
+  for (const item of owned.docs) {
+    const data=item.data();
+    if (data.ownerUid === uid && data.kind === 'physical') documents[item.ref.path]=data;
   }
   async function exchange(entry: DocumentEntry) {
     check();
@@ -40,7 +38,7 @@ export async function exchangeCanonicalCloud(uid: string, input: Companion, asse
       check();
       const snapshot = await transaction.get(ref), remote = snapshot.exists() ? snapshot.data() : undefined;
       check();
-      if (entry.kind === 'devices' && !remote && !entry.data.deleted && entry.data.simulated !== true)
+      if (entry.kind === 'devices' && !remote)
         throw new Error('Pair this physical ADAM before claiming its cloud record.');
       const update = chooseCloudWrite(entry.data,remote,entry.kind === 'devices');
       if (update) transaction.set(ref,firestoreFields(update),{ merge:true });
@@ -60,15 +58,7 @@ export async function exchangeCanonicalCloud(uid: string, input: Companion, asse
   await applyCloudDocuments(local,uid,documents);
   for (const entry of entries.filter(e=>e.kind === 'devices')) await exchange(entry);
   const deviceDocs = Object.entries(documents).filter(([path])=>path.startsWith('devices/') && path.split('/').length === 2);
-  // Keep the deployed profile fields; linkedDeviceIds is a convenience mirror.
-  await runTransaction(db,async transaction => {
-    check();
-    const ref = doc(db,'users',uid), current = await transaction.get(ref);
-    const linked = new Set<string>(current.exists() && Array.isArray(current.data().linkedDeviceIds) ? current.data().linkedDeviceIds : []);
-    for (const [path,data] of deviceDocs) { const id=path.split('/')[1]!; if (data.deleted) linked.delete(id); else linked.add(id); }
-    check();
-    transaction.set(ref,{linkedDeviceIds:[...linked].sort()},{merge:true});
-  });
+  // linkedDeviceIds is maintained by trusted claim/transfer, never a client claim.
   const liveDevices = deviceDocs.filter(([,data])=>!data.deleted);
   for (const entry of entries.filter(e=>e.kind !== 'devices')) {
     if (entry.kind === 'memories' && !liveDevices.some(([path])=>entry.path.startsWith(path+'/'))) continue;

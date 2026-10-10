@@ -30,7 +30,7 @@ export function stableDeviceId(device: any): string {
   return documentId.parse(`ADAM-SIM-${device.id.toUpperCase()}`);
 }
 function targetIds(record: any, devices: Companion['devices']): string[] {
-  if (record.deviceIds) return [...new Set(z.array(documentId).max(100).parse(record.deviceIds))];
+  if (record.deviceIds) return [...new Set(z.array(documentId).max(8).parse(record.deviceIds))];
   if (!record.deviceId) return [];
   const device = devices[record.deviceId];
   if (!device) throw new Error('Choose a saved ADAM for this plan before syncing.');
@@ -55,9 +55,10 @@ export function toCloudDocuments(input: Companion, uid: string): DocumentEntry[]
   for (const kind of ['devices','memories','todos','clocks'] as const) for (const [id, raw] of Object.entries(local[kind])) {
     const item = raw as any;
     const cloudId = documentId.parse(item.cloudId || id);
-    const bookkeeping = { updatedAt: item.updatedAt, deleted: item.deleted, deletedAt: item.deleted ? item.updatedAt : null, origin: 'mobile' };
+    const bookkeeping = { schemaVersion:1, createdAt:item.createdAt ?? item.updatedAt, updatedAt: item.updatedAt, deleted: item.deleted, deletedAt: item.deleted ? item.updatedAt : null, origin: 'mobile' };
     let path: string, data: CloudDocument;
     if (kind === 'devices') {
+      if (item.simulated || item.deleted) continue; // Local simulations/unlinking never claim or delete physical cloud identities.
       const deviceId = stableDeviceId(item);
       path = `devices/${deviceId}`;
       data = { deviceId, ownerUid: uid, ...bookkeeping };
@@ -81,7 +82,7 @@ export function toCloudDocuments(input: Companion, uid: string): DocumentEntry[]
         Object.assign(data, { createdAt:item.createdAt, deviceIds:targetIds(item,local.devices) });
         Object.assign(data, kind === 'todos'
           ? { text:item.text, done:item.done, due:item.due ?? null, doneAt:item.done ? item.doneAt ?? item.updatedAt : null }
-          : { kind:item.kind, label:item.label, at:wallTime.parse(item.at), timeOfDay:item.timeOfDay ?? null, repeat:item.repeat ?? null, enabled:item.enabled, lastFired:item.lastFired ?? null, snoozes:item.snoozes ?? 0 });
+          : { kind:item.kind, label:item.label, at:wallTime.parse(item.at), timeOfDay:item.timeOfDay ?? null, repeat:item.repeat ?? null, enabled:item.enabled, timeZone:item.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, lastFired:null, snoozes:0, ...(item.kind === 'timer' ? {durationSeconds:item.durationSeconds ?? Math.round((Date.parse(item.when)-Date.parse(item.createdAt))/1000),deadline:item.deadline ?? item.when} : {}) });
       }
     }
     entries.push({ path, kind, id, data });
@@ -119,7 +120,7 @@ export async function applyCloudDocuments(input: Companion, uid: string, documen
     const deleted = data.deleted === undefined ? false : z.boolean().parse(data.deleted);
     let item: any = { id, cloudId, updatedAt, deleted };
     if (device) {
-      const owner = data.ownerUid ?? data.ownerId;
+      const owner = data.ownerUid;
       if (owner !== uid || (data.deviceId !== undefined && data.deviceId !== cloudId)) throw new Error('ADAM ownership does not match this account.');
       item.deviceId = cloudId;
       if (!deleted) Object.assign(item,{ createdAt:utcTime(data.createdAt), name:text(data.name,40), serial:text(data.hardwareSerial ?? data.serial ?? cloudId,80), simulated:data.simulated === true });
@@ -135,13 +136,13 @@ export async function applyCloudDocuments(input: Companion, uid: string, documen
     } else {
       if (data[kind === 'clocks' ? 'scheduleId' : 'todoId'] !== cloudId) throw new Error('Plan identity does not match its document.');
       if (!deleted) {
-        const deviceIds = [...new Set(z.array(documentId).max(100).parse(data.deviceIds))];
+        const deviceIds = [...new Set(z.array(documentId).max(8).parse(data.deviceIds))];
         const first = Object.values(next.devices).find(d=>!d.deleted && (d as any).deviceId === deviceIds[0]);
         Object.assign(item,{createdAt:utcTime(data.createdAt),deviceIds,deviceId:first?.id ?? ''});
         if (kind === 'todos') Object.assign(item,{text:text(data.text,2000),done:z.boolean().parse(data.done),due:data.due == null ? null : text(data.due,32),dueAt:data.due && /^\d{4}-\d{2}-\d{2}T/.test(data.due) ? utcTime(data.due) : '',doneAt:data.doneAt == null ? null : utcTime(data.doneAt)});
         else {
           const at = wallTime.parse(data.at);
-          Object.assign(item,{kind:z.enum(['alarm','timer','reminder']).parse(data.kind),label:text(data.label,80,true),at,when:utcTime(at),enabled:z.boolean().parse(data.enabled),timeOfDay:data.timeOfDay == null ? null : z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).parse(data.timeOfDay),repeat:data.repeat == null ? null : weekdays.parse(data.repeat),lastFired:data.lastFired == null ? null : text(data.lastFired,32),snoozes:z.number().int().min(0).parse(data.snoozes ?? 0)});
+          Object.assign(item,{kind:z.enum(['alarm','timer','reminder']).parse(data.kind),...(data.timeZone ? {timeZone:data.timeZone} : {}),...(data.durationSeconds != null ? {durationSeconds:data.durationSeconds} : {}),...(data.deadline ? {deadline:data.deadline} : {}),label:text(data.label,80,true),at,when:utcTime(at),enabled:z.boolean().parse(data.enabled),timeOfDay:data.timeOfDay == null ? null : z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).parse(data.timeOfDay),repeat:data.repeat == null ? null : weekdays.parse(data.repeat),lastFired:data.lastFired == null ? null : text(data.lastFired,32),snoozes:z.number().int().min(0).parse(data.snoozes ?? 0)});
         }
       }
     }
@@ -155,9 +156,10 @@ export function chooseCloudWrite(local: CloudDocument, remote: CloudDocument | u
   if (remote && documentUpdatedAt(remote) >= documentUpdatedAt(local)) return null;
   let update = { ...local };
   if (device && remote) {
-    if ((remote.ownerUid ?? remote.ownerId) !== local.ownerUid) throw new Error('This ADAM belongs to another account.');
-    update = Object.fromEntries(['deviceId','ownerUid','name','updatedAt','deleted','deletedAt','origin'].filter(k=>local[k] !== undefined).map(k=>[k,local[k]]));
+    if (remote.ownerUid !== local.ownerUid) throw new Error('This ADAM belongs to another account.');
+    update = Object.fromEntries(['name','updatedAt'].filter(k=>local[k] !== undefined).map(k=>[k,local[k]]));
   }
-  if ('scheduleId' in local && remote && 'lastFired' in remote) update.lastFired = remote.lastFired;
+  if (!device && remote?.createdAt) update.createdAt = remote.createdAt;
+  if ('scheduleId' in local) { update.lastFired=null; update.snoozes=0; }
   return update;
 }

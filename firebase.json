@@ -1,0 +1,5 @@
+{
+  "firestore": {"rules": "adam-mobile/firestore.rules", "indexes": "firebase/firestore.indexes.json"},
+  "functions": [{"source": "firebase", "codebase": "adam-trusted", "runtime": "nodejs22", "ignore": ["node_modules", "test", "scripts", "*-debug.log"]}],
+  "emulators": {"firestore": {"host": "127.0.0.1", "port": 8088}, "ui": {"enabled": false}, "singleProjectMode": true}
+}

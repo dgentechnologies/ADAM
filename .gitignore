@@ -106,3 +106,8 @@ adam-mobile/google-services.json
 
 # Robot-specific identity, TLS key and desktop authorizations
 /MP-MC codes/pi/adam/.desktop-pairing/
+
+# Firebase local tools/emulator outputs (never credentials or emulator state)
+firebase/node_modules/
+*-debug.log
+.firebase/

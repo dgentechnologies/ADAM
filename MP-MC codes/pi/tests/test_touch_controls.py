@@ -193,6 +193,8 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_http_write_requires_sync_token_and_echoes_exact_persisted_assignments(self):
         config = types.ModuleType("config")
         config.SYNC_HOST, config.SYNC_PORT, config.SYNC_TOKEN = "127.0.0.1", 0, "isolated-test-key"
+        config.BASE_DIR = Path(tempfile.gettempdir()) / "adam-isolated-tests"
+        config.APP_VERSION = "test"
         memories = types.ModuleType("memory_store")
         memories.memory, memories.conv_log = {}, []
         scheduler = types.ModuleType("scheduler")

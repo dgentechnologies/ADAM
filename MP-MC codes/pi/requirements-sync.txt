@@ -1,0 +1,4 @@
+# Add to the existing ADAM runtime virtual environment; not a replacement for its audio/AI dependencies.
+cryptography>=43,<47
+websockets>=12,<16
+zeroconf>=0.132,<1

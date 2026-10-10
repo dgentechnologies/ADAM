@@ -197,6 +197,8 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
     async def test_pi_http_pair_and_revoke_require_its_sync_key(self):
         config = types.ModuleType("config")
         config.SYNC_HOST, config.SYNC_PORT, config.SYNC_TOKEN = "127.0.0.1", 0, "isolated-pi-key"
+        config.BASE_DIR = Path(tempfile.gettempdir()) / "adam-isolated-tests"
+        config.APP_VERSION = "test"
         memories = types.ModuleType("memory_store")
         memories.memory, memories.conv_log = {}, []
         scheduler = types.ModuleType("scheduler")

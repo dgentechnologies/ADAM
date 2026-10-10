@@ -7,7 +7,6 @@ import type {
   FirestoreUser,
 } from '@adam/types';
 import {
-  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -17,7 +16,6 @@ import {
   setDoc,
   updateDoc,
   where,
-  writeBatch,
 } from 'firebase/firestore';
 
 import { getFirebaseFirestore } from './config';
@@ -35,7 +33,8 @@ export const getUserDoc = getUser;
 
 export async function updateUser(uid: string, data: Partial<FirestoreUser>): Promise<void> {
   const db = getFirebaseFirestore();
-  await updateDoc(doc(db, 'users', uid), data);
+  const safe = Object.fromEntries(['displayName','email','photoUrl'].filter(k=>k in data).map(k=>[k,(data as any)[k]]));
+  await updateDoc(doc(db, 'users', uid), {...safe,updatedAt:serverTimestamp()});
 }
 
 /**
@@ -67,36 +66,12 @@ export async function getDevicesForUser(uid: string): Promise<FirestoreDevice[]>
  * 2. Adds deviceId to users/{ownerUid}.linkedDeviceIds via arrayUnion.
  */
 export async function claimDevice(
-  deviceId: string,
-  deviceData: Partial<FirestoreDevice> & { ownerUid: string },
+  _deviceId: string,
+  _deviceData: Partial<FirestoreDevice> & { ownerUid: string },
 ): Promise<void> {
-  const db = getFirebaseFirestore();
-  const batch = writeBatch(db);
-
-  const deviceRef = doc(db, 'devices', deviceId);
-  const userRef = doc(db, 'users', deviceData.ownerUid);
-
-  const record: Record<string, any> = {
-    deviceId,
-    ownerUid: deviceData.ownerUid,
-    name: deviceData.name || 'ADAM',
-    hardwareSerial: deviceData.hardwareSerial || deviceId,
-    bleAddress: deviceData.bleAddress || null,
-    wifiSsid: deviceData.wifiSsid || null,
-    tailscaleIp: deviceData.tailscaleIp || null,
-    osVersion: deviceData.osVersion || '1.0.0',
-    status: deviceData.status || 'online',
-    lastSeen: serverTimestamp(),
-    createdAt: serverTimestamp(),
-  };
-
-  batch.set(deviceRef, record, { merge: true });
-
-  batch.update(userRef, {
-    linkedDeviceIds: arrayUnion(deviceId),
-  });
-
-  await batch.commit();
+  // Ownership is never established by caller-supplied ownerUid/hardwareSerial.
+  // Registered hardware proof is required; use claimRegisteredDevice below.
+  throw new Error('Register this physical ADAM and confirm possession before claiming it.');
 }
 
 /**
@@ -131,7 +106,8 @@ export async function addMemoryFact(
     : doc(collection(db, 'devices', deviceId, 'memoryFacts'));
 
   await setDoc(factRef, {
-    factId: fact.factId || factRef.id,
+    factId: factRef.id,
+    schemaVersion:1,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),deleted:false,deletedAt:null,origin:'mobile',
     category: fact.category || 'general',
     content: fact.content,
     confidence: fact.confidence ?? 1.0,
@@ -175,7 +151,8 @@ export async function addMemoryPerson(
     : doc(collection(db, 'devices', deviceId, 'memoryPeople'));
 
   await setDoc(personRef, {
-    personId: person.personId || personRef.id,
+    personId: personRef.id,
+    schemaVersion:1,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),deleted:false,deletedAt:null,origin:'mobile',
     name: person.name,
     relationship: person.relationship || 'Contact',
     faceEncodingId: person.faceEncodingId || null,
@@ -219,12 +196,8 @@ export async function addLaptopPairing(
     : doc(collection(db, 'devices', deviceId, 'laptopPairings'));
 
   await setDoc(pairingRef, {
-    pairingId: pairing.pairingId || pairingRef.id,
-    hostname: pairing.hostname,
-    os: pairing.os,
-    tailscaleIp: pairing.tailscaleIp,
-    pairedAt: serverTimestamp(),
-    lastActive: serverTimestamp(),
+    pairingId:pairingRef.id,clientId:pairingRef.id,name:pairing.hostname,
+    os:'windows',lastSeen:serverTimestamp(),updatedAt:serverTimestamp(),
   });
 
   return pairingRef.id;
@@ -249,4 +222,11 @@ export async function getCreditBalance(deviceId: string): Promise<FirestoreCredi
     autoRecharge: !!data.autoRecharge,
     rechargeThreshold: data.rechargeThreshold ?? null,
   } as FirestoreCreditBalance;
+}
+
+/** Proof is produced by registered hardware during a physical possession flow. */
+export async function claimRegisteredDevice(proof: {payload:string;signature:string}) {
+  const {getFunctions, httpsCallable}=await import('firebase/functions');
+  const {getFirebaseApp}=await import('./config');
+  return (await httpsCallable(getFunctions(getFirebaseApp(),'us-central1'),'claimDevice')(proof)).data;
 }

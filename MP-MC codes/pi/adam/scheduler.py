@@ -175,7 +175,7 @@ print(f"✅ Scheduler: {len(_store['schedules'])} schedule(s) | "
 
 
 def _save() -> None:
-    save_json(SCHEDULE_FILE, _store)
+    save_json(SCHEDULE_FILE, _store, strict=True)
 
 
 def _now() -> dt.datetime:
@@ -212,12 +212,17 @@ def _tombstone(kind: str, entry: dict) -> None:
     todos lists stay exactly as every existing reader expects them, so there is
     no way for a deleted alarm to survive into the firing path.
     """
-    _store.setdefault("tombstones", []).append({
+    tomb = {
         "id": entry.get("id", ""),
         "kind": kind,                       # "schedule" | "todo"
         "label": str(entry.get("label") or entry.get("text") or "")[:120],
         "deleted_at": _iso_s(_now()),
-    })
+    }
+    previous = entry.get("sync_canonical")
+    if previous:
+        tomb["sync_canonical"] = {**previous, "deleted": True, "deletedAt": tomb["deleted_at"], "updatedAt": tomb["deleted_at"], "origin": "pi"}
+        tomb["sync_canonical"].pop("operationId", None)
+    _store.setdefault("tombstones", []).append(tomb)
 
 
 def _prune_tombstones() -> None:
@@ -227,7 +232,8 @@ def _prune_tombstones() -> None:
 
 def _parse(s: str):
     try:
-        return dt.datetime.strptime(s, "%Y-%m-%dT%H:%M")
+        value = dt.datetime.fromisoformat(s)
+        return value if value.tzinfo is None else None
     except Exception:
         return None
 
@@ -511,7 +517,7 @@ def set_timer(seconds=None, label: str = "", minutes=None, hours=None):
     entry = {
         "id": _new_id("ti"), "kind": "timer",
         "label": (label or "").strip() or f"{int(round(total/60)) or 1} minute timer",
-        "at": _iso(now + dt.timedelta(seconds=total)),
+        "at": (now + dt.timedelta(seconds=total)).isoformat(timespec="seconds"),
         "repeat": None, "enabled": True, "last_fired": None, "snoozes": 0,
         "created": _iso(now), "updated_at": _iso_s(now), "duration_s": int(total),
     }

@@ -21,6 +21,7 @@ def pi(robot,tmp_path,monkeypatch):
     config=SimpleNamespace(MEMORY_FILE=tmp_path/'facts.json',FACE_MEMORY_FILE=tmp_path/'faces.json',
         CONV_MEMORY_FILE=tmp_path/'conversation.json',CONV_MAX_TURNS=20,SCHEDULE_FILE=tmp_path/'schedules.json')
     monkeypatch.setitem(sys.modules,'config',config);monkeypatch.setitem(sys.modules,'desktop_pairing',robot)
+    load('canonical_contract',monkeypatch)
     memory=load('memory_store',monkeypatch)
     scheduler=SimpleNamespace(_store={'schedules':[],'todos':[],'tombstones':[]})
     monkeypatch.setitem(sys.modules,'scheduler',scheduler)
@@ -72,9 +73,57 @@ def test_voice_memories_versioned_deleted_and_no_biometrics_exported(pi):
 def test_cloud_memory_apply_recovers_and_keeps_existing_face_payload_local(pi):
     _,memories,memory,_,config=pi
     memory.faces['sam']={'name':'Sam','notes':'Old','embedding':[1,2,3]}
-    first=memories.snapshot();path=next(iter(first));updated={**first[path],'notes':'Updated','updatedAt':'2026-10-10T12:00:00.000Z'}
+    first=memories.snapshot();path=next(iter(first));updated={**first[path],'notes':'Updated','updatedAt':first[path]['updatedAt']}
     ack=memories.apply({'path':path,'record':updated,'baseRevision':memories.digest(first[path])})
     assert ack['appliedRevision']==memories.digest(updated)
     assert memory.faces['sam']['embedding']==[1,2,3]
     assert json.loads(config.FACE_MEMORY_FILE.read_text())['sam']['notes']=='Updated'
     assert memories.snapshot()[path]==updated
+
+def test_receipts_are_signed_and_report_only_durable_firing(pi,monkeypatch):
+    import base64
+    from cryptography.hazmat.primitives import hashes,serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    records,_,_,scheduler,config=pi
+    records.apply({'path':'users/alice/schedules/alarm-1','record':plan(),'baseRevision':None})
+    evidence=load('cloud_evidence',monkeypatch)
+    scheduler._store['schedules'][0]['last_fired']='2026-10-09T07:00#alarm-1'
+    receipt=evidence.execution_receipts()['receipts'][0]
+    payload=json.loads(base64.b64decode(receipt['payload']))
+    assert payload['lastFiredAt'] is None # unsaved in-memory change is not evidence
+    config.SCHEDULE_FILE.write_text(json.dumps(scheduler._store))
+    receipt=evidence.execution_receipts()['receipts'][0]
+    payload=json.loads(base64.b64decode(receipt['payload']))
+    assert payload['lastOccurrenceId']=='2026-10-09T07:00#alarm-1'
+    assert payload['lastFiredAt']=='2026-10-09T07:00:00.000Z'
+    key=serialization.load_pem_public_key(evidence.public_bundle()['publicKeyPem'].encode())
+    key.verify(base64.b64decode(receipt['signature']),base64.b64decode(receipt['payload']),ec.ECDSA(hashes.SHA256()))
+    assert 'private' not in json.dumps(evidence.public_bundle()).lower()
+
+
+def test_python_claim_proof_verifies_in_cloud_javascript(pi,monkeypatch):
+    import subprocess
+    evidence=load('cloud_evidence',monkeypatch)
+    payload={'proof':evidence.sign('claim'),'hardware':{**evidence.public_bundle(),'enabled':True}}
+    script="import {verifyProof} from './firebase/src/protocol.js'; let s=''; for await(const c of process.stdin)s+=c; const d=JSON.parse(s); if(verifyProof(d.proof,d.hardware,'claim','alice').uid!=='alice')process.exit(1);"
+    subprocess.run(['node','--input-type=module','-e',script],input=json.dumps(payload),text=True,cwd=ROOT.parents[2],check=True,capture_output=True)
+
+
+def test_pi_rejects_credentials_biometrics_and_wrong_schema_before_persistence(pi):
+    records,_,_,scheduler,_=pi
+    for change in [{'apiKey':'secret'},{'schemaVersion':2},{'lastFired':'forged'}, {'deviceIds':['ADAM-TEST']*9}]:
+        with pytest.raises(ValueError):records.apply({'path':'users/alice/schedules/alarm-1','record':{**plan(),**change},'baseRevision':None})
+    assert not scheduler._store['schedules']
+
+
+def test_real_scheduler_preserves_second_precision_timers(pi,monkeypatch):
+    _,_,_,_,config=pi
+    config.MISSED_GRACE_S=300;config.CLOCK_JUMP_S=20;config.TICK_INTERVAL_S=1
+    scheduler=load('scheduler',monkeypatch)
+    before=scheduler._now()
+    scheduler.set_timer(seconds=42,label='Seconds matter')
+    row=scheduler._store['schedules'][0]
+    due=scheduler._parse(row['at'])
+    assert due is not None and 40 < (due-before).total_seconds() <= 42
+    scheduler._check(due+scheduler.dt.timedelta(seconds=1),43,43)
+    assert scheduler.drain_pending_fires()[0]['id']==row['id']

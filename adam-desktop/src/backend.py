@@ -193,6 +193,10 @@ def sync_robot():
     canonical.sync()
     return jsonify(result)
 
+@app.route('/sync/execution', methods=['POST'])
+def sync_execution():
+    return jsonify(bridge.report_execution())
+
 @app.route('/onboarding/status')
 def onboarding_status():
     return jsonify(onboarding.status())

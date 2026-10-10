@@ -67,3 +67,38 @@ class PiBridge:
             fence();latest=self.canonical.read(uid)
             latest['bridge'][device]={**baselines,**results};self.canonical.write(uid,latest)
         return {'deviceId':device,'records':results,'execution':snapshot.get('execution',{})}
+
+    def report_execution(self):
+        """Relay bounded, signed Pi evidence; the cloud verifies every claim.
+
+        Cursor advances only when the whole page is accepted. A failed relay
+        retries from the same cursor with fresh short-lived robot proofs.
+        """
+        from account import FIREBASE_PROJECT_ID
+        from urllib.parse import quote
+        gate=self.onboarding.status()
+        if not gate['ready']:raise ValueError('Connect to your verified ADAM first.')
+        uid=self.canonical.uid();epoch=self.canonical.epoch;device=gate['selected']
+        def fence():
+            self.canonical.fence(uid,epoch)
+            current=self.onboarding.status()
+            if not current['ready'] or current['selected']!=device:raise ValueError('ADAM changed during execution reporting.')
+        with self.canonical.lock:
+            cursor=self.canonical.read(uid).get('receiptCursors',{}).get(device,'')
+        fence()
+        payload,error=self.connection.call('GET','/api/sync/receipts?after='+quote(cursor,safe=''))
+        if error or not isinstance(payload,dict) or payload.get('deviceId')!=device:raise ValueError('Robot execution evidence is unavailable. Update ADAM and retry.')
+        receipts=payload.get('receipts',[])
+        if not isinstance(receipts,list) or len(receipts)>8:raise ValueError('Invalid execution evidence batch.')
+        token=self.canonical.account.id_token()
+        for receipt in receipts:
+            fence()
+            response=self.canonical.http.post(f'https://us-central1-{FIREBASE_PROJECT_ID}.cloudfunctions.net/reportExecution',
+                headers={'Authorization':'Bearer '+token},json={'data':receipt},timeout=(5,10),allow_redirects=False)
+            if not response.ok or response.json().get('result',{}).get('ok') is not True:
+                raise ValueError('Cloud execution verification is pending. Deploy the trusted Firebase function, register this ADAM, then retry.')
+        with self.canonical.lock:
+            fence();state=self.canonical.read(uid)
+            state.setdefault('receiptCursors',{})[device]=payload.get('nextCursor','')
+            self.canonical.write(uid,state)
+        return {'verified':len(receipts),'more':bool(payload.get('nextCursor'))}

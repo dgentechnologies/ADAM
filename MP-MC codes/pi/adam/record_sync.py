@@ -83,7 +83,10 @@ def apply(body):
     parts=path.split('/')
     if len(parts)!=4 or parts[2] not in ('todos','schedules') or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',parts[3]):
         raise ValueError('Invalid sync identity.')
-    kind,ident=parts[2:];key='todoId' if kind=='todos' else 'scheduleId'
+    kind,ident=parts[2:]
+    from canonical_contract import validate
+    validate(kind,ident,record)
+    key='todoId' if kind=='todos' else 'scheduleId'
     if record.get(key)!=ident or record.get('schemaVersion',1)!=1 or type(record.get('deleted')) is not bool:
         raise ValueError('Invalid schema or identity.')
     targets=record.get('deviceIds',[])
@@ -116,6 +119,8 @@ def apply(body):
             # The legacy scheduler executes in local wall time. Refuse ambiguous
             # DST occurrences rather than silently executing twice or at a gap.
             at=datetime.fromisoformat(record['at']);zone=ZoneInfo(identity['timeZone'])
+            if at.astimezone().utcoffset() != at.replace(tzinfo=zone).utcoffset():
+                raise ValueError('Robot OS timezone differs from its provisioned timezone.')
             if at.tzinfo is not None or at.replace(tzinfo=zone,fold=0).utcoffset()!=at.replace(tzinfo=zone,fold=1).utcoffset():
                 raise ValueError('Ambiguous or nonexistent local alarm time.')
             if record.get('kind') not in ('alarm','reminder','timer') or type(record.get('enabled')) is not bool:

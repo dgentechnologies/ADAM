@@ -8,12 +8,12 @@ import { LocalData } from '../apps/web/src/lib/local-data';
 const uid='schema-test-account', time='2026-10-09T10:00:00.000Z', later='2026-10-09T11:00:00.000Z';
 const d1='devices/ADAM-1111',d2='devices/ADAM-2222';
 function documents(): CloudDocuments { return {
-  [d1]:{deviceId:'ADAM-1111',ownerUid:uid,name:'Desk',hardwareSerial:'DGEN-1',createdAt:time,updatedAt:time,status:'offline',simulated:true,wifiSsid:'Keep my network'},
-  [d2]:{deviceId:'ADAM-2222',ownerUid:uid,name:'Kitchen',hardwareSerial:'DGEN-2',createdAt:time,updatedAt:time,status:'offline',simulated:true},
+  [d1]:{deviceId:'ADAM-1111',ownerUid:uid,name:'Desk',hardwareSerial:'DGEN-1',createdAt:time,updatedAt:time,status:'offline',simulated:false,wifiSsid:'Keep my network'},
+  [d2]:{deviceId:'ADAM-2222',ownerUid:uid,name:'Kitchen',hardwareSerial:'DGEN-2',createdAt:time,updatedAt:time,status:'offline',simulated:false},
   [`${d1}/memoryFacts/chair`]:{factId:'chair',category:'Chair',content:'Left of the desk',confidence:0.8,source:'conversation',learnedAt:time,updatedAt:time},
   [`${d2}/memoryFacts/chair`]:{factId:'chair',category:'Chair',content:'By the kitchen window',confidence:1,source:'manual',learnedAt:time,updatedAt:time},
   [`${d1}/memoryPeople/person_1`]:{personId:'person_1',name:'Alex',relationship:'Friend',notes:'Likes tea',faceEncodingId:'local-face-reference',firstSeen:time,lastSeen:time,updatedAt:time},
-  [`users/${uid}/schedules/al_c8e761a3`]:{scheduleId:'al_c8e761a3',kind:'alarm',label:'Morning',at:'2026-11-01T07:00',timeOfDay:'07:00',repeat:['mon','tue'],enabled:true,deviceIds:[],lastFired:'2026-10-09T07:00',snoozes:1,createdAt:time,updatedAt:time,deleted:false,deletedAt:null,origin:'desktop'},
+  [`users/${uid}/schedules/al_c8e761a3`]:{scheduleId:'al_c8e761a3',kind:'alarm',label:'Morning',timeZone:'Asia/Kolkata',at:'2026-11-01T07:00',timeOfDay:'07:00',repeat:['mon','tue'],enabled:true,deviceIds:[],lastFired:'2026-10-09T07:00',snoozes:1,createdAt:time,updatedAt:time,deleted:false,deletedAt:null,origin:'desktop'},
   [`users/${uid}/todos/td_plan`]:{todoId:'td_plan',text:'Review notes',done:false,due:null,deviceIds:['ADAM-1111'],createdAt:time,updatedAt:time,doneAt:null,deleted:false,deletedAt:null,origin:'desktop'},
 }; }
 test('canonical documents round-trip stable hardware IDs, Pi IDs and every schedule field',async()=>{
@@ -24,7 +24,8 @@ test('canonical documents round-trip stable hardware IDs, Pi IDs and every sched
   assert.equal(new Set(Object.keys(local.memories)).size,3);
   assert.deepEqual(Object.keys(outgoing).sort(),Object.keys(incoming).sort());
   const schedule=outgoing[`users/${uid}/schedules/al_c8e761a3`];
-  for(const key of ['scheduleId','at','timeOfDay','repeat','deviceIds','lastFired','snoozes']) assert.deepEqual(schedule[key],incoming[`users/${uid}/schedules/al_c8e761a3`][key]);
+  for(const key of ['scheduleId','at','timeZone','timeOfDay','repeat','deviceIds']) assert.deepEqual(schedule[key],incoming[`users/${uid}/schedules/al_c8e761a3`][key]);
+  assert.equal(schedule.lastFired,null);assert.equal(schedule.snoozes,0);
   assert.equal(outgoing[`${d1}/memoryPeople/person_1`].faceEncodingId,'local-face-reference');
   assert.equal(outgoing[`${d1}/memoryFacts/chair`].confidence,0.8);
   assert.equal(outgoing[d1].deviceId,'ADAM-1111');
@@ -37,15 +38,15 @@ test('wall-clock alarm intent is unchanged when the importing phone changes time
     const local=await applyCloudDocuments(emptyCompanion(),uid,documents());
     process.env.TZ='America/New_York';
     const clock=toCloudDocuments(local,uid).find(e=>e.kind==='clocks')!.data;
-    assert.equal(clock.at,'2026-11-01T07:00');assert.equal(clock.timeOfDay,'07:00');
+    assert.equal(clock.timeZone,'Asia/Kolkata');assert.equal(clock.at,'2026-11-01T07:00');assert.equal(clock.timeOfDay,'07:00');
     assert.deepEqual(clock.repeat,['mon','tue']);
   } finally { if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous; }
 });
-test('equal cloud timestamps do not overwrite and the Pi firing guard is preserved',()=>{
+test('equal cloud timestamps do not overwrite; execution fields stay out of desired state',()=>{
   const remote=documents()[`users/${uid}/schedules/al_c8e761a3`];
   assert.equal(chooseCloudWrite({...remote,label:'different'},remote),null);
   const write=chooseCloudWrite({...remote,updatedAt:later,label:'Renamed',lastFired:null},remote)!;
-  assert.equal(write.label,'Renamed');assert.equal(write.lastFired,remote.lastFired);
+  assert.equal(write.label,'Renamed');assert.equal(write.lastFired,null);
 });
 test('device rename keeps ownership and existing network/profile metadata',()=>{
   const remote=documents()[d1];
@@ -96,4 +97,10 @@ test('missing timestamps, invalid wall times and foreign ownership are rejected'
   await assert.rejects(applyCloudDocuments(emptyCompanion(),uid,invalid));
   const foreign=documents();foreign[d1].ownerUid='different-account';
   await assert.rejects(applyCloudDocuments(emptyCompanion(),uid,foreign),/ownership/);
+});
+
+test('simulated devices never produce cloud ownership writes',async()=>{
+ const local=await applyCloudDocuments(emptyCompanion(),uid,documents());
+ for(const record of Object.values(local.devices)) (record as any).simulated=true;
+ assert.ok(toCloudDocuments(local,uid).every(e=>e.kind!=='devices'));
 });

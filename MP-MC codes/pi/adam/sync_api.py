@@ -238,7 +238,7 @@ async def _handle(reader, writer) -> None:
             except ValueError:
                 await _reply(writer, 403, {"ok": False, "error": "Authorization required"})
             return
-        if path in ('/api/sync/records', '/api/sync/apply'):
+        if path in ('/api/sync/records', '/api/sync/apply', '/api/sync/receipts'):
             grant = desktop_pairing.authenticate(headers.get('x-adam-token', ''))
             if not grant:
                 await _reply(writer, 403, {'ok': False, 'error': 'Authorization required'})
@@ -247,6 +247,11 @@ async def _handle(reader, writer) -> None:
             try:
                 if path == '/api/sync/records' and method == 'GET':
                     payload = record_sync.snapshot()
+                elif path == '/api/sync/receipts' and method == 'GET':
+                    import cloud_evidence
+                    from urllib.parse import urlsplit, parse_qs
+                    cursor = parse_qs(urlsplit(target).query).get('after', [''])[0]
+                    payload = cloud_evidence.execution_receipts(cursor)
                 elif path == '/api/sync/apply' and method == 'POST':
                     body, err = await _read_body(reader, headers)
                     if err:
@@ -424,6 +429,8 @@ async def _w_pair_claim(body: dict, method: str):
 async def _w_pair_release(body: dict, method: str):
     """Release the claim so a different device can pair. Authenticated: only
     whoever currently holds the token may give it up."""
+    if desktop_pairing.identity():
+        return 410, {"ok": False, "error": "Revoke desktop grants on the physical ADAM; legacy release is disabled."}
     _pair_state.update({"paired": False, "peer": "", "at": 0})
     _save_pair_state()
     try:
@@ -533,6 +540,8 @@ async def _r_conversations(authorised: bool = False) -> dict:
 # ═════════════════════════════════════════════════════════════════════════════
 
 async def _w_schedules(body: dict, method: str):
+    if desktop_pairing.identity() and method != "POST":
+        return 409, {"ok": False, "error": "Use revision-checked canonical sync; bulk replacement is disabled."}
     if method == "POST":
         rows = body.get("schedules")
         one = body if rows is None else (rows[0] if rows else {})
@@ -564,6 +573,8 @@ async def _w_schedules(body: dict, method: str):
 
 
 async def _w_todos(body: dict, method: str):
+    if desktop_pairing.identity() and method != "POST":
+        return 409, {"ok": False, "error": "Use revision-checked canonical sync; bulk replacement is disabled."}
     if method == "POST":
         env = scheduler.add_todo(body.get("text", ""), body.get("due", "") or "")
     else:
@@ -646,7 +657,7 @@ async def start_sync_api():
         return None
     mode = "read-only (no SYNC_TOKEN set)" if not SYNC_TOKEN else "read-write"
     print(f"✅ Sync API  → http://{SYNC_HOST}:{SYNC_PORT}  [{mode}]")
-    print(f"   Pairing: {'claimed' if _pair_state['paired'] else 'OPEN — the app can claim this unit'}")
+    print('   Pairing: physical-screen authorization required; legacy token claim disabled')
     return _server
 
 

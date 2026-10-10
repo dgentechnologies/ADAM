@@ -1,91 +1,137 @@
 rules_version = '2';
 service cloud.firestore {
-  match /databases/{database}/documents {
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function isDeviceOwner(deviceId) {
-      let device = get(/databases/$(database)/documents/devices/$(deviceId)).data;
-      return isAuthenticated() && (device.ownerUid == request.auth.uid || device.ownerId == request.auth.uid);
-    }
-
-    /**
-     * users/{uid}
-     * - email: string
-     * - displayName: string
-     * - photoUrl: string | null (display only — avatar in Settings)
-     * - createdAt: timestamp
-     * - linkedDeviceIds: string[]
-     */
-    match /users/{uid} {
-      allow read, write: if isOwner(uid);
-      match /schedules/{scheduleId} {
-        allow read, create, update: if isOwner(uid);
-        allow delete: if false;
-      }
-      match /todos/{todoId} {
-        allow read, create, update: if isOwner(uid);
-        allow delete: if false;
-      }
-    }
-
-    /**
-     * devices/{deviceId}
-     * - deviceId: string
-     * - ownerUid: string
-     * - name: string
-     * - hardwareSerial: string
-     * - bleAddress: string | null
-     * - wifiSsid: string | null
-     * - tailscaleIp: string | null
-     * - osVersion: string
-     * - lastSeen: timestamp
-     * - createdAt: timestamp
-     * - status: "online" | "offline" | "setup"
-     */
-    match /devices/{deviceId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.ownerUid == request.auth.uid || resource.data.ownerId == request.auth.uid);
-      allow create: if isAuthenticated() && (request.resource.data.ownerUid == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
-      allow update, delete: if isAuthenticated() && (resource.data.ownerUid == request.auth.uid || resource.data.ownerId == request.auth.uid);
-
-      /**
-       * Subcollections under devices/{deviceId}
-       */
-      match /memoryFacts/{factId} {
-        allow read, write: if isDeviceOwner(deviceId);
-      }
-
-      match /memoryPeople/{personId} {
-        allow read, write: if isDeviceOwner(deviceId);
-      }
-
-      match /laptopPairings/{pairingId} {
-        allow read, write: if isDeviceOwner(deviceId);
-      }
-    }
-
-    /**
-     * creditBalances/{deviceId}
-     * - deviceId: string
-     * - balance: number
-     * - currency: "credits"
-     * - lastUpdated: timestamp
-     * - autoRecharge: boolean
-     * - rechargeThreshold: number | null
-     *
-     * HARD CONSTRAINT: WRITE-PROTECTED.
-     * Authenticated users can read their own device's credit balance (where device ownerUid == request.auth.uid),
-     * but CANNOT write to it (allow write: if false; — backend service accounts only).
-     */
-    match /creditBalances/{deviceId} {
-      allow read: if isDeviceOwner(deviceId);
-      allow write: if false;
-    }
+ match /databases/{database}/documents {
+  function signedIn() { return request.auth != null; }
+  function own(uid) { return signedIn() && request.auth.uid == uid; }
+  function deviceOwner(id) {
+   return signedIn() && get(/databases/$(database)/documents/devices/$(id)).data.ownerUid == request.auth.uid;
   }
+  function text(v, max) { return v is string && v.size() <= max; }
+  function requiredText(v, max) { return text(v,max) && v.size() > 0; }
+  function validId(id) { return id is string && id.matches('^[A-Za-z0-9_-]{1,128}$'); }
+  function nullableText(v,max) { return v == null || text(v,max); }
+  function nullableTime(v) { return v == null || v is timestamp; }
+  function metadata(d) {
+   return d.schemaVersion == 1 && d.createdAt is timestamp && d.updatedAt is timestamp
+    && d.createdAt <= d.updatedAt && d.updatedAt <= request.time + duration.value(5,'m')
+    && d.deleted is bool && requiredText(d.origin,128)
+    && nullableText(d.get('operationId',null),128)
+    && (d.deleted ? d.deletedAt == d.updatedAt : d.deletedAt == null);
+  }
+  function immutableCreated(d) { return d.createdAt == resource.data.createdAt && d.updatedAt > resource.data.updatedAt; }
+  function targets(ids) {
+   return ids is list && ids.size() <= 8 && ids.toSet().size() == ids.size()
+    && (ids.size() <= 0 || (ids[0] is string && deviceOwner(ids[0])))
+    && (ids.size() <= 1 || (ids[1] is string && deviceOwner(ids[1])))
+    && (ids.size() <= 2 || (ids[2] is string && deviceOwner(ids[2])))
+    && (ids.size() <= 3 || (ids[3] is string && deviceOwner(ids[3])))
+    && (ids.size() <= 4 || (ids[4] is string && deviceOwner(ids[4])))
+    && (ids.size() <= 5 || (ids[5] is string && deviceOwner(ids[5])))
+    && (ids.size() <= 6 || (ids[6] is string && deviceOwner(ids[6])))
+    && (ids.size() <= 7 || (ids[7] is string && deviceOwner(ids[7])))
+   ;
+  }
+  function todo(d,id) {
+   return validId(id) && metadata(d) && d.todoId == id
+    && d.keys().hasOnly(['todoId','text','done','due','doneAt','deviceIds','schemaVersion','createdAt','updatedAt','deleted','deletedAt','origin','operationId'])
+    && targets(d.get('deviceIds',[]))
+    && (d.deleted || (requiredText(d.text,2000) && d.done is bool && nullableText(d.get('due',null),32) && nullableTime(d.get('doneAt',null))));
+  }
+  function schedule(d,id) {
+   return validId(id) && metadata(d) && d.scheduleId == id
+    && d.keys().hasOnly(['scheduleId','kind','label','at','timeZone','repeat','timeOfDay','enabled','deviceIds','lastFired','snoozes','durationSeconds','deadline','schemaVersion','createdAt','updatedAt','deleted','deletedAt','origin','operationId'])
+    && targets(d.get('deviceIds',[]))
+    // Compatibility fields never constitute execution evidence.
+    && d.get('lastFired',null) == null && d.get('snoozes',0) == 0
+    && (d.deleted || (d.kind in ['alarm','reminder','timer'] && text(d.label,80)
+     && d.at is string && d.at.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?$')
+     && requiredText(d.timeZone,80) && d.timeZone.matches('^[A-Za-z_+-]+(/[A-Za-z0-9_+.-]+){0,2}$') && d.enabled is bool
+     && nullableText(d.get('timeOfDay',null),5)
+     && (d.get('repeat',null) == null || (d.repeat is list && d.repeat.size() <= 7 && d.repeat.hasOnly(['mon','tue','wed','thu','fri','sat','sun']) && d.repeat.toSet().size() == d.repeat.size()))
+     && (d.kind != 'timer' || (d.durationSeconds is number && d.durationSeconds > 0 && d.durationSeconds <= 604800 && requiredText(d.deadline,32)))));
+  }
+  function fact(d,id) {
+   return validId(id) && metadata(d) && d.factId == id
+    && d.keys().hasOnly(['factId','category','content','confidence','source','learnedAt','schemaVersion','createdAt','updatedAt','deleted','deletedAt','origin','operationId'])
+    && (d.deleted || (requiredText(d.category,80) && requiredText(d.content,2000) && d.confidence is number && d.confidence >= 0 && d.confidence <= 1 && d.source in ['conversation','vision','manual'] && d.learnedAt is timestamp));
+  }
+  function person(d,id) {
+   return validId(id) && metadata(d) && d.personId == id
+    && d.keys().hasOnly(['personId','name','relationship','notes','faceEncodingId','firstSeen','lastSeen','schemaVersion','createdAt','updatedAt','deleted','deletedAt','origin','operationId'])
+    && (d.deleted || (requiredText(d.name,80) && text(d.relationship,2000) && text(d.notes,2000) && nullableText(d.faceEncodingId,128) && d.firstSeen is timestamp && d.lastSeen is timestamp));
+  }
+  function note(d,id) {
+   return validId(id) && metadata(d) && d.noteId == id
+    && d.keys().hasOnly(['noteId','title','content','schemaVersion','createdAt','updatedAt','deleted','deletedAt','origin','operationId'])
+    && (d.deleted || (requiredText(d.content,2000) && text(d.get('title',''),80)));
+  }
+  function profile(d) { return text(d.email,320) && text(d.displayName,120) && nullableText(d.photoUrl,2048); }
+  match /users/{uid} {
+   allow read: if own(uid);
+   allow create: if own(uid) && profile(request.resource.data)
+    && request.resource.data.keys().hasOnly(['email','displayName','photoUrl','createdAt','updatedAt','linkedDeviceIds','schemaVersion'])
+    && request.resource.data.createdAt is timestamp && request.resource.data.get('linkedDeviceIds',[]) == [];
+   // Legacy companion data can remain readable, but can never be changed here.
+   allow update: if own(uid) && profile(request.resource.data)
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email','displayName','photoUrl','updatedAt'])
+    && request.resource.data.updatedAt is timestamp;
+   match /todos/{id} {
+    allow read: if own(uid);
+    allow create: if own(uid) && todo(request.resource.data,id);
+    allow update: if own(uid) && todo(request.resource.data,id) && immutableCreated(request.resource.data);
+   }
+   match /schedules/{id} {
+    allow read: if own(uid);
+    allow create: if own(uid) && schedule(request.resource.data,id);
+    allow update: if own(uid) && schedule(request.resource.data,id) && immutableCreated(request.resource.data);
+   }
+   match /notes/{id} {
+    allow read: if own(uid);
+    allow create: if own(uid) && note(request.resource.data,id);
+    allow update: if own(uid) && note(request.resource.data,id) && immutableCreated(request.resource.data);
+   }
+   match /settings/companion {
+    allow read: if own(uid);
+    allow create, update: if own(uid) && request.resource.data.keys().hasOnly(['voice','wakeWord','brain','updatedAt','origin','schemaVersion'])
+     && request.resource.data.schemaVersion == 1 && request.resource.data.updatedAt is timestamp
+     && text(request.resource.data.get('voice','default'),80) && text(request.resource.data.get('wakeWord','adam'),40)
+     && request.resource.data.get('brain','byok') in ['byok','managed','lite'] && requiredText(request.resource.data.origin,128);
+   }
+   match /clients/{id} {
+    allow read: if own(uid);
+    allow create, update: if own(uid) && request.resource.data.keys().hasOnly(['platform','protocolVersion','cursor','lastSeen'])
+     && request.resource.data.platform in ['windows','android','web'] && request.resource.data.protocolVersion == 1
+     && nullableText(request.resource.data.get('cursor',null),256) && request.resource.data.lastSeen is timestamp;
+   }
+  }
+  match /devices/{deviceId} {
+   allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
+   // Only trusted registration/claim/transfer may establish identity or owner.
+   allow update: if deviceOwner(deviceId)
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt'])
+    && requiredText(request.resource.data.name,40) && request.resource.data.updatedAt is timestamp;
+   match /memoryFacts/{id} {
+    allow read: if deviceOwner(deviceId);
+    allow create: if deviceOwner(deviceId) && fact(request.resource.data,id);
+    allow update: if deviceOwner(deviceId) && fact(request.resource.data,id) && immutableCreated(request.resource.data);
+   }
+   match /memoryPeople/{id} {
+    allow read: if deviceOwner(deviceId);
+    allow create: if deviceOwner(deviceId) && person(request.resource.data,id);
+    allow update: if deviceOwner(deviceId) && person(request.resource.data,id) && immutableCreated(request.resource.data);
+   }
+   match /laptopPairings/{id} {
+    allow read: if deviceOwner(deviceId);
+    allow create, update: if deviceOwner(deviceId)
+     && request.resource.data.keys().hasOnly(['pairingId','clientId','name','os','lastSeen','updatedAt'])
+     && request.resource.data.pairingId == id && requiredText(request.resource.data.clientId,128)
+     && text(request.resource.data.name,80) && request.resource.data.os == 'windows'
+     && request.resource.data.lastSeen is timestamp && request.resource.data.updatedAt is timestamp;
+   }
+   match /executionState/{id} { allow read: if deviceOwner(deviceId); }
+  }
+  match /creditBalances/{deviceId} { allow read: if deviceOwner(deviceId); }
+  // Everything else (including hardware trust roots, nonces and audit ledgers)
+  // is backend-only. No recursive client write grant and no hard deletes.
+ }
 }

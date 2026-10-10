@@ -79,7 +79,10 @@ def apply(body):
     parts=path.split('/')
     if (len(parts)!=4 or parts[:2]!=['devices',identity['deviceId']] or parts[2] not in ('memoryFacts','memoryPeople')
             or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',parts[3])):raise ValueError('Invalid memory scope.')
-    kind,ident=parts[2:];person=kind=='memoryPeople';keyfield='personId' if person else 'factId'
+    kind,ident=parts[2:]
+    from canonical_contract import validate
+    validate(kind,ident,row)
+    person=kind=='memoryPeople';keyfield='personId' if person else 'factId'
     if row.get(keyfield)!=ident or type(row.get('deleted')) is not bool or len(json.dumps(row))>16384:
         raise ValueError('Invalid memory record.')
     allowed={keyfield,'createdAt','updatedAt','deleted','deletedAt','origin','schemaVersion','operationId'}
